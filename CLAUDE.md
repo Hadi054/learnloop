@@ -38,12 +38,38 @@ may be freely developed with Claude Code.
 | 4 | "Bytes You Don't Control": URLSession, HTTP, Codable, decoding resilience, caching, persistence, Keychain, pagination+retry, network-layer design, capstone | 10 | DONE (in curriculum.js). Verified via local python servers (flaky pagination + poison items + hit counters) and macOS Security framework (Keychain CRUD with real error codes) |
 | 5 | "Code You Can Change": MVVM, observation, DI, unit testing, async testing, Time Profiler, Allocations/Leaks, API design, logging, capstone | 10 | DONE (in curriculum.js). Verified: XCTest via SPM, `leaks --atExit` ring conviction, 2-module access-control errors verbatim, os.Logger executed |
 | 6 | "Designing the Whole Machine": image feed, offline-first sync, caching strategy, realtime/chat, push, modularization, launch perf, design capstone | 8 | DONE (in curriculum.js) |
+| 7 | "Protocols on the Wire": protobuf wire format, HTTP/2 frames/streams, anatomy of a gRPC call, streaming RPCs, interceptors, SwiftNIO/transports, TLS+pinning, connection lifecycle, auth over gRPC | 9 | IN PROGRESS (b7-01 done) |
+| 8 | "Data That Survives": Core Data stack, faulting, contexts/threads, fetching, migrations, layered caching | 6 | PLANNED |
+| 9 | "The Device's Senses": CoreLocation state machine, maps/geocoding, APNs from the socket up, notification routing, LocalAuthentication, background execution | 6 | PLANNED |
+| 10 | "Interface Builder and the Storyboard Machine": storyboard→NSCoder, segues vs manual, storyboards at scale, traits/size classes, runtime localization | 5 | PLANNED |
+| 11 | "Shipping the Machine": targets/schemes/xcconfig, code signing, SPM/CocoaPods internals, scenes lifecycle, CI for iOS, update strategy | 6 | PLANNED |
 
 CURRICULUM COMPLETE 2026-07-18: 92 loops, 7 blocks, 552 questions, 0 length
 tells, every b1+ loop with transfer/verify/goDeeper. Verification tiers used:
 plain swift, Mac Catalyst UIKit, SPM swift test, local python HTTP/SSE servers,
 Security framework, leaks CLI, two-module access-control packages. Future
 content work = maintenance (Swift/iOS version updates) or learner requests.
+
+WORK-APP EXTENSION (requested 2026-07-18): the learner's day job is an app that
+speaks gRPC over HTTP/2, runs a real Core Data stack, uses CoreLocation/APNs/
+biometrics, is storyboard-first with runtime localization (MA-2319), and ships
+via a multi-environment build system. The learner proposed five new blocks
+(their message used 1-indexed "Block 8–12"; repo ids are b7–b11) plus three
+intra-block loops. Author in this order, one loop at a time, thorough mode:
+b7 (biggest gap) → b8 → b9 → b10 → b11 → intra-block additions:
+- b2-19 keyboard management (notifications, scroll insets, what IQKeyboardManager hooks)
+- b3-13 actor-as-singleton (static let shared on an actor, CheckedContinuation
+  waiter gating — APIClient's exact shape; author AFTER b7-08 connection lifecycle
+  so it can cross-reference)
+- b4-11 when REST and gRPC coexist (Alamofire for uploads/3rd-party alongside
+  gRPC; choosing per endpoint; author after b7)
+Verification tiers for the extension: b7 wire-format claims = plain Swift byte
+math against canonical protobuf encodings; HTTP/2 frames = curl -v --http2 +
+local python; SPM fetch of grpc-swift possible (network verified up 2026-07-18);
+b8 Core Data fully runnable on macOS with plain swift (programmatic
+NSManagedObjectModel, ConcurrencyDebug 1); b9 mostly documented (permission
+prompts need a device) — compile via Catalyst, mark documented; b10 ibtool +
+Catalyst for NSCoder claims; b11 xcodebuild/security CLIs runnable.
 
 Checkpoint projects (outside this app, zero-AI): after B1 an expense-tracker model
 layer with tests; after B2 a habit tracker in programmatic UIKit; after B3 an image

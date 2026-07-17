@@ -8744,6 +8744,108 @@ const CUR = {
      "goDeeper": "Re-read your own History tab, block by block — it's the walk's supporting evidence, 92 loops deep. \"Designing Data-Intensive Applications\" when you want the server side of these stories. And the App Store capstone: the only goDeeper that ships."
     }
    ]
+  },
+  {
+   "id": "b7",
+   "name": "Protocols on the Wire",
+   "tagline": "gRPC over HTTP/2 — schemas, frames, streams, and trust",
+   "loops": [
+    {
+     "id": "b7-01",
+     "title": "Protocol Buffers: the wire format",
+     "concept": {
+      "definition": "Protocol Buffers is a schema-first binary serialization format: message shapes are declared once in a `.proto` file, and a compiler generates matching native types from it — Swift structs on your side. On the wire each field travels as a compact key–value pair, where the key is just the field number and wire type packed into a varint, so names, types, and defaults live in the schema both sides compiled — not in the bytes.",
+      "code": "// user.proto                    // protoc --swift_out generates:\n// message User {                 struct User {          // SwiftProtobuf\n//   int32  id   = 1;               var id: Int32 = 0\n//   string name = 2;               var name: String = \"\"\n// }                              }\n\nvar u = User(); u.id = 300; u.name = \"hi\"\n// try u.serializedData() — 7 bytes:\n//   08 AC 02  12 02 68 69\n//   │  └─300  │  │  └─ \"hi\" as UTF-8\n//   │         │  └─ length 2\n//   │         └─ key 0x12 = (2 << 3) | 2: field 2, length-delimited\n//   └─ key 0x08 = (1 << 3) | 0: field 1, varint\n//\n// same value as JSON: {\"id\":300,\"name\":\"hi\"} — 22 bytes",
+      "underlying": "The wire is nothing but repeated key–value pairs. The key is one varint holding `(fieldNumber << 3) | wireType` — wire type 0 = varint, 2 = length-delimited (strings, bytes, nested messages). A varint spends each byte as 7 payload bits plus a continuation flag in the high bit, least-significant group first: 300 is binary `100101100`, so its low seven bits `0101100` ship first with the flag set (`AC`), then the remaining `10` (`02`). Field NAMES never leave the `.proto` — exactly like b0-01's variable names compiling away into addresses. Both ends compiled the same schema, so the bytes only carry what the schema can't predict.\n\nWhy smaller — three mechanisms, all executed on this Mac: `\"id\": 300` costs nine JSON bytes (`{\"a\":150}` measured 9 via JSONEncoder) but three protobuf bytes, because the name became the single byte `08` and the number became binary instead of ASCII digits. Default values are omitted ENTIRELY — a proto3 `User` with id 0 and empty name serializes to zero bytes, and the decoder rebuilds it from the schema's defaults. And signed types choose their cost: plain `int32 -1` sign-extends to 64 bits before varint-encoding, costing ten bytes (`FF × 9, 01` — executed), while `sint32` zigzag-folds the number line (0, -1, 1, -2 → 0, 1, 2, 3) so small negatives stay one byte.\n\nWhy stricter: the generated struct gives every field a declared type checked at compile time — the server cannot quietly turn `id` into a string without decode failures, where JSON would happily hand you the surprise at runtime (b4-03's whole battle). The wire type also tells a decoder how to SKIP a field it doesn't know, which is protobuf's compatibility mechanism: old clients ignore new fields, new clients fill absent old ones with defaults. The price of that mechanism is the one iron rule — field numbers are forever.",
+      "whyItMatters": "Every message your work app exchanges is these bytes, and when a backend teammate 'cleans up' a `.proto`, field numbers are the thing that must not change. Interviewers ask 'why is protobuf smaller than JSON' — the answer is one sentence about schemas, varints, and omitted defaults."
+     },
+     "exercise": {
+      "prompt": "Charles captured this 7-byte request body from your app. Using the schema in the comments, decode it by hand — every byte. Then predict: what does a `User` with id 0 and empty name serialize to?",
+      "code": "// message User {\n//   int32  id   = 1;\n//   string name = 2;\n// }\n//\n// captured body:\n// 08 AC 02 12 02 68 69\n//\n// key = (fieldNumber << 3) | wireType\n// wire types: 0 = varint, 2 = length-delimited",
+      "solution": "`08` = (1 << 3) | 0 → field 1, varint. `AC` has its high bit set (more bytes follow); its payload bits are `0101100` = 44. `02` contributes 2 << 7 = 256. 256 + 44 = 300 → id = 300.\n\n`12` = (2 << 3) | 2 → field 2, length-delimited. `02` = length 2. `68 69` = UTF-8 for \"hi\" → name = \"hi\".\n\nResult: User(id: 300, name: \"hi\").\n\nSecond prediction: ZERO bytes — an empty Data. Both fields hold proto3 defaults, and defaults are omitted from the wire entirely; the decoder rebuilds User(id: 0, name: \"\") from the schema.",
+      "explanation": "Notice the decoder never needed the words `id` or `name` — both ends compiled the same `.proto`, so the bytes carry only what the schema can't predict. That's also why decoding with a mismatched schema version doesn't error: unknown field numbers are skipped by wire type, which is protobuf's compatibility superpower and its quietest source of silently-missing data."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what does a `.proto` file give you, and where do protobuf's size and strictness advantages over JSON physically come from?",
+      "modelAnswer": "A `.proto` file is the contract: message shapes are declared once, and both the server and my app generate native types from it — typed Swift structs on my side. Messages are smaller than JSON because names never travel — each field's key is a varint packing its number and wire type, values are binary varints rather than text digits, and default values are omitted from the wire entirely. They're stricter because the schema is compiled into both ends: every field has a declared type checked at build time, and the field numbers form a wire contract that outlives any rename.",
+      "sets": [
+       [
+        {
+         "q": "On the wire, a protobuf field is identified by…",
+         "options": [
+          "its UTF-8 name, written just before the value bytes",
+          "its position in the .proto declaration order",
+          "its field number and wire type, packed into one varint key",
+          "an index into a table both sides negotiate at connect time"
+         ],
+         "correct": 2,
+         "explain": "Names never leave the `.proto` — both sides compiled it, so the wire needs only `(number << 3) | wireType`: `08` means field 1 varint, `12` means field 2 length-delimited."
+        },
+        {
+         "q": "`varint(300)` = `AC 02`. Why does the first byte `AC` have its high bit set?",
+         "options": [
+          "It marks the whole number as unsigned",
+          "It says another byte of this varint follows",
+          "It flags this field as length-delimited data",
+          "It carries the sign for negative numbers"
+         ],
+         "correct": 1,
+         "explain": "Each varint byte spends 7 bits on payload and the 8th as a continuation flag. 300 needs 9 bits, so two bytes: the low 7 bits ship first with the flag set, then the rest."
+        },
+        {
+         "q": "A proto3 `int32 count = 4;` currently equals 0. What does the encoder emit for it?",
+         "options": [
+          "`20 00` — the field key, then one zero byte",
+          "a one-byte null marker written in the field's declared position",
+          "nothing — the field is omitted; the decoder supplies 0",
+          "`20` alone — the key with an empty payload"
+         ],
+         "correct": 2,
+         "explain": "Defaults don't travel: the schema is the other half of the data, so absence and 0 are the same thing in proto3. That's also why 'was it actually sent?' needs `optional` or a wrapper type."
+        }
+       ],
+       [
+        {
+         "q": "Code review: a teammate renumbers `string name = 2;` to `= 7` 'to group related fields'. Ship it?",
+         "options": [
+          "Yes — numbers are internal bookkeeping, regenerated at compile time",
+          "Yes, provided the server and the app are redeployed together in the same release train",
+          "No — shipped clients still send name as field 2, which new decoders skip as unknown",
+          "No — renumbering a field forces every HTTP/2 connection to restart"
+         ],
+         "correct": 2,
+         "explain": "Field numbers ARE the wire contract, and mobile clients in the wild keep the old ones for months. Rename freely — names aren't on the wire — but retire numbers with `reserved` and never reuse them."
+        },
+        {
+         "q": "The same `{id: 300}` costs 9 bytes as JSON but 3 as protobuf. Where do the savings physically come from?",
+         "options": [
+          "gzip compression is built into the protobuf encoder",
+          "key names live in the schema; values are binary varints, not text digits",
+          "protobuf strips braces, quotes, and whitespace but keeps names and digits as text",
+          "HTTP/2 header compression applies to the body as well"
+         ],
+         "correct": 1,
+         "explain": "`\"id\":` collapses to the single byte `08`, and 300 becomes two binary bytes instead of three ASCII digits. Same information, minus everything both sides already know."
+        },
+        {
+         "q": "A field holds small deltas that are frequently negative. Why declare it `sint32` instead of `int32`?",
+         "options": [
+          "int32 cannot represent negative values on the wire at all",
+          "zigzag encoding folds small negatives to small positives — -1 costs 1 byte, not 10",
+          "sint32 stores the sign bit inside the field key itself",
+          "strict decoders treat negative int32 payloads as malformed and drop the whole message"
+         ],
+         "correct": 1,
+         "explain": "Plain `int32` sign-extends to 64 bits before varint-encoding — executed: -1 costs `FF FF FF FF FF FF FF FF FF 01`. Zigzag folds the number line (0, -1, 1, -2 → 0, 1, 2, 3) so magnitude, not sign, sets the size."
+        }
+       ]
+      ]
+     },
+     "transfer": "In the work app, open one generated `*.pb.swift` file next to the `.proto` it came from. Pick a message you actually send, and for two of its fields compute the key byte by hand — `(number << 3) | wireType` — then check whether the `.proto` has any `reserved` statements guarding retired field numbers. If it doesn't, you now know what to ask the backend team about their renumbering discipline.",
+     "verify": "func varint(_ n: UInt64) -> [UInt8] {\n    var v = n, o: [UInt8] = []\n    repeat { var b = UInt8(v & 0x7F); v >>= 7; if v != 0 { b |= 0x80 }; o.append(b) } while v != 0\n    return o\n}\nlet hex: ([UInt8]) -> String = { $0.map { String(format: \"%02X\", $0) }.joined(separator: \" \") }\nprint(hex(varint(300)))                            // AC 02\nprint(hex(varint(1 << 3 | 0) + varint(150)))       // 08 96 01 — the protobuf docs' canonical Test1 message\nprint(hex(varint(UInt64(bitPattern: Int64(-1)))))  // FF FF FF FF FF FF FF FF FF 01 — int32 -1 costs 10 bytes\nstruct T: Codable { let a: Int }\nprint(try! JSONEncoder().encode(T(a: 150)).count)  // 9 — vs protobuf's 3 for the same value\n// All four executed on this Mac 2026-07-18; outputs match these comments.",
+     "goDeeper": "Protocol Buffers documentation, \"Encoding\" chapter — the byte-level reference this loop's claims were checked against. proto3 Language Guide, the \"Field Numbers\" and \"Reserved\" sections. apple/swift-protobuf's generated-code documentation for what protoc emits in Swift. \"gRPC: Up and Running\" ch. 4 for this format in its gRPC context."
+    }
+   ]
   }
  ]
 };

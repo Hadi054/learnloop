@@ -8846,6 +8846,108 @@ const CUR = {
      "goDeeper": "Re-read your own History tab, block by block — it's the walk's supporting evidence, 92 loops deep. \"Designing Data-Intensive Applications\" when you want the server side of these stories. And the App Store capstone: the only goDeeper that ships."
     }
    ]
+  },
+  {
+   "id": "b7",
+   "name": "Protocols on the Wire",
+   "tagline": "gRPC over HTTP/2 — schemas, frames, streams, and trust",
+   "loops": [
+    {
+     "id": "b7-01",
+     "title": "Protocol Buffers: the wire format",
+     "concept": {
+      "definition": "Protocol Buffers is a schema-first binary serialization format: message shapes are declared once in a `.proto` file, and a compiler generates matching native types from it — Swift structs on your side. On the wire each field travels as a compact key–value pair, where the key is just the field number and wire type packed into a varint, so names, types, and defaults live in the schema both sides compiled — not in the bytes.",
+      "code": "// user.proto                    // protoc --swift_out generates:\n// message User {                 struct User {          // SwiftProtobuf\n//   int32  id   = 1;               var id: Int32 = 0\n//   string name = 2;               var name: String = \"\"\n// }                              }\n\nvar u = User(); u.id = 300; u.name = \"hi\"\n// try u.serializedData() — 7 bytes:\n//   08 AC 02  12 02 68 69\n//   │  └─300  │  │  └─ \"hi\" as UTF-8\n//   │         │  └─ length 2\n//   │         └─ key 0x12 = (2 << 3) | 2: field 2, length-delimited\n//   └─ key 0x08 = (1 << 3) | 0: field 1, varint\n//\n// same value as JSON: {\"id\":300,\"name\":\"hi\"} — 22 bytes",
+      "underlying": "The wire is nothing but repeated key–value pairs. The key is one varint holding `(fieldNumber << 3) | wireType` — wire type 0 = varint, 2 = length-delimited (strings, bytes, nested messages). A varint spends each byte as 7 payload bits plus a continuation flag in the high bit, least-significant group first: 300 is binary `100101100`, so its low seven bits `0101100` ship first with the flag set (`AC`), then the remaining `10` (`02`). Field NAMES never leave the `.proto` — exactly like b0-01's variable names compiling away into addresses. Both ends compiled the same schema, so the bytes only carry what the schema can't predict.\n\nWhy smaller — three mechanisms, all executed on this Mac: `\"id\": 300` costs nine JSON bytes (`{\"a\":150}` measured 9 via JSONEncoder) but three protobuf bytes, because the name became the single byte `08` and the number became binary instead of ASCII digits. Default values are omitted ENTIRELY — a proto3 `User` with id 0 and empty name serializes to zero bytes, and the decoder rebuilds it from the schema's defaults. And signed types choose their cost: plain `int32 -1` sign-extends to 64 bits before varint-encoding, costing ten bytes (`FF × 9, 01` — executed), while `sint32` zigzag-folds the number line (0, -1, 1, -2 → 0, 1, 2, 3) so small negatives stay one byte.\n\nWhy stricter: the generated struct gives every field a declared type checked at compile time — the server cannot quietly turn `id` into a string without decode failures, where JSON would happily hand you the surprise at runtime (b4-03's whole battle). The wire type also tells a decoder how to SKIP a field it doesn't know, which is protobuf's compatibility mechanism: old clients ignore new fields, new clients fill absent old ones with defaults. The price of that mechanism is the one iron rule — field numbers are forever.",
+      "whyItMatters": "Every message your work app exchanges is these bytes, and when a backend teammate 'cleans up' a `.proto`, field numbers are the thing that must not change. Interviewers ask 'why is protobuf smaller than JSON' — the answer is one sentence about schemas, varints, and omitted defaults."
+     },
+     "exercise": {
+      "prompt": "Charles captured this 7-byte request body from your app. Using the schema in the comments, decode it by hand — every byte. Then predict: what does a `User` with id 0 and empty name serialize to?",
+      "code": "// message User {\n//   int32  id   = 1;\n//   string name = 2;\n// }\n//\n// captured body:\n// 08 AC 02 12 02 68 69\n//\n// key = (fieldNumber << 3) | wireType\n// wire types: 0 = varint, 2 = length-delimited",
+      "solution": "`08` = (1 << 3) | 0 → field 1, varint. `AC` has its high bit set (more bytes follow); its payload bits are `0101100` = 44. `02` contributes 2 << 7 = 256. 256 + 44 = 300 → id = 300.\n\n`12` = (2 << 3) | 2 → field 2, length-delimited. `02` = length 2. `68 69` = UTF-8 for \"hi\" → name = \"hi\".\n\nResult: User(id: 300, name: \"hi\").\n\nSecond prediction: ZERO bytes — an empty Data. Both fields hold proto3 defaults, and defaults are omitted from the wire entirely; the decoder rebuilds User(id: 0, name: \"\") from the schema.",
+      "explanation": "Notice the decoder never needed the words `id` or `name` — both ends compiled the same `.proto`, so the bytes carry only what the schema can't predict. That's also why decoding with a mismatched schema version doesn't error: unknown field numbers are skipped by wire type, which is protobuf's compatibility superpower and its quietest source of silently-missing data."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what does a `.proto` file give you, and where do protobuf's size and strictness advantages over JSON physically come from?",
+      "modelAnswer": "A `.proto` file is the contract: message shapes are declared once, and both the server and my app generate native types from it — typed Swift structs on my side. Messages are smaller than JSON because names never travel — each field's key is a varint packing its number and wire type, values are binary varints rather than text digits, and default values are omitted from the wire entirely. They're stricter because the schema is compiled into both ends: every field has a declared type checked at build time, and the field numbers form a wire contract that outlives any rename.",
+      "sets": [
+       [
+        {
+         "q": "On the wire, a protobuf field is identified by…",
+         "options": [
+          "its UTF-8 name, written just before the value bytes",
+          "its position in the .proto declaration order",
+          "its field number and wire type, packed into one varint key",
+          "an index into a table both sides negotiate at connect time"
+         ],
+         "correct": 2,
+         "explain": "Names never leave the `.proto` — both sides compiled it, so the wire needs only `(number << 3) | wireType`: `08` means field 1 varint, `12` means field 2 length-delimited."
+        },
+        {
+         "q": "`varint(300)` = `AC 02`. Why does the first byte `AC` have its high bit set?",
+         "options": [
+          "It marks the whole number as unsigned",
+          "It says another byte of this varint follows",
+          "It flags this field as length-delimited data",
+          "It carries the sign for negative numbers"
+         ],
+         "correct": 1,
+         "explain": "Each varint byte spends 7 bits on payload and the 8th as a continuation flag. 300 needs 9 bits, so two bytes: the low 7 bits ship first with the flag set, then the rest."
+        },
+        {
+         "q": "A proto3 `int32 count = 4;` currently equals 0. What does the encoder emit for it?",
+         "options": [
+          "`20 00` — the field key, then one zero byte",
+          "a one-byte null marker written in the field's declared position",
+          "nothing — the field is omitted; the decoder supplies 0",
+          "`20` alone — the key with an empty payload"
+         ],
+         "correct": 2,
+         "explain": "Defaults don't travel: the schema is the other half of the data, so absence and 0 are the same thing in proto3. That's also why 'was it actually sent?' needs `optional` or a wrapper type."
+        }
+       ],
+       [
+        {
+         "q": "Code review: a teammate renumbers `string name = 2;` to `= 7` 'to group related fields'. Ship it?",
+         "options": [
+          "Yes — numbers are internal bookkeeping, regenerated at compile time",
+          "Yes, provided the server and the app are redeployed together in the same release train",
+          "No — shipped clients still send name as field 2, which new decoders skip as unknown",
+          "No — renumbering a field forces every HTTP/2 connection to restart"
+         ],
+         "correct": 2,
+         "explain": "Field numbers ARE the wire contract, and mobile clients in the wild keep the old ones for months. Rename freely — names aren't on the wire — but retire numbers with `reserved` and never reuse them."
+        },
+        {
+         "q": "The same `{id: 300}` costs 9 bytes as JSON but 3 as protobuf. Where do the savings physically come from?",
+         "options": [
+          "gzip compression is built into the protobuf encoder",
+          "key names live in the schema; values are binary varints, not text digits",
+          "protobuf strips braces, quotes, and whitespace but keeps names and digits as text",
+          "HTTP/2 header compression applies to the body as well"
+         ],
+         "correct": 1,
+         "explain": "`\"id\":` collapses to the single byte `08`, and 300 becomes two binary bytes instead of three ASCII digits. Same information, minus everything both sides already know."
+        },
+        {
+         "q": "A field holds small deltas that are frequently negative. Why declare it `sint32` instead of `int32`?",
+         "options": [
+          "int32 cannot represent negative values on the wire at all",
+          "zigzag encoding folds small negatives to small positives — -1 costs 1 byte, not 10",
+          "sint32 stores the sign bit inside the field key itself",
+          "strict decoders treat negative int32 payloads as malformed and drop the whole message"
+         ],
+         "correct": 1,
+         "explain": "Plain `int32` sign-extends to 64 bits before varint-encoding — executed: -1 costs `FF FF FF FF FF FF FF FF FF 01`. Zigzag folds the number line (0, -1, 1, -2 → 0, 1, 2, 3) so magnitude, not sign, sets the size."
+        }
+       ]
+      ]
+     },
+     "transfer": "In the work app, open one generated `*.pb.swift` file next to the `.proto` it came from. Pick a message you actually send, and for two of its fields compute the key byte by hand — `(number << 3) | wireType` — then check whether the `.proto` has any `reserved` statements guarding retired field numbers. If it doesn't, you now know what to ask the backend team about their renumbering discipline.",
+     "verify": "func varint(_ n: UInt64) -> [UInt8] {\n    var v = n, o: [UInt8] = []\n    repeat { var b = UInt8(v & 0x7F); v >>= 7; if v != 0 { b |= 0x80 }; o.append(b) } while v != 0\n    return o\n}\nlet hex: ([UInt8]) -> String = { $0.map { String(format: \"%02X\", $0) }.joined(separator: \" \") }\nprint(hex(varint(300)))                            // AC 02\nprint(hex(varint(1 << 3 | 0) + varint(150)))       // 08 96 01 — the protobuf docs' canonical Test1 message\nprint(hex(varint(UInt64(bitPattern: Int64(-1)))))  // FF FF FF FF FF FF FF FF FF 01 — int32 -1 costs 10 bytes\nstruct T: Codable { let a: Int }\nprint(try! JSONEncoder().encode(T(a: 150)).count)  // 9 — vs protobuf's 3 for the same value\n// All four executed on this Mac 2026-07-18; outputs match these comments.",
+     "goDeeper": "Protocol Buffers documentation, \"Encoding\" chapter — the byte-level reference this loop's claims were checked against. proto3 Language Guide, the \"Field Numbers\" and \"Reserved\" sections. apple/swift-protobuf's generated-code documentation for what protoc emits in Swift. \"gRPC: Up and Running\" ch. 4 for this format in its gRPC context."
+    }
+   ]
   }
  ]
 };
@@ -8931,13 +9033,13 @@ function loopPos(loop){ const b = blockOf(loop); return {b, i:b.loops.indexOf(lo
 
 /* ---------- rendering helpers ---------- */
 const app = document.getElementById("app");
-function esc(s){ return s.replace(/&/g,"&amp;").replace(/<\/g,"&lt;").replace(/>/g,"&gt;"); }
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function fmt(s){ // paragraphs + `inline code`
-  return esc(s).split(/\n\n+/).map(p=>"<p>"+p.replace(/`([^`]+)`/g,"<code>$1<\/code>").replace(/\n/g,"<br>")+"<\/p>").join("");
+  return esc(s).split(/\n\n+/).map(p=>"<p>"+p.replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\n/g,"<br>")+"</p>").join("");
 }
 function codeblock(c){
   const kw = /\b(func|var|let|class|struct|enum|return|if|else|while|for|in|init|inout|import|nil|true|false|print)\b/g;
-  return "<pre>"+esc(c).replace(kw,'<span class="k">$1<\/span>')+"<\/pre>";
+  return "<pre>"+esc(c).replace(kw,'<span class="k">$1</span>')+"</pre>";
 }
 function hexOf(n){ return "0x"+n.toString(16).toUpperCase().padStart(2,"0"); }
 function screen(html){ app.innerHTML = html; window.scrollTo(0,0); }
@@ -8950,44 +9052,44 @@ function home(){
   const done = doneIds().length;
   const cells = L.map(l=>{
     const rec = S.log[l.id];
-    if(!rec) return '<div class="cell"><\/div>';
-    return '<div class="cell done'+(rec.score<4?" weak":"")+'"><\/div>';
+    if(!rec) return '<div class="cell"></div>';
+    return '<div class="cell done'+(rec.score<4?" weak":"")+'"></div>';
   }).join("");
   const due = dueConcepts().length;
   const finished = allDone();
   let btn;
   if(due >= 1){
-    btn = '<button class="primary" onclick="startReview(false)">Start review — '+due+' concept'+(due===1?"":"s")+' due<\/button>';
-    if(!finished) btn += '<button class="ghost" onclick="startLoop()">Skip to new loop instead<\/button>';
-    btn += '<div class="sub mt8">Spaced repetition: passed concepts return after 1, 3, 7, then 21 days. Reviews first keeps them short.<\/div>';
+    btn = '<button class="primary" onclick="startReview(false)">Start review — '+due+' concept'+(due===1?"":"s")+' due</button>';
+    if(!finished) btn += '<button class="ghost" onclick="startLoop()">Skip to new loop instead</button>';
+    btn += '<div class="sub mt8">Spaced repetition: passed concepts return after 1, 3, 7, then 21 days. Reviews first keeps them short.</div>';
   }
-  else if(finished) btn = '<button class="primary" onclick="startReview(true)">Review weakest concepts<\/button>'+
-    '<div class="feedback good">All '+CUR.blocks.length+' blocks complete and nothing due — every cell filled. Revisit any loop from Browse, or drill from Interview. Export your progress from Data.<\/div>';
+  else if(finished) btn = '<button class="primary" onclick="startReview(true)">Review weakest concepts</button>'+
+    '<div class="feedback good">All '+CUR.blocks.length+' blocks complete and nothing due — every cell filled. Revisit any loop from Browse, or drill from Interview. Export your progress from Data.</div>';
   else { const nl = nextLoop();
-    btn = '<button class="primary" onclick="startLoop()">Start loop '+(done+1)+' — '+esc(nl.title)+'<\/button>'; }
+    btn = '<button class="primary" onclick="startLoop()">Start loop '+(done+1)+' — '+esc(nl.title)+'</button>'; }
   screen(`
-    <div class="eyebrow">learnloop <span class="dim">// block ${bi}<\/span><\/div>
-    <h1>${esc(blk.name)}<\/h1>
-    <div class="sub">${esc(blk.tagline)}<\/div>
-    ${bi>0 && !finished ? '<div class="sub" style="color:var(--green)">Block '+(bi-1)+' complete — memory installed.<\/div>' : ''}
+    <div class="eyebrow">learnloop <span class="dim">// block ${bi}</span></div>
+    <h1>${esc(blk.name)}</h1>
+    <div class="sub">${esc(blk.tagline)}</div>
+    ${bi>0 && !finished ? '<div class="sub" style="color:var(--green)">Block '+(bi-1)+' complete — memory installed.</div>' : ''}
     <div class="stats">
-      <div class="stat"><div class="n">${S.streak}<\/div><div class="l">day streak<\/div><\/div>
-      <div class="stat"><div class="n">${S.loops}<\/div><div class="l">loops run<\/div><\/div>
-      <div class="stat"><div class="n">${done}<span style="color:var(--dim);font-size:16px">/${L.length}<\/span><\/div><div class="l">concepts<\/div><\/div>
-    <\/div>
+      <div class="stat"><div class="n">${S.streak}</div><div class="l">day streak</div></div>
+      <div class="stat"><div class="n">${S.loops}</div><div class="l">loops run</div></div>
+      <div class="stat"><div class="n">${done}<span style="color:var(--dim);font-size:16px">/${L.length}</span></div><div class="l">concepts</div></div>
+    </div>
     <div class="card">
-      <div class="cellcap"><span>0x00<\/span><span>memory installed<\/span><span>${hexOf(L.length)}<\/span><\/div>
-      <div class="cells">${cells}<\/div>
-    <\/div>
+      <div class="cellcap"><span>0x00</span><span>memory installed</span><span>${hexOf(L.length)}</span></div>
+      <div class="cells">${cells}</div>
+    </div>
     ${btn}
     <div class="row">
-      <button onclick="browse()">Browse<\/button>
-      <button onclick="interview()">Interview<\/button>
-    <\/div>
+      <button onclick="browse()">Browse</button>
+      <button onclick="interview()">Interview</button>
+    </div>
     <div class="row">
-      <button onclick="history_()">History<\/button>
-      <button onclick="dataScreen()">Data<\/button>
-    <\/div>
+      <button onclick="history_()">History</button>
+      <button onclick="dataScreen()">Data</button>
+    </div>
   `);
 }
 
@@ -9002,50 +9104,50 @@ function startLoop(loop){
 function conceptCardsHtml(loop){
   return `
     <div class="card">
-      <div class="layer-label">Definition <span class="layer-note">— say this to an interviewer<\/span><\/div>
+      <div class="layer-label">Definition <span class="layer-note">— say this to an interviewer</span></div>
       ${fmt(loop.concept.definition)}
-    <\/div>
+    </div>
     <div class="card">
-      <div class="layer-label">Example<\/div>
+      <div class="layer-label">Example</div>
       ${codeblock(loop.concept.code)}
-    <\/div>
+    </div>
     <div class="card">
-      <div class="layer-label amb">Under the hood<\/div>
+      <div class="layer-label amb">Under the hood</div>
       ${fmt(loop.concept.underlying)}
-    <\/div>
+    </div>
     <div class="card">
-      <div class="layer-label">Why it matters<\/div>
+      <div class="layer-label">Why it matters</div>
       ${fmt(loop.concept.whyItMatters)}
-    <\/div>`;
+    </div>`;
 }
 /* optional enrichment fields (Block 1+): shown after passing, and on re-reads */
 function extrasHtml(loop){
   let h = "";
   if(loop.transfer) h += `<div class="card">
-      <div class="layer-label amb">Transfer <span class="layer-note">— apply it in your real code<\/span><\/div>
-      ${fmt(loop.transfer)}<\/div>`;
+      <div class="layer-label amb">Transfer <span class="layer-note">— apply it in your real code</span></div>
+      ${fmt(loop.transfer)}</div>`;
   if(loop.verify) h += `<div class="card">
-      <div class="layer-label">Verify it yourself <span class="layer-note">— run it, don't trust it<\/span><\/div>
-      ${codeblock(loop.verify)}<\/div>`;
+      <div class="layer-label">Verify it yourself <span class="layer-note">— run it, don't trust it</span></div>
+      ${codeblock(loop.verify)}</div>`;
   if(loop.goDeeper) h += `<div class="card">
-      <div class="layer-label">Go deeper<\/div>
-      ${fmt(loop.goDeeper)}<\/div>`;
+      <div class="layer-label">Go deeper</div>
+      ${fmt(loop.goDeeper)}</div>`;
   return h;
 }
 function concept(loop, mode){
   const p = loopPos(loop);
   let footer, note = "";
-  if(mode==="history") footer = '<button onclick="history_()">Back to history<\/button>';
+  if(mode==="history") footer = '<button onclick="history_()">Back to history</button>';
   else if(mode==="browse"){
     note = " · preview";
     footer = (S.log[loop.id] ? ""
-      : '<button class="primary" onclick="startLoop(browsed)">Start this loop<\/button>')
-      + '<button onclick="browse()">Back to browse<\/button>';
+      : '<button class="primary" onclick="startLoop(browsed)">Start this loop</button>')
+      + '<button onclick="browse()">Back to browse</button>';
   }
-  else footer = '<button class="primary" onclick="problem()">Try the problem<\/button><button class="ghost" onclick="confirmExit()">Exit loop<\/button>';
+  else footer = '<button class="primary" onclick="problem()">Try the problem</button><button class="ghost" onclick="confirmExit()">Exit loop</button>';
   screen(`
-    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} · concept ${p.i+1}/${p.n}${note}<\/span><\/div>
-    <h1>${esc(loop.title)}<\/h1>
+    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} · concept ${p.i+1}/${p.n}${note}</span></div>
+    <h1>${esc(loop.title)}</h1>
     ${conceptCardsHtml(loop)}
     ${mode ? extrasHtml(loop) : ""}
     ${footer}
@@ -9056,32 +9158,32 @@ function peekConcept(loop, returnFn){
   peekReturn = returnFn;
   const p = loopPos(loop);
   screen(`
-    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} · concept ${p.i+1}/${p.n} · reference<\/span><\/div>
-    <h1>${esc(loop.title)}<\/h1>
+    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} · concept ${p.i+1}/${p.n} · reference</span></div>
+    <h1>${esc(loop.title)}</h1>
     ${conceptCardsHtml(loop)}
-    <button class="primary" onclick="resumePeek()">Back to question<\/button>
+    <button class="primary" onclick="resumePeek()">Back to question</button>
   `);
 }
 function resumePeek(){ const fn = peekReturn; peekReturn = null; if(fn) fn(); }
 function problem(){
   const l = sess.loop, idx = loopPos(l).i;
   screen(`
-    <div class="eyebrow">${hexOf(idx)} <span class="dim">// problem<\/span><\/div>
-    <h2>Solve before you reveal<\/h2>
-    <div class="card">${fmt(l.exercise.prompt)}${codeblock(l.exercise.code)}<\/div>
-    <div id="sol"><\/div>
-    <button class="primary" id="revealBtn" onclick="reveal()">Reveal solution<\/button>
-    <button class="ghost" onclick="confirmExit()">Exit loop<\/button>
+    <div class="eyebrow">${hexOf(idx)} <span class="dim">// problem</span></div>
+    <h2>Solve before you reveal</h2>
+    <div class="card">${fmt(l.exercise.prompt)}${codeblock(l.exercise.code)}</div>
+    <div id="sol"></div>
+    <button class="primary" id="revealBtn" onclick="reveal()">Reveal solution</button>
+    <button class="ghost" onclick="confirmExit()">Exit loop</button>
   `);
 }
 function reveal(){
   const l = sess.loop;
   document.getElementById("sol").innerHTML = `
     <div class="card">
-      <div class="layer-label amb">Solution<\/div>
+      <div class="layer-label amb">Solution</div>
       ${codeblock(l.exercise.solution)}
       ${fmt(l.exercise.explanation)}
-    <\/div>`;
+    </div>`;
   const b = document.getElementById("revealBtn");
   b.textContent = "Continue to assessment";
   b.onclick = ()=>mcq();
@@ -9090,13 +9192,13 @@ function mcq(){
   const l = sess.loop, idx = loopPos(l).i;
   const q = l.assess.sets[0][sess.qi];
   screen(`
-    <div class="eyebrow">${hexOf(idx)} <span class="dim">// assess · question ${sess.qi+1}/3<\/span><\/div>
-    <h2>${esc(q.q).replace(/`([^`]+)`/g,"<code>$1<\/code>")}<\/h2>
+    <div class="eyebrow">${hexOf(idx)} <span class="dim">// assess · question ${sess.qi+1}/3</span></div>
+    <h2>${esc(q.q).replace(/`([^`]+)`/g,"<code>$1</code>")}</h2>
     <div id="opts">${q.options.map((o,i)=>
-      `<button class="opt" onclick="answer(${i})"><span class="mono">${esc(o)}<\/span><\/button>`).join("")}
-    <\/div>
-    <div id="fb"><\/div>
-    <button class="ghost" id="peekBtn" onclick="peekConcept(sess.loop, mcq)">View concept<\/button>
+      `<button class="opt" onclick="answer(${i})"><span class="mono">${esc(o)}</span></button>`).join("")}
+    </div>
+    <div id="fb"></div>
+    <button class="ghost" id="peekBtn" onclick="peekConcept(sess.loop, mcq)">View concept</button>
   `);
 }
 function answer(i){
@@ -9111,22 +9213,22 @@ function answer(i){
   const right = i===q.correct;
   if(right) sess.correct++;
   document.getElementById("fb").innerHTML =
-    `<div class="feedback ${right?"good":"bad"}">${right?"Correct.":"Not quite."} ${fmt(q.explain)}<\/div>
-     <button class="primary" onclick="${sess.qi<2?"nextQ()":"explain()"}">${sess.qi<2?"Next question":"Last step: explain it"}<\/button>`;
+    `<div class="feedback ${right?"good":"bad"}">${right?"Correct.":"Not quite."} ${fmt(q.explain)}</div>
+     <button class="primary" onclick="${sess.qi<2?"nextQ()":"explain()"}">${sess.qi<2?"Next question":"Last step: explain it"}</button>`;
 }
 function nextQ(){ sess.qi++; mcq(); }
 function explain(){
   const l = sess.loop, idx = loopPos(l).i;
   screen(`
-    <div class="eyebrow">${hexOf(idx)} <span class="dim">// assess · articulate<\/span><\/div>
-    <h2>Say it in your own words<\/h2>
+    <div class="eyebrow">${hexOf(idx)} <span class="dim">// assess · articulate</span></div>
+    <h2>Say it in your own words</h2>
     <div class="card mt8">${fmt(l.assess.explainPrompt)}
-      <textarea id="ans" placeholder="Write in English, as if answering an interviewer…">${esc(sess.draftAnswer||"")}<\/textarea>
-    <\/div>
-    <div id="cmp"><\/div>
-    <button class="primary" onclick="compare()">Compare with model answer<\/button>
-    <button class="ghost" onclick="saveDraftAndPeek()">View concept<\/button>
-    <button class="ghost" onclick="confirmExit()">Exit loop<\/button>
+      <textarea id="ans" placeholder="Write in English, as if answering an interviewer…">${esc(sess.draftAnswer||"")}</textarea>
+    </div>
+    <div id="cmp"></div>
+    <button class="primary" onclick="compare()">Compare with model answer</button>
+    <button class="ghost" onclick="saveDraftAndPeek()">View concept</button>
+    <button class="ghost" onclick="confirmExit()">Exit loop</button>
   `);
   if(sess.comparedShown){ compare(); if(sess.rating!==null) rate(sess.rating); }
 }
@@ -9141,16 +9243,16 @@ function compare(){
   sess.comparedShown = true;
   document.getElementById("cmp").innerHTML = `
     <div class="card">
-      <div class="layer-label amb">Model answer<\/div>
+      <div class="layer-label amb">Model answer</div>
       ${fmt(l.assess.modelAnswer)}
-    <\/div>
+    </div>
     <div class="card">
-      <div class="layer-label">Honest self-rating — how close was your answer?<\/div>
+      <div class="layer-label">Honest self-rating — how close was your answer?</div>
       <div class="raterow">${[0,1,2,3,4,5].map(n=>
-        `<button class="rate" id="r${n}" onclick="rate(${n})">${n}<\/button>`).join("")}<\/div>
-      <div class="sub mt8">0 = couldn't say it · 3 = the idea, roughly · 5 = interview-ready<\/div>
-    <\/div>
-    <button class="primary" onclick="finishLoop()">Finish loop<\/button>`;
+        `<button class="rate" id="r${n}" onclick="rate(${n})">${n}</button>`).join("")}</div>
+      <div class="sub mt8">0 = couldn't say it · 3 = the idea, roughly · 5 = interview-ready</div>
+    </div>
+    <button class="primary" onclick="finishLoop()">Finish loop</button>`;
   document.querySelector("button.primary:not(.rate)")?.scrollIntoView({block:"end"});
 }
 function rate(n){ sess.rating = n;
@@ -9168,16 +9270,16 @@ function finishLoop(){
   }
   const idx = loopPos(sess.loop).i;
   screen(`
-    <div class="eyebrow">${hexOf(idx)} <span class="dim">// result<\/span><\/div>
-    <div class="score-big ${passed?"pass":"fail"}">${score.toFixed(1)}<span style="font-size:20px;color:var(--dim)"> / 5<\/span><\/div>
-    <div class="center sub">${sess.correct}/3 questions · self-rating ${sess.rating}/5<\/div>
+    <div class="eyebrow">${hexOf(idx)} <span class="dim">// result</span></div>
+    <div class="score-big ${passed?"pass":"fail"}">${score.toFixed(1)}<span style="font-size:20px;color:var(--dim)"> / 5</span></div>
+    <div class="center sub">${sess.correct}/3 questions · self-rating ${sess.rating}/5</div>
     <div class="card">${passed
-      ? fmt("**Installed.** \u201C"+sess.loop.title+"\u201D is saved with score "+score.toFixed(1)+". Low scores get revisited automatically in review loops.").replace(/\*\*(.+?)\*\*/g,"<b>$1<\/b>")
-      : fmt("**Not yet.** Below "+PASS+".0 the concept isn\u2019t saved \u2014 re-read it and run the loop again. That\u2019s the system working, not a failure.").replace(/\*\*(.+?)\*\*/g,"<b>$1<\/b>")}
-    <\/div>
+      ? fmt("**Installed.** \u201C"+sess.loop.title+"\u201D is saved with score "+score.toFixed(1)+". Low scores get revisited automatically in review loops.").replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")
+      : fmt("**Not yet.** Below "+PASS+".0 the concept isn\u2019t saved \u2014 re-read it and run the loop again. That\u2019s the system working, not a failure.").replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")}
+    </div>
     ${passed ? extrasHtml(sess.loop) : ""}
-    ${passed ? "" : '<button onclick="retry()">Re-read this concept<\/button>'}
-    <button class="primary" onclick="home()">Home<\/button>
+    ${passed ? "" : '<button onclick="retry()">Re-read this concept</button>'}
+    <button class="primary" onclick="home()">Home</button>
   `);
 }
 function retry(){ const l = sess.loop; sess = {loop:l, qi:0, correct:0, rating:null, draftAnswer:"", comparedShown:false}; concept(l); }
@@ -9190,27 +9292,27 @@ function startReview(manual){
   if(pool.length < 1){ alert("Nothing to review yet — pass a loop first."); return home(); }
   rev = {manual, items: pool.map(l=>({loop:l, set: 1-(S.log[l.id].set||0), correct:0})), i:0, qi:0};
   screen(`
-    <div class="eyebrow">review <span class="dim">// ${manual ? "weakest concepts" : "due today"}<\/span><\/div>
-    <h1>Review loop<\/h1>
+    <div class="eyebrow">review <span class="dim">// ${manual ? "weakest concepts" : "due today"}</span></div>
+    <h1>Review loop</h1>
     <div class="card">
-      <p>${manual ? "Fresh questions on your lowest-scoring concepts." : "Fresh questions on concepts due for review."} New scores update each concept and schedule its next visit.<\/p>
-      ${rev.items.map(it=>`<div class="histitem"><span>${esc(it.loop.title)}<\/span><span class="badge w">${S.log[it.loop.id].score.toFixed(1)}<\/span><\/div>`).join("")}
-    <\/div>
-    <button class="primary" onclick="revQ()">Begin — ${rev.items.length*3} questions<\/button>
-    <button class="ghost" onclick="home()">Back<\/button>
+      <p>${manual ? "Fresh questions on your lowest-scoring concepts." : "Fresh questions on concepts due for review."} New scores update each concept and schedule its next visit.</p>
+      ${rev.items.map(it=>`<div class="histitem"><span>${esc(it.loop.title)}</span><span class="badge w">${S.log[it.loop.id].score.toFixed(1)}</span></div>`).join("")}
+    </div>
+    <button class="primary" onclick="revQ()">Begin — ${rev.items.length*3} questions</button>
+    <button class="ghost" onclick="home()">Back</button>
   `);
 }
 function revQ(){
   const it = rev.items[rev.i];
   const q = it.loop.assess.sets[it.set][rev.qi];
   screen(`
-    <div class="eyebrow">review <span class="dim">// ${esc(it.loop.title)} · q${rev.qi+1}/3<\/span><\/div>
-    <h2>${esc(q.q).replace(/`([^`]+)`/g,"<code>$1<\/code>")}<\/h2>
+    <div class="eyebrow">review <span class="dim">// ${esc(it.loop.title)} · q${rev.qi+1}/3</span></div>
+    <h2>${esc(q.q).replace(/`([^`]+)`/g,"<code>$1</code>")}</h2>
     <div id="opts">${q.options.map((o,i)=>
-      `<button class="opt" onclick="revAnswer(${i})"><span class="mono">${esc(o)}<\/span><\/button>`).join("")}
-    <\/div>
-    <div id="fb"><\/div>
-    <button class="ghost" id="peekBtn" onclick="peekConcept(rev.items[rev.i].loop, revQ)">View concept<\/button>
+      `<button class="opt" onclick="revAnswer(${i})"><span class="mono">${esc(o)}</span></button>`).join("")}
+    </div>
+    <div id="fb"></div>
+    <button class="ghost" id="peekBtn" onclick="peekConcept(rev.items[rev.i].loop, revQ)">View concept</button>
   `);
 }
 function revAnswer(i){
@@ -9224,8 +9326,8 @@ function revAnswer(i){
   const right = i===q.correct; if(right) it.correct++;
   const last = rev.i===rev.items.length-1 && rev.qi===2;
   document.getElementById("fb").innerHTML =
-    `<div class="feedback ${right?"good":"bad"}">${right?"Correct.":"Not quite."} ${fmt(q.explain)}<\/div>
-     <button class="primary" onclick="revNext()">${last?"See results":"Next"}<\/button>`;
+    `<div class="feedback ${right?"good":"bad"}">${right?"Correct.":"Not quite."} ${fmt(q.explain)}</div>
+     <button class="primary" onclick="revNext()">${last?"See results":"Next"}</button>`;
 }
 function revNext(){
   if(rev.qi<2){ rev.qi++; return revQ(); }
@@ -9243,14 +9345,14 @@ function revNext(){
   if(!rev.manual){ S.loops++; applyStreak(); }
   save();
   screen(`
-    <div class="eyebrow">review <span class="dim">// result<\/span><\/div>
-    <h1>Scores updated<\/h1>
+    <div class="eyebrow">review <span class="dim">// result</span></div>
+    <h1>Scores updated</h1>
     <div class="card">
-      ${rev.items.map(it=>`<div class="histitem"><span>${esc(it.loop.title)}<\/span>
-        <span class="badge ${it.correct>=2?"s":"w"}">${it.correct}/3 → ${(Math.round(it.correct/3*5*10)/10).toFixed(1)}<\/span><\/div>`).join("")}
-      <p class="sub mt8">Missed concepts come back tomorrow; solid ones climb the 1/3/7/21-day ladder. That's spaced repetition doing its job.<\/p>
-    <\/div>
-    <button class="primary" onclick="home()">Home<\/button>
+      ${rev.items.map(it=>`<div class="histitem"><span>${esc(it.loop.title)}</span>
+        <span class="badge ${it.correct>=2?"s":"w"}">${it.correct}/3 → ${(Math.round(it.correct/3*5*10)/10).toFixed(1)}</span></div>`).join("")}
+      <p class="sub mt8">Missed concepts come back tomorrow; solid ones climb the 1/3/7/21-day ladder. That's spaced repetition doing its job.</p>
+    </div>
+    <button class="primary" onclick="home()">Home</button>
   `);
 }
 
@@ -9262,24 +9364,24 @@ function browse(bi){
   if(browseBi >= CUR.blocks.length) browseBi = 0;
   const b = CUR.blocks[browseBi];
   const tabs = CUR.blocks.map((bl,i)=>
-    `<button class="blockbtn${i===browseBi?" sel":""}" onclick="browse(${i})">${esc(bl.id.toUpperCase())}<\/button>`).join("");
+    `<button class="blockbtn${i===browseBi?" sel":""}" onclick="browse(${i})">${esc(bl.id.toUpperCase())}</button>`).join("");
   const done = b.loops.filter(l=>S.log[l.id]).length;
   const rows = b.loops.map((l,i)=>{
     const r = S.log[l.id];
     return `<div class="histitem">
-      <span style="font-family:var(--mono);color:var(--dim);font-size:12px">${hexOf(i)}<\/span>
-      <span style="flex:1"><button class="linkbtn" style="margin:0" onclick="openLoop(${browseBi},${i})">${esc(l.title)}<\/button><\/span>
-      ${r?`<span class="badge ${r.score>=4?"s":"w"}">${r.score.toFixed(1)}<\/span>`:'<span class="badge">—<\/span>'}
-    <\/div>`;
+      <span style="font-family:var(--mono);color:var(--dim);font-size:12px">${hexOf(i)}</span>
+      <span style="flex:1"><button class="linkbtn" style="margin:0" onclick="openLoop(${browseBi},${i})">${esc(l.title)}</button></span>
+      ${r?`<span class="badge ${r.score>=4?"s":"w"}">${r.score.toFixed(1)}</span>`:'<span class="badge">—</span>'}
+    </div>`;
   }).join("");
   screen(`
-    <div class="eyebrow">browse <span class="dim">// pick a block, pick a loop<\/span><\/div>
-    <h1>${esc(b.name)}<\/h1>
-    <div class="sub">${esc(b.tagline)}<\/div>
-    <div class="blockrow">${tabs}<\/div>
-    <div class="card">${rows}<\/div>
-    <div class="sub mt8">${done}/${b.loops.length} installed. Tap a loop to read it; loops you haven't passed can be started from there. Out of order is allowed — but later loops build on earlier ones.<\/div>
-    <button class="primary" onclick="home()">Home<\/button>
+    <div class="eyebrow">browse <span class="dim">// pick a block, pick a loop</span></div>
+    <h1>${esc(b.name)}</h1>
+    <div class="sub">${esc(b.tagline)}</div>
+    <div class="blockrow">${tabs}</div>
+    <div class="card">${rows}</div>
+    <div class="sub mt8">${done}/${b.loops.length} installed. Tap a loop to read it; loops you haven't passed can be started from there. Out of order is allowed — but later loops build on earlier ones.</div>
+    <button class="primary" onclick="home()">Home</button>
   `);
 }
 function openLoop(bi, li){
@@ -9310,16 +9412,16 @@ let ivTimer = null;
 function interview(){
   const pool = passedLoops();
   screen(`
-    <div class="eyebrow">interview <span class="dim">// articulate under pressure<\/span><\/div>
-    <h1>Interview drill<\/h1>
+    <div class="eyebrow">interview <span class="dim">// articulate under pressure</span></div>
+    <h1>Interview drill</h1>
     <div class="card">
-      <p>Every concept you have passed, asked interview-style in shuffled order. Write your answer in English as if the interviewer is waiting — aim for under 90 seconds — then compare with the model answer and rate yourself.<\/p>
-      <p class="sub">Answers are saved on this device (last 100 kept). From Data you can copy a batch as text and paste it into claude.ai for English + technical feedback.<\/p>
-    <\/div>
+      <p>Every concept you have passed, asked interview-style in shuffled order. Write your answer in English as if the interviewer is waiting — aim for under 90 seconds — then compare with the model answer and rate yourself.</p>
+      <p class="sub">Answers are saved on this device (last 100 kept). From Data you can copy a batch as text and paste it into claude.ai for English + technical feedback.</p>
+    </div>
     ${pool.length
-      ? '<button class="primary" onclick="ivStart()">Start — '+pool.length+' concept'+(pool.length===1?"":"s")+'<\/button>'
-      : '<div class="feedback">Pass at least one loop first — the drill draws on concepts you have installed.<\/div>'}
-    <button class="ghost" onclick="home()">Home<\/button>
+      ? '<button class="primary" onclick="ivStart()">Start — '+pool.length+' concept'+(pool.length===1?"":"s")+'</button>'
+      : '<div class="feedback">Pass at least one loop first — the drill draws on concepts you have installed.</div>'}
+    <button class="ghost" onclick="home()">Home</button>
   `);
 }
 function ivStart(){
@@ -9334,14 +9436,14 @@ function ivStart(){
 function ivQ(){
   const l = iv.queue[iv.i];
   screen(`
-    <div class="eyebrow">interview <span class="dim">// ${iv.i+1}/${iv.queue.length} · ${esc(l.id)} · <\/span><span class="dim" id="ivt">0s<\/span><\/div>
-    <h2>${esc(l.title)}<\/h2>
+    <div class="eyebrow">interview <span class="dim">// ${iv.i+1}/${iv.queue.length} · ${esc(l.id)} · </span><span class="dim" id="ivt">0s</span></div>
+    <h2>${esc(l.title)}</h2>
     <div class="card">${fmt(l.assess.explainPrompt)}
-      <textarea id="ivans" placeholder="Answer in English, as if the interviewer is waiting…"><\/textarea>
-    <\/div>
-    <div id="ivcmp"><\/div>
-    <button class="primary" id="ivreveal" onclick="ivReveal()">Compare with model answer<\/button>
-    <button class="ghost" onclick="ivEnd()">End drill<\/button>
+      <textarea id="ivans" placeholder="Answer in English, as if the interviewer is waiting…"></textarea>
+    </div>
+    <div id="ivcmp"></div>
+    <button class="primary" id="ivreveal" onclick="ivReveal()">Compare with model answer</button>
+    <button class="ghost" onclick="ivEnd()">End drill</button>
   `);
   ivStartTimer();
 }
@@ -9366,15 +9468,15 @@ function ivReveal(){
   document.getElementById("ivreveal")?.remove();
   document.getElementById("ivcmp").innerHTML = `
     <div class="card">
-      <div class="layer-label amb">Model answer<\/div>
+      <div class="layer-label amb">Model answer</div>
       ${fmt(l.assess.modelAnswer)}
-    <\/div>
+    </div>
     <div class="card">
-      <div class="layer-label">How close were you?<\/div>
+      <div class="layer-label">How close were you?</div>
       <div class="raterow">${[0,1,2,3,4,5].map(n=>
-        `<button class="rate" id="ivr${n}" onclick="ivRate(${n})">${n}<\/button>`).join("")}<\/div>
-    <\/div>
-    <button class="primary" onclick="ivNext()">${iv.i < iv.queue.length-1 ? "Next question" : "Finish drill"}<\/button>`;
+        `<button class="rate" id="ivr${n}" onclick="ivRate(${n})">${n}</button>`).join("")}</div>
+    </div>
+    <button class="primary" onclick="ivNext()">${iv.i < iv.queue.length-1 ? "Next question" : "Finish drill"}</button>`;
 }
 function ivRate(n){ iv.rating = n;
   for(let i=0;i<=5;i++) document.getElementById("ivr"+i)?.classList.toggle("sel", i===n);
@@ -9393,13 +9495,13 @@ function ivNext(){
 function ivEnd(){ ivStopTimer(); ivDone(); }
 function ivDone(){
   screen(`
-    <div class="eyebrow">interview <span class="dim">// drill complete<\/span><\/div>
-    <h1>${iv.answered} answered<\/h1>
+    <div class="eyebrow">interview <span class="dim">// drill complete</span></div>
+    <h1>${iv.answered} answered</h1>
     <div class="card"><p>${iv.answered
       ? "Saved on this device. From the Data screen, copy your saved answers as text and paste a batch into claude.ai for English and technical feedback in one go."
-      : "Nothing saved — write an answer before revealing to build the habit. Thinking it is not the same as saying it."}<\/p><\/div>
-    <button class="primary" onclick="home()">Home<\/button>
-    <button onclick="dataScreen()">Data<\/button>
+      : "Nothing saved — write an answer before revealing to build the habit. Thinking it is not the same as saying it."}</p></div>
+    <button class="primary" onclick="home()">Home</button>
+    <button onclick="dataScreen()">Data</button>
   `);
 }
 
@@ -9411,19 +9513,19 @@ function history_(){
     const rows = b.loops.map((l,i)=>{
       const r = S.log[l.id];
       return `<div class="histitem">
-        <span style="font-family:var(--mono);color:var(--dim);font-size:12px">${hexOf(i)}<\/span>
-        <span style="flex:1">${r?'<button class="linkbtn" style="margin:0" onclick="openHist('+bi+','+i+')">'+esc(l.title)+"<\/button>":esc(l.title)}<\/span>
-        ${r?`<span class="badge ${r.score>=4?"s":"w"}">${r.score.toFixed(1)}<\/span>`:'<span class="badge">—<\/span>'}
-      <\/div>`;
+        <span style="font-family:var(--mono);color:var(--dim);font-size:12px">${hexOf(i)}</span>
+        <span style="flex:1">${r?'<button class="linkbtn" style="margin:0" onclick="openHist('+bi+','+i+')">'+esc(l.title)+"</button>":esc(l.title)}</span>
+        ${r?`<span class="badge ${r.score>=4?"s":"w"}">${r.score.toFixed(1)}</span>`:'<span class="badge">—</span>'}
+      </div>`;
     }).join("");
-    return `<div class="card"><div class="layer-label">${esc(b.id)} · ${esc(b.name)}<\/div>${rows}<\/div>`;
+    return `<div class="card"><div class="layer-label">${esc(b.id)} · ${esc(b.name)}</div>${rows}</div>`;
   }).join("");
   screen(`
-    <div class="eyebrow">history <span class="dim">// ${totalDone}/${total} installed<\/span><\/div>
-    <h1>Your memory map<\/h1>
+    <div class="eyebrow">history <span class="dim">// ${totalDone}/${total} installed</span></div>
+    <h1>Your memory map</h1>
     ${sections}
-    <div class="sub mt8">Tap an installed concept to re-read it anytime. Amber badge = weak (&lt;4.0), likely to appear in reviews.<\/div>
-    <button class="primary" onclick="home()">Home<\/button>
+    <div class="sub mt8">Tap an installed concept to re-read it anytime. Amber badge = weak (&lt;4.0), likely to appear in reviews.</div>
+    <button class="primary" onclick="home()">Home</button>
   `);
 }
 function openHist(bi, li){ concept(CUR.blocks[bi].loops[li], "history"); }
@@ -9431,33 +9533,33 @@ function openHist(bi, li){ concept(CUR.blocks[bi].loops[li], "history"); }
 /* ---------- DATA ---------- */
 function dataScreen(){
   screen(`
-    <div class="eyebrow">data <span class="dim">// backup &amp; restore<\/span><\/div>
-    <h1>Your progress<\/h1>
+    <div class="eyebrow">data <span class="dim">// backup &amp; restore</span></div>
+    <h1>Your progress</h1>
     <div class="card">
-      <div class="layer-label">Export<\/div>
-      <p class="sub">Progress lives in this browser's storage. Back it up before clearing browser data or switching phones.<\/p>
-      <button onclick="exportData()">Download backup file<\/button>
-      <button onclick="showExport()">Show as text to copy<\/button>
-      <div id="exp"><\/div>
-    <\/div>
+      <div class="layer-label">Export</div>
+      <p class="sub">Progress lives in this browser's storage. Back it up before clearing browser data or switching phones.</p>
+      <button onclick="exportData()">Download backup file</button>
+      <button onclick="showExport()">Show as text to copy</button>
+      <div id="exp"></div>
+    </div>
     <div class="card">
-      <div class="layer-label">Import<\/div>
-      <p class="sub">Paste a backup below to restore it. Replaces current progress.<\/p>
-      <textarea id="imp" placeholder='{"v":1,...}'><\/textarea>
-      <button onclick="importData()">Restore from pasted text<\/button>
-    <\/div>
+      <div class="layer-label">Import</div>
+      <p class="sub">Paste a backup below to restore it. Replaces current progress.</p>
+      <textarea id="imp" placeholder='{"v":1,...}'></textarea>
+      <button onclick="importData()">Restore from pasted text</button>
+    </div>
     <div class="card">
-      <div class="layer-label">Interview answers<\/div>
-      <p class="sub">${loadAnswers().length} saved on this device (last 100 kept). Copy a batch into claude.ai for English + technical feedback.<\/p>
-      <button onclick="showAnswers()">Show answers as text to copy<\/button>
-      <div id="ansout"><\/div>
-      <button class="ghost" onclick="clearAnswers()">Delete saved answers<\/button>
-    <\/div>
+      <div class="layer-label">Interview answers</div>
+      <p class="sub">${loadAnswers().length} saved on this device (last 100 kept). Copy a batch into claude.ai for English + technical feedback.</p>
+      <button onclick="showAnswers()">Show answers as text to copy</button>
+      <div id="ansout"></div>
+      <button class="ghost" onclick="clearAnswers()">Delete saved answers</button>
+    </div>
     <div class="card">
-      <div class="layer-label" style="color:var(--red)">Danger<\/div>
-      <button onclick="resetAll()">Reset all progress<\/button>
-    <\/div>
-    <button class="primary" onclick="home()">Home<\/button>
+      <div class="layer-label" style="color:var(--red)">Danger</div>
+      <button onclick="resetAll()">Reset all progress</button>
+    </div>
+    <button class="primary" onclick="home()">Home</button>
   `);
 }
 function showAnswers(){
@@ -9466,7 +9568,7 @@ function showAnswers(){
     "### "+x.id+" — "+x.title+" ("+x.date+(x.rating!=null ? ", self-rated "+x.rating+"/5" : "")+")\n"+x.text
   ).join("\n\n") : "No answers saved yet — run an Interview drill first.";
   document.getElementById("ansout").innerHTML =
-    `<textarea readonly onclick="this.select()">${esc(txt)}<\/textarea>`;
+    `<textarea readonly onclick="this.select()">${esc(txt)}</textarea>`;
 }
 function clearAnswers(){
   if(confirm("Delete all saved interview answers?")){ saveAnswers([]); dataScreen(); }
@@ -9480,7 +9582,7 @@ function exportData(){
 }
 function showExport(){
   document.getElementById("exp").innerHTML =
-    `<textarea readonly onclick="this.select()">${esc(JSON.stringify(S))}<\/textarea>`;
+    `<textarea readonly onclick="this.select()">${esc(JSON.stringify(S))}</textarea>`;
 }
 function importData(){
   try{
