@@ -1,0 +1,8749 @@
+// Generated curriculum data. Edit loops here or regenerate per CLAUDE.md schema.
+const CUR = {
+ "blocks": [
+  {
+   "id": "b0",
+   "name": "The Machine Under the Syntax",
+   "tagline": "What actually happens when your Swift runs",
+   "loops": [
+    {
+     "id": "b0-01",
+     "title": "What a variable really is",
+     "concept": {
+      "definition": "A variable is a named storage location in memory: a box of a fixed size that holds a value's bytes. The name exists for the programmer; the machine only sees an address and the bytes stored there.",
+      "code": "var score = 42\n// name:  score\n// size:  8 bytes (an Int on a 64-bit device)\n// holds: 00000000 00000000 ... 00101010  (42 in binary)\n\nscore = 43   // overwrite the SAME box with new bytes\nprint(score) // 43",
+      "underlying": "When this code is compiled, the compiler reserves 8 bytes of memory and remembers \"`score` means *that* location.\" The name `score` never exists at runtime — it is compiled away into an address. Assignment (`score = 43`) means: write new bytes into that location, destroying the old ones. A variable is therefore not the value itself; it is the *place* where a value currently lives. `let` vs `var` is a promise about that place: `let` tells the compiler \"after the first write, refuse any code that writes here again.\"",
+      "whyItMatters": "Every later topic — copying, references, ARC — is a statement about boxes and their contents. Interviewers probe this with questions like \"what actually happens when you assign?\""
+     },
+     "exercise": {
+      "prompt": "Predict the output, then answer: how many storage boxes does this code create, and what is in each one at the end?",
+      "code": "var a = 10\nvar b = 20\na = b\nb = 5\nprint(a, b)",
+      "solution": "Output: 20 5\n\nTwo boxes.\n- Box a: starts holding 10, then a = b copies b's bytes (20) into it.\n- Box b: starts holding 20, then is overwritten with 5.",
+      "explanation": "`a = b` reads the bytes currently in b and writes a copy into a. After that moment the boxes have no relationship — changing b to 5 cannot affect a, because nothing connects them. If you predicted `5 5`, you imagined a link between the boxes that was never created."
+     },
+     "assess": {
+      "explainPrompt": "In your own words (2-3 sentences): what is a variable, physically? Mention memory, and what the name means to the machine.",
+      "modelAnswer": "A variable is a named location in memory — a fixed-size box that stores a value's bytes. The name is only for the programmer; the compiler turns it into an address, and at runtime the machine just reads and writes bytes at that address.",
+      "sets": [
+       [
+        {
+         "q": "At runtime, what does the variable's name `score` become?",
+         "options": [
+          "A string stored next to the value",
+          "Nothing — it is compiled away into a memory address",
+          "A key in a hidden dictionary of names",
+          "A label the CPU checks on every access"
+         ],
+         "correct": 1,
+         "explain": "Names are a compile-time convenience. The compiler replaces every use of `score` with the location it reserved; at runtime only addresses and bytes exist."
+        },
+        {
+         "q": "What does `score = 43` physically do?",
+         "options": [
+          "Allocates a fresh box for 43 and re-points the name score at it",
+          "Writes new bytes into score's existing box, destroying the old bytes",
+          "Marks the old 42 as deleted and appends 43 next to it in memory",
+          "Renames the box from 42 to 43"
+         ],
+         "correct": 1,
+         "explain": "Assignment to an existing variable overwrites the contents of the same storage location. No new box is created."
+        },
+        {
+         "q": "What is the real difference between `let` and `var`?",
+         "options": [
+          "let boxes are smaller in memory",
+          "let values are stored in a read-only region of memory that the CPU physically cannot write to",
+          "The compiler refuses to compile any code that writes to a let box after its first write",
+          "The check happens at runtime: writing to a let compiles fine but crashes when it executes"
+         ],
+         "correct": 2,
+         "explain": "It's a compile-time rule about the box: one write allowed, further writes rejected before the program ever runs. The storage itself is ordinary memory."
+        }
+       ],
+       [
+        {
+         "q": "A colleague says \"the variable IS the value.\" What's the precise correction?",
+         "options": [
+          "Correct — no correction needed; name, box, and bytes are three words for the same thing",
+          "The variable is the place where a value currently lives; the value is just the bytes stored there now",
+          "The variable is a copy of the value — every mention of the name duplicates the bytes",
+          "The value is the variable's name, which the CPU looks up on every access"
+         ],
+         "correct": 1,
+         "explain": "Box vs contents. The same box can hold different values over time; the same value can sit in many boxes."
+        },
+        {
+         "q": "Why does an Int variable occupy 8 bytes on modern iPhones?",
+         "options": [
+          "All Swift variables are 8 bytes regardless of their type",
+          "Int matches the device's 64-bit word size, and 64 bits = 8 bytes",
+          "8 bytes is the minimum allocation iOS allows",
+          "Because Int stores its digits as text, one byte per digit"
+         ],
+         "correct": 1,
+         "explain": "Swift's Int is 64-bit on 64-bit platforms. Other types differ: Bool needs 1 byte, a Double 8, your own structs whatever their fields add up to."
+        },
+        {
+         "q": "After `var x = 1; let y = x; x = 9`, what is y?",
+         "options": [
+          "9, because y watches x",
+          "1, because y's box received a copy of x's bytes at assignment time",
+          "Undefined behavior",
+          "It won't compile — you can't assign a var to a let"
+         ],
+         "correct": 1,
+         "explain": "Assignment copies bytes at that moment. y has its own box holding 1; later writes to x touch only x's box. (A let can absolutely be initialized from a var.)"
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-02",
+     "title": "What assignment actually does",
+     "concept": {
+      "definition": "Assignment copies bytes from one place into another. For value types — which includes Int, String, Array, and every struct — the destination gets its own independent copy, and no link between source and destination survives the assignment.",
+      "code": "struct Point { var x: Int; var y: Int }\n\nvar p1 = Point(x: 1, y: 2)\nvar p2 = p1        // 16 bytes copied into p2's box\np2.x = 99\n\nprint(p1.x)  // 1  — p1 untouched\nprint(p2.x)  // 99",
+      "underlying": "`p2 = p1` reads the 16 bytes in p1's box (two 8-byte Ints) and writes a copy into p2's box. From then on there are two Points in memory. This copy-on-assignment rule is what \"value semantics\" means, and it's also why function arguments behave the way they do: passing p1 into a function copies it into the function's own box, so mutations inside can't leak out. The one big exception — class instances — is exactly what the next loops build toward: there, the bytes being copied are an *address*, not the data itself.",
+      "whyItMatters": "Half of beginner Swift bugs are mispredictions about whether two names share data. For value types the answer is always no — and knowing *why* (bytes copied) beats memorizing the rule."
+     },
+     "exercise": {
+      "prompt": "Predict the full output. Then explain in one sentence why the third line prints what it does.",
+      "code": "var list1 = [1, 2, 3]\nvar list2 = list1\nlist2.append(4)\n\nprint(list1.count)  // ?\nprint(list2.count)  // ?\nprint(list1 == list2)  // ?",
+      "solution": "3\n4\nfalse\n\nArray is a value type: list2 got its own copy at assignment, so appending to list2 leaves list1 as [1,2,3], and the two arrays are no longer equal.",
+      "explanation": "The assignment `list2 = list1` conceptually duplicates the array. (Under the hood Swift delays the actual copying until the first mutation — copy-on-write, covered properly in Block 1 — but the observable behavior is a full independent copy, and that's the mental model to lock in now.)"
+     },
+     "assess": {
+      "explainPrompt": "Explain in 2-3 sentences: what does 'value semantics' mean, and what physically happens during `var b = a` when a is a struct?",
+      "modelAnswer": "Value semantics means assignment produces an independent copy: after `var b = a`, mutating b can never affect a. Physically, the bytes stored in a's box are read and a duplicate is written into b's box, so two separate instances exist in memory with no connection between them.",
+      "sets": [
+       [
+        {
+         "q": "After `var b = a` (a is a struct), how many instances exist in memory?",
+         "options": [
+          "One, with two names",
+          "Two independent ones",
+          "One, until b is read",
+          "Zero — structs are compile-time only"
+         ],
+         "correct": 1,
+         "explain": "The bytes were duplicated into b's box. Two boxes, two instances."
+        },
+        {
+         "q": "You pass an Array into a function and the function calls .append on its parameter (declared var). What does the caller see afterwards?",
+         "options": [
+          "The caller's array grew too — both names refer to the same underlying list",
+          "The caller's array is unchanged — the function appended to its own copy",
+          "A compile error — function parameters can never be mutated",
+          "A runtime crash"
+         ],
+         "correct": 1,
+         "explain": "Argument passing is assignment: the parameter is a fresh box receiving a copy. Mutations stay inside the function unless you use inout."
+        },
+        {
+         "q": "Which of these is NOT a value type in Swift?",
+         "options": [
+          "String",
+          "Array",
+          "A struct you define",
+          "A class you define"
+         ],
+         "correct": 3,
+         "explain": "Classes are Swift's reference types. String, Array, Dictionary and all structs/enums are value types — a deliberate Swift design choice that surprises people coming from Java/JS."
+        }
+       ],
+       [
+        {
+         "q": "Why can't a mutation through b ever reach a, after `var b = a` with structs?",
+         "options": [
+          "The compiler inserts a runtime guard that blocks writes from crossing over",
+          "Nothing connects the boxes — the copy severed all relationship at assignment time",
+          "Structs are immutable, so there is no mutation to propagate in the first place",
+          "b is read-only until a is destroyed"
+         ],
+         "correct": 1,
+         "explain": "There is no link to exploit: b's box holds its own bytes. Mutating them rewrites b's box only."
+        },
+        {
+         "q": "`var s2 = s1; s2 += \"!\"` — s1 is a String \"hi\". What is s1 now?",
+         "options": [
+          "\"hi!\"",
+          "\"hi\"",
+          "Empty string",
+          "Compile error"
+         ],
+         "correct": 1,
+         "explain": "String is a value type: s2 is an independent copy, so appending to it leaves s1 as \"hi\"."
+        },
+        {
+         "q": "Swift Arrays secretly delay copying until first mutation (copy-on-write). Does this change what your code observes?",
+         "options": [
+          "Yes — mutating before the real copy happens can leak changes into the other array",
+          "No — behavior is as if a full copy happened at assignment; the delay is purely an optimization",
+          "Yes, but only for arrays over 1000 elements",
+          "Only in debug builds, where copies are made eagerly for safety"
+         ],
+         "correct": 1,
+         "explain": "Copy-on-write is invisible to correctness: the copy happens just-in-time before any mutation could be shared. You get value semantics behavior with reference-level speed for read-only use."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-03",
+     "title": "What a type actually is",
+     "concept": {
+      "definition": "A type is a compile-time description of data: how many bytes it occupies, how those bytes should be interpreted, and which operations are legal on them. A type is the blueprint; an instance is one concrete box built from that blueprint.",
+      "code": "struct Point {         // blueprint: \"16 bytes: two Ints, x then y\"\n    var x: Int         //  (defines NO storage by itself)\n    var y: Int\n}\n\nvar p = Point(x: 3, y: 4)   // instance: 16 real bytes NOW exist\nvar q = Point(x: 0, y: 0)   // second instance: 16 more bytes",
+      "underlying": "The same bytes mean different things under different types: the 64-bit pattern for the integer 4617315517961601024 is *also* the Double 5.0 — only the type tells the compiler whether to use integer or floating-point instructions on it. That's the deep reason Swift refuses `let x: Int = \"hi\"`: not pickiness, but the fact that String's bytes are meaningless if interpreted as an Int. Declaring a struct costs nothing at runtime; memory is spent only when instances are created. Blueprint once, instances many.",
+      "whyItMatters": "\"What's the difference between a class and an object?\" is a classic interview opener — it's this blueprint/instance distinction. And type errors stop being annoying once you see them as \"you asked me to misinterpret bytes.\""
+     },
+     "exercise": {
+      "prompt": "Without running it: which lines define blueprints (no memory), which create instances (memory allocated), and how many total bytes of Point data exist at the end?",
+      "code": "struct Point { var x: Int; var y: Int }   // line 1\n\nvar a = Point(x: 1, y: 1)                  // line 2\nvar b = a                                  // line 3\nlet c = Point(x: 9, y: 9)                  // line 4",
+      "solution": "Line 1: blueprint only — zero bytes of data.\nLines 2, 3, 4: each creates an instance (line 3 by copying a's bytes).\nTotal: 3 instances x 16 bytes = 48 bytes of Point data.",
+      "explanation": "Copying counts as creating: line 3 allocates b's own 16-byte box and fills it with a duplicate of a's bytes. The blueprint itself never occupies data memory no matter how many instances are made from it."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: what is a type, and what is the difference between a type and an instance?",
+      "modelAnswer": "A type is a compile-time description of data: its size in memory, how its bytes are interpreted, and which operations are valid on it. An instance is one actual value of that type occupying real memory at runtime. The type is the blueprint; each instance is a separate box built from it.",
+      "sets": [
+       [
+        {
+         "q": "How much data memory does declaring `struct User { var id: Int }` consume by itself?",
+         "options": [
+          "8 bytes — the size of its one Int field",
+          "Depends on the device's word size and OS version",
+          "None — memory is used only when instances are created",
+          "1 byte of bookkeeping so the runtime knows the type exists"
+         ],
+         "correct": 2,
+         "explain": "Declarations inform the compiler. Instances consume memory."
+        },
+        {
+         "q": "Why is `let x: Int = \"hello\"` a compile error, at the deepest level?",
+         "options": [
+          "Strings are too long to fit in an 8-byte box",
+          "String's bytes are meaningless when interpreted as an integer",
+          "Swift forbids mixing keywords from different type families",
+          "let cannot hold Strings — only var can"
+         ],
+         "correct": 1,
+         "explain": "Types define how bytes are read. Letting arbitrary bytes be read as an Int would produce garbage, so the compiler blocks it before runtime."
+        },
+        {
+         "q": "The same 64 bits can represent the Int 100 or an unrelated Double. What decides which it is?",
+         "options": [
+          "The CPU detects it automatically from the bit pattern",
+          "The box's compile-time type, which selects the instructions used on it",
+          "Whichever kind of value was most recently written there",
+          "A hidden tag byte the runtime stores alongside the value"
+         ],
+         "correct": 1,
+         "explain": "Plain bytes carry no meaning. The compiler emits integer instructions for Int boxes and floating-point instructions for Double boxes — for the same raw bits."
+        }
+       ],
+       [
+        {
+         "q": "\"Class vs object\" in interview terms maps to:",
+         "options": [
+          "Reference vs value",
+          "Blueprint vs instance",
+          "Heap vs stack",
+          "Compile time vs design time"
+         ],
+         "correct": 1,
+         "explain": "A class (or struct) is the description; an object/instance is one concrete occurrence in memory. (Reference vs value is a separate axis, coming next.)"
+        },
+        {
+         "q": "struct Pair { var a: Int; var b: Bool }. Roughly how big is one instance, and why 'roughly'?",
+         "options": [
+          "16 bytes — 8 for the Int, 1 for the Bool, plus 7 padding for alignment",
+          "9 bytes exactly — 8 for the Int plus 1 for the Bool, nothing more",
+          "8 bytes — the Bool is packed into the Int's unused bits for free",
+          "Unknowable before runtime; sizes are decided when memory is allocated"
+         ],
+         "correct": 0,
+         "explain": "Sizes add up, but the compiler pads instances so they align to memory boundaries the CPU reads efficiently. Exact layout is a compiler concern; the principle — size comes from the fields — is yours."
+        },
+        {
+         "q": "Creating 1000 instances of one struct requires how many blueprints in memory?",
+         "options": [
+          "1000 — each instance carries its own copy of the layout",
+          "One per module that uses the struct",
+          "Zero at runtime — the blueprint was consumed at compile time",
+          "One, stored on the heap and shared by all instances"
+         ],
+         "correct": 2,
+         "explain": "The blueprint lives in the compiler's head (and the generated code), not in your data. Only the 1000 instances occupy data memory."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-04",
+     "title": "Stack vs heap",
+     "concept": {
+      "definition": "Programs use two regions of memory. The stack is fast, strictly ordered storage where each function call gets a chunk that is automatically freed when the function returns. The heap is a flexible pool for data whose size or lifetime can't be known in advance — allocated on demand, freed only when someone decides it's no longer needed.",
+      "code": "func greet() {\n    let n = 5              // stack: lives in greet's chunk,\n    let msg = \"hi\"         // gone the instant greet returns\n}\n\n// vs. heap (preview — classes come next loop):\n// let obj = SomeClass()   // the instance is allocated on the heap\n//                         // and can outlive the function that made it",
+      "underlying": "The stack is literally a stack of chunks called frames: calling a function pushes a frame on top; returning pops it off. Allocation is one instruction — move the stack pointer — which is why it's nearly free, and cleanup is automatic and perfectly ordered. The price: a frame dies with its function, so nothing in it can outlive the call, and sizes must be known at compile time. The heap trades speed for freedom: an allocator searches for a free block (slower, and it can fragment), and the block lives until explicitly freed — which creates the new problem of *deciding when to free*. Swift's answer to that problem is ARC, the subject of Block 1.",
+      "whyItMatters": "\"Stack vs heap\" is a top-5 interview question, and Instruments' 'allocations' profiling only makes sense once you know what an allocation is. Performance intuition starts here: stack = free, heap = costs something."
+     },
+     "exercise": {
+      "prompt": "No code this time — a reasoning exercise. For each item, say STACK or HEAP and justify in a few words: (1) a local `let count = 3` inside a function; (2) an object that a function creates and returns to its caller; (3) a function's parameter; (4) data whose size is only known at runtime.",
+      "code": "// (1) local let count = 3\n// (2) object created in a function, returned to caller\n// (3) a function parameter\n// (4) data whose size is only known at runtime",
+      "solution": "(1) STACK — fixed size, dies with the function. \n(2) HEAP — it must outlive the creating function's frame, which is destroyed on return.\n(3) STACK — parameters are copies living in the function's own frame.\n(4) HEAP — the stack requires compile-time-known sizes; the heap allocates any size on demand.",
+      "explanation": "Two questions decide everything: does it need to outlive the current function? and is its size known at compile time? Any 'no' on the second or 'yes' on the first pushes the data to the heap."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3-4 sentences: what are the stack and the heap, and what is each one good and bad at?",
+      "modelAnswer": "The stack is per-function-call memory: each call pushes a frame that is automatically freed on return, making allocation nearly instant but limiting data to compile-time-known sizes and the function's lifetime. The heap is a general pool where blocks of any size are allocated on demand and live until freed, which supports shared, long-lived data but makes allocation slower and requires a strategy for freeing memory — in Swift, that strategy is ARC.",
+      "sets": [
+       [
+        {
+         "q": "Why is stack allocation so much faster than heap allocation?",
+         "options": [
+          "Stack memory lives on a physically faster chip near the CPU",
+          "It's just a pointer move, while the heap must search for a suitable free block",
+          "The stack skips type checking, saving work on every access",
+          "It isn't; both are the same RAM so allocation costs the same"
+         ],
+         "correct": 1,
+         "explain": "Stack: increment a pointer. Heap: run an allocator. Same physical RAM, wildly different bookkeeping."
+        },
+        {
+         "q": "What happens to a function's frame when the function returns?",
+         "options": [
+          "ARC releases it gradually as references drop to zero",
+          "It's popped off the stack — everything in it is instantly gone",
+          "It's moved to the heap for safekeeping",
+          "It stays allocated until the system feels memory pressure"
+         ],
+         "correct": 1,
+         "explain": "Automatic, immediate, perfectly ordered cleanup is the stack's superpower — and the reason stack data can't outlive its function."
+        },
+        {
+         "q": "Which need forces data onto the heap?",
+         "options": [
+          "Being larger than 8 bytes — anything bigger than one word",
+          "Being a number that changes at runtime",
+          "Outliving its creating function, or a size unknown at compile time",
+          "Being declared with var rather than let"
+         ],
+         "correct": 2,
+         "explain": "Lifetime beyond the frame, or size the compiler can't fix in advance — either one disqualifies the stack."
+        }
+       ],
+       [
+        {
+         "q": "The heap's flexibility creates a problem the stack never has. Which?",
+         "options": [
+          "Deciding when memory can be freed",
+          "Running out of names",
+          "Type checking at runtime",
+          "Slower reads of the data itself"
+         ],
+         "correct": 0,
+         "explain": "Stack cleanup is automatic on return. Heap blocks live until freed — so something must track when they're no longer needed. In Swift that something is ARC (Block 1)."
+        },
+        {
+         "q": "Infinite recursion crashes with 'stack overflow'. Why that name?",
+         "options": [
+          "The heap grew until it collided with the stack region",
+          "Frames pile up call after call until the stack region's size limit is exceeded",
+          "An integer overflowed inside one of the stack's frames",
+          "One function declared more variables than a frame can hold"
+         ],
+         "correct": 1,
+         "explain": "Frames pile up call after call and never pop. The stack region (a few MB) fills, and the OS kills the process."
+        },
+        {
+         "q": "In Instruments you see thousands of heap allocations per second in a scrolling list. Why is this worth investigating?",
+         "options": [
+          "Heap allocations are illegal during scrolling",
+          "Each allocation runs the allocator — per-item work that can cost frames of animation",
+          "It means memory is leaking — allocations should be zero in steady state",
+          "It only matters on old devices with slower memory chips"
+         ],
+         "correct": 1,
+         "explain": "Allocation cost scales with count. High-frequency code paths (scrolling, drawing) are exactly where heap churn hurts — the classic fix is reuse, which is why UIKit reuses table cells (Block 2)."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-05",
+     "title": "Why class instances live on the heap",
+     "concept": {
+      "definition": "Class instances are designed to be shared and to have open-ended lifetimes — many parts of a program may hold the same instance, and it must survive as long as any of them needs it. That rules out the stack, whose storage dies with its function, so every class instance is allocated on the heap.",
+      "code": "class Session {\n    var user = \"riya\"\n}\n\nfunc makeSession() -> Session {\n    let s = Session()   // instance allocated on the HEAP\n    return s            // s's frame dies here...\n}\n\nlet active = makeSession()\nprint(active.user)      // ...but the instance survives. \"riya\"",
+      "underlying": "Follow the lifetime: `Session()` allocates the instance on the heap; the local `s` is just a stack box holding its address. When `makeSession` returns, s's frame is destroyed — but only the *address box* dies, not the instance it pointed to. The address is copied out to `active`, and the heap instance lives on. If the instance had lived in the frame, `active` would point at destroyed memory — the crash-prone \"dangling pointer\" of C. Structs take the opposite deal: returned *by copy*, so they can live on the stack safely. One nuance to file away: a struct stored *inside* a class instance lives wherever the instance lives — on the heap. \"Structs on the stack\" is the tendency, not a law.",
+      "whyItMatters": "This is the origin story of ARC: heap instances need someone to decide when they can be freed, and ARC is Swift's automated decision-maker. Understand this loop and Block 1's retain cycles will feel inevitable rather than mysterious."
+     },
+     "exercise": {
+      "prompt": "Predict: does this compile, and if so what does it print? Focus on WHERE the Counter instance lives and WHEN each piece of memory dies.",
+      "code": "class Counter {\n    var value = 0\n}\n\nfunc build() -> Counter {\n    let c = Counter()\n    c.value = 7\n    return c\n}\n\nlet counter = build()\nprint(counter.value)",
+      "solution": "It compiles and prints 7.\n\n- Counter() allocates an instance on the heap; c (stack, inside build's frame) holds its address.\n- c.value = 7 writes through that address into the heap instance.\n- return hands the address out; build's frame — including the box c — is destroyed.\n- The heap instance survives, now referenced by counter.",
+      "explanation": "Note that `let c` didn't prevent `c.value = 7`: let froze the ADDRESS in c's box, not the instance at that address. That distinction — frozen reference vs frozen object — is pure box-vs-contents reasoning, and it trips up even experienced developers."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: why must class instances be allocated on the heap rather than the stack?",
+      "modelAnswer": "Class instances are shared through references and must stay alive as long as any reference to them exists — a lifetime that can far outlast the function that created them. Stack memory is destroyed when its function returns, so instances that can escape their creating function must live on the heap, which supports arbitrary lifetimes.",
+      "sets": [
+       [
+        {
+         "q": "A function creates a class instance and returns it. Why would stack storage for the instance be catastrophic?",
+         "options": [
+          "The stack is too small to fit class instances of arbitrary size",
+          "The frame dies on return, leaving the caller holding an address into dead memory",
+          "Classes contain too many fields to copy out efficiently",
+          "The compiler forbids return statements for stack data"
+         ],
+         "correct": 1,
+         "explain": "A reference to destroyed storage is a dangling pointer — reading it is undefined behavior. Heap allocation lets the instance outlive its creator."
+        },
+        {
+         "q": "In `let s = Session()`, what exactly is in s's box?",
+         "options": [
+          "The whole Session instance, embedded in the box",
+          "The heap address of the instance — typically 8 bytes",
+          "A byte-for-byte copy of the instance's fields",
+          "The instance's name, as text the runtime resolves"
+         ],
+         "correct": 1,
+         "explain": "The instance is on the heap; s is a small stack box holding where it is. This is what 'reference' physically means (fully developed next loop)."
+        },
+        {
+         "q": "Why does `let c = Counter()` still allow `c.value = 7`?",
+         "options": [
+          "A compiler bug that Apple keeps for compatibility",
+          "let froze the address stored in c, not the heap object it points to",
+          "value is special-cased — Int properties are always mutable",
+          "Classes ignore let entirely; it only constrains structs"
+         ],
+         "correct": 1,
+         "explain": "Box vs contents: c's box (the address) is immutable; the object at that address is a different piece of memory with its own rules."
+        }
+       ],
+       [
+        {
+         "q": "A struct is a stored property inside a class instance. Where does that struct live?",
+         "options": [
+          "The stack, always — structs are stack types",
+          "On the heap, inside the class instance's allocation",
+          "A separate struct region the runtime maintains",
+          "It alternates depending on available memory"
+         ],
+         "correct": 1,
+         "explain": "'Value types on the stack' is a tendency, not a law. Storage location follows the container: instance on the heap means all its fields, struct or not, are in that heap block."
+        },
+        {
+         "q": "Heap instances outlive their creators. What new responsibility does that create, and who handles it in Swift?",
+         "options": [
+          "Deciding when to free the instance — handled automatically by ARC",
+          "Encrypting the instance — handled by the Secure Enclave",
+          "Copying it periodically — handled by the runtime",
+          "Nothing new"
+         ],
+         "correct": 0,
+         "explain": "No frame-pop will ever clean these up. Something must notice 'no one references this anymore' — ARC does, by counting references. That's Block 1."
+        },
+        {
+         "q": "Two functions each hold a reference to the same heap instance. Function A returns. What happens to the instance?",
+         "options": [
+          "Destroyed with A's frame, since A created it",
+          "Nothing — only A's reference died; the instance lives while references remain",
+          "Moved into B's frame so B can keep using it",
+          "Duplicated at that moment so B keeps its own private copy"
+         ],
+         "correct": 1,
+         "explain": "References die with their frames; the shared instance is independent of any single holder. 'Alive while anyone still points at it' is exactly the rule ARC automates."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-06",
+     "title": "What a reference physically is",
+     "concept": {
+      "definition": "A reference is a memory address stored in a variable's box — typically 8 bytes saying where an instance lives on the heap. Assigning a reference copies the address, not the instance, so both variables end up pointing at the same single object.",
+      "code": "class Wallet { var balance = 100 }\n\nlet a = Wallet()   // heap: one Wallet.  a's box: its address\nlet b = a          // copies the ADDRESS. still one Wallet\nb.balance = 50\n\nprint(a.balance)   // 50 — a and b are two names for one object",
+      "underlying": "Assignment always copies the bytes in the box — that rule never changes. What changes with classes is *what the bytes are*: for a struct the box holds the data itself, so copying duplicates the data; for a class the box holds an address, so copying duplicates the address and the single heap instance gains a second name. `b.balance = 50` means: read the address in b, go to the heap, write 50 into that object's balance field. Since a holds the same address, reading `a.balance` visits the same object. This is 'reference semantics' — and notice it isn't a new rule, just the old copy-the-bytes rule applied to boxes that happen to contain addresses.",
+      "whyItMatters": "Every UIViewController and UIView you pass around is shared, not copied. This one mental model is the prerequisite for ARC, retain cycles, unintended shared state — arguably half of iOS debugging."
+     },
+     "exercise": {
+      "prompt": "Predict the output of all three prints. Then say how many Wallet instances and how many address-boxes exist.",
+      "code": "class Wallet { var balance = 100 }\n\nvar a = Wallet()\nvar b = a\nvar c = b\n\nc.balance = 10\nb = Wallet()          // b now points to a NEW wallet\nb.balance = 999\n\nprint(a.balance)   // ?\nprint(b.balance)   // ?\nprint(c.balance)   // ?",
+      "solution": "10\n999\n10\n\nTwo Wallet instances on the heap; three address-boxes (a, b, c).\n- a, b, c all start pointing at wallet #1.\n- c.balance = 10 changes wallet #1 (so a and c both see 10).\n- b = Wallet() re-aims b's box at a brand-new wallet #2; a and c are unaffected.\n- b.balance = 999 changes wallet #2 only.",
+      "explanation": "Two different operations look similar but aren't: `c.balance = 10` writes THROUGH the reference into the shared object; `b = Wallet()` overwrites the reference ITSELF with a new address. Mutating the destination vs replacing the arrow — keep those separate and reference code becomes predictable."
+     },
+     "assess": {
+      "explainPrompt": "Give your interviewer answer, 2-3 sentences: what is a reference type, and what happens on assignment?",
+      "modelAnswer": "A reference type stores its data in one place on the heap, and variables hold a reference — essentially an address — pointing to it. Assigning it to another variable copies the reference, not the data, so both variables point to the same instance. In Swift, classes are reference types.",
+      "sets": [
+       [
+        {
+         "q": "After `let b = a` where a references a class instance, how many instances exist?",
+         "options": [
+          "Two — assignment always duplicates",
+          "One, now reachable through two variables",
+          "Zero until b is used",
+          "Depends on the class size"
+         ],
+         "correct": 1,
+         "explain": "Only the 8-byte address was copied. One object, two names."
+        },
+        {
+         "q": "What does `b.balance = 50` physically do?",
+         "options": [
+          "Writes 50 directly into b's own box, replacing the address",
+          "Follows the address in b to the heap object and writes 50 into its field",
+          "Creates a new Wallet with balance 50 and re-points b at it",
+          "Marks b as modified so ARC knows to sync it"
+         ],
+         "correct": 1,
+         "explain": "The dot operator on a reference means: dereference (follow the address), then access the field. b's own box — the address — is untouched."
+        },
+        {
+         "q": "Assignment 'always copies the bytes in the box.' How do structs and classes both fit this single rule?",
+         "options": [
+          "They don't — classes get a special assignment rule the compiler applies",
+          "Struct boxes hold data, class boxes hold an address — copying duplicates whichever is there",
+          "Classes copy twice: once for the address, once for the object",
+          "Structs skip the copy entirely for speed; only classes copy"
+         ],
+         "correct": 1,
+         "explain": "One rule, two contents. Value vs reference semantics falls out of what's inside the box, not from special-cased assignment behavior."
+        }
+       ],
+       [
+        {
+         "q": "`var b = a` (both reference wallet #1), then `b = Wallet()`. What is a's state?",
+         "options": [
+          "a now points at the new wallet too, since a and b were linked",
+          "a is nil — its wallet was replaced out from under it",
+          "a still points at wallet #1, untouched — only b's box was rewritten",
+          "It won't compile — b was initialized from a and stays tied to it"
+         ],
+         "correct": 2,
+         "explain": "Re-aiming b overwrites b's address bytes. a's box was never involved."
+        },
+        {
+         "q": "Why can passing a UIView into a function and modifying it there affect the screen?",
+         "options": [
+          "UIKit detects the changes and copies them back to the screen's view",
+          "The function got a copy of the address, so its changes reach the one shared view",
+          "Views are global variables accessible from anywhere",
+          "It can't; views are value types"
+         ],
+         "correct": 1,
+         "explain": "Classes ride the same argument-copying as everything else, but what's copied is the address — so callee and caller manipulate the same heap object."
+        },
+        {
+         "q": "You need two independent Wallets starting from one. What must the code do?",
+         "options": [
+          "let b = a is enough — assigning to a new let always makes an independent copy",
+          "Create a second instance and copy the fields over (or make Wallet a struct)",
+          "Use var instead of let, which forces a fresh copy",
+          "Assign twice: b = a; b = a"
+         ],
+         "correct": 1,
+         "explain": "No number of reference assignments creates a second object. Independence requires a second allocation — or value semantics, which is precisely why Swift favors structs for data."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-07",
+     "title": "What a function call actually does",
+     "concept": {
+      "definition": "Calling a function pushes a new frame onto the stack containing the function's parameters and local variables, plus a note of where to resume when it finishes. Parameters are fresh boxes initialized with copies of the arguments.",
+      "code": "func double(_ n: Int) -> Int {   // n: a NEW box in double's frame\n    return n * 2\n}\n\nvar x = 10\nlet y = double(x)   // x's bytes are COPIED into n\nprint(x, y)         // 10 20 — x could never change",
+      "underlying": "At the call site: a frame is pushed, x's 8 bytes are copied into the parameter box n, and execution jumps into the function. Parameters are let constants in Swift — the language leans into the fact that mutating a copy is usually a mistake waiting to be misread. When you genuinely need the callee to modify the caller's box, `inout` (with `&x` at the call site) changes the deal: instead of copying the value in, Swift gives the function access to the caller's own box. And the class nuance from loop 6 applies here automatically: passing an instance copies the *address* into the parameter, so the function shares the object without any special syntax.",
+      "whyItMatters": "Explains at a stroke: why functions can't normally modify their arguments, what inout and & really mean, why recursion consumes memory, and where stack overflow comes from. Also the foundation for closures capturing variables (Block 1)."
+     },
+     "exercise": {
+      "prompt": "One of these two calls changes the caller's variable and one doesn't. Predict both prints and explain the mechanical difference in where each function's writes land.",
+      "code": "func tryReset(_ n: inout Int) {\n    n = 0\n}\n\nfunc rename(_ w: Wallet) {\n    w.balance = 0          // Wallet is the class from loop 6\n}\n\nvar num = 42\ntryReset(&num)\nprint(num)                 // ?\n\nlet wallet = Wallet()      // balance 100\nrename(wallet)\nprint(wallet.balance)      // ?",
+      "solution": "0\n0\n\nBoth change the caller's data, via two different mechanisms:\n- tryReset: inout gives the function access to num's own box; n = 0 writes directly into it.\n- rename: w receives a COPY of the address; w.balance = 0 follows that address to the one shared heap object.",
+      "explanation": "Same observable outcome, different machinery — and the difference matters: `w = Wallet()` inside rename would NOT affect the caller (it only re-aims the local copy of the address), while `n = 0` under inout always does. Interviewers love this exact contrast."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what happens on the stack when a function is called, and how do parameters relate to the caller's arguments?",
+      "modelAnswer": "A function call pushes a new frame onto the stack holding the function's parameters, its local variables, and the return address. Each parameter is a new box initialized with a copy of the caller's argument, so ordinary functions cannot modify the caller's variables. When the function returns, its frame is popped and all its boxes are destroyed.",
+      "sets": [
+       [
+        {
+         "q": "Why can't an ordinary Swift function modify the variable passed to it?",
+         "options": [
+          "Runtime protection intercepts writes to foreign variables",
+          "The parameter is a separate box holding a copy of the argument",
+          "Variables lock while a call is active",
+          "It can, silently — the change just isn't printed"
+         ],
+         "correct": 1,
+         "explain": "The caller's box and the parameter box are different memory. No inout, no connection."
+        },
+        {
+         "q": "What does `&x` at a call site signal?",
+         "options": [
+          "Pass access to x's own box so the function can modify it (inout)",
+          "Pass x twice, once for reading and once for writing",
+          "A bitwise AND with the function's return value",
+          "Make x optional so the function may ignore it"
+         ],
+         "correct": 0,
+         "explain": "inout replaces copy-the-value with access-to-the-original. The & is Swift forcing the caller to acknowledge their variable may change."
+        },
+        {
+         "q": "Each recursive call consumes memory. Which memory, and why?",
+         "options": [
+          "Heap — each recursive call allocates a new object there",
+          "Stack — every call pushes a frame that stays until that call returns",
+          "Cache — repeated calls fill the CPU's instruction cache",
+          "None, as long as the function's variables are small"
+         ],
+         "correct": 1,
+         "explain": "Deep recursion means frames stacked high; past the stack's limit lies stack overflow (loop 4's crash, now fully explained)."
+        }
+       ],
+       [
+        {
+         "q": "A function receives a class instance and does `w.balance = 0`. The caller sees the change because…",
+         "options": [
+          "Classes are passed inout automatically, without the & sign",
+          "The parameter got a copy of the address; the write went through to the shared object",
+          "Swift copies the modified instance back into the caller's variable on return",
+          "balance is a static property shared across all instances"
+         ],
+         "correct": 1,
+         "explain": "Ordinary copy-in argument passing; the copied thing is an address. Loop 6's model doing work."
+        },
+        {
+         "q": "Inside that same function, `w = Wallet()` then `w.balance = 5`. What does the caller observe afterwards?",
+         "options": [
+          "balance is 5 — writes through w always reach the caller's object",
+          "balance is 0; the reassignment only re-aimed the function's local address box",
+          "A crash: the original object was abandoned mid-function",
+          "balance is 100 again — reassignment resets the object"
+         ],
+         "correct": 1,
+         "explain": "Re-aiming the local copy of the address disconnects w from the caller's object. Mutating through a reference reaches the caller; replacing the reference does not."
+        },
+        {
+         "q": "Why did Swift make parameters immutable (let) by default?",
+         "options": [
+          "Performance only — the optimizer can inline functions whose parameters never change",
+          "Mutating a local copy usually signals a bug; touching the caller's box must be explicit",
+          "A hardware limitation on writing to freshly pushed frames",
+          "To match Objective-C, where parameters were also constants"
+         ],
+         "correct": 1,
+         "explain": "The design removes an ambiguity: any mutation of caller data must be visibly declared (inout/&), and silent mutation of a copy can't masquerade as meaningful."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-08",
+     "title": "What returning actually does",
+     "concept": {
+      "definition": "Return copies the result's bytes out to the caller, then destroys the function's frame. For a struct result the data itself is copied out; for a class result the address is copied out — which is how a heap instance escapes the function that created it.",
+      "code": "func makePoint() -> Point {      // struct: DATA copied out\n    let p = Point(x: 1, y: 2)\n    return p                     // 16 bytes copied to caller; p dies\n}\n\nfunc makeWallet() -> Wallet {    // class: ADDRESS copied out\n    let w = Wallet()\n    return w                     // 8-byte address escapes; heap object lives\n}",
+      "underlying": "The sequence at every return: evaluate the expression, copy the resulting bytes into space the caller prepared, pop the frame. Everything in the frame — locals, parameters — is gone; the copy is what survives. This is why returning a struct is safe despite the frame's destruction (the caller holds a full duplicate) and why returning a class instance works (the object was never in the frame — only its address was, and the address got copied out before the pop). A local whose value never escapes simply ends with the function: created, used, destroyed, no trace.",
+      "whyItMatters": "'Escaping' — a value outliving the function that made it — is the concept behind @escaping closures (Block 1) and behind why references escaping into long-lived objects cause retain cycles. It starts here, with an address surviving a frame pop."
+     },
+     "exercise": {
+      "prompt": "Predict what this prints, then answer the follow-up: at the moment print runs, does anything created inside expand() still exist? Name exactly what survived and what died.",
+      "code": "func expand(_ base: Int) -> [Int] {\n    var result = [base]\n    result.append(base * 2)\n    let unused = base * 100\n    return result\n}\n\nlet nums = expand(3)\nprint(nums)",
+      "solution": "[3, 6]\n\nSurvived: a COPY of the array's value, now in nums. \nDied with the frame: the boxes `result`, `unused` (its value 300 was computed, never used, destroyed), and the parameter `base`.\n(Array is a value type: what escaped is the value, copied out — same rule as any struct.)",
+      "explanation": "Return is a rescue operation for exactly one value; everything else in the frame is condemned. `unused` illustrates the default fate of locals — they exist only between their creation and the frame pop, and leaving no trace is normal, not special."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: what happens when a function returns a value, and why is returning a class instance safe even though the function's frame is destroyed?",
+      "modelAnswer": "Return copies the result's bytes to the caller and then destroys the function's frame along with all its locals. Returning a class instance is safe because the instance lives on the heap, not in the frame — only the local reference dies, and the address was copied out to the caller first, so the object remains reachable.",
+      "sets": [
+       [
+        {
+         "q": "A function returns a struct. What does the caller receive?",
+         "options": [
+          "A reference into the function's frame",
+          "An independent copy of the struct's bytes",
+          "A frozen view of the frame",
+          "Nothing until the caller reads it"
+         ],
+         "correct": 1,
+         "explain": "Data copied out before the frame pops. That's why it's safe — the caller depends on nothing that was destroyed."
+        },
+        {
+         "q": "What exactly dies when a function returns?",
+         "options": [
+          "Its frame: parameters and locals — but not the heap objects those locals pointed to",
+          "All memory it ever touched, including any heap objects it created along the way",
+          "Only variables declared with var",
+          "Nothing immediately — ARC frees the frame later"
+         ],
+         "correct": 0,
+         "explain": "Frame pop destroys the frame's boxes. Heap objects are separate memory with separate lifetimes."
+        },
+        {
+         "q": "In makeWallet(), the local w dies at return. Why does the caller's Wallet still work?",
+         "options": [
+          "Swift resurrects the object when the caller first touches it",
+          "The instance was never in the frame — only its address was, and that was copied out first",
+          "The compiler inlines the whole function, so no frame is ever created or destroyed",
+          "It doesn't — this crashes"
+         ],
+         "correct": 1,
+         "explain": "Object and reference have independent lifetimes. The reference died; its 8 bytes were already safely duplicated in the caller."
+        }
+       ],
+       [
+        {
+         "q": "The best one-line definition of a value 'escaping' a function:",
+         "options": [
+          "Being printed to the console or another output stream",
+          "Outliving the frame — copied out at return, or stored somewhere longer-lived",
+          "Being declared var, so it can change after the function ends",
+          "Throwing an error past the function's boundary"
+         ],
+         "correct": 1,
+         "explain": "Escape = survival beyond the frame. Return is the common route; storing into an outside object is the other — both reappear in @escaping closures."
+        },
+        {
+         "q": "A local `let temp = x * 2` is computed but never returned or stored elsewhere. Its fate?",
+         "options": [
+          "Leaks 8 bytes each call until the app is killed",
+          "Destroyed with the frame at return — a normal, traceless end",
+          "Cached so future calls can skip recomputing it",
+          "Promoted to the heap in case it's needed later"
+         ],
+         "correct": 1,
+         "explain": "Most values live and die inside one frame. Only escapees have longer stories."
+        },
+        {
+         "q": "makeWallet() is called but the result is ignored: `_ = makeWallet()`. What happens to the heap Wallet?",
+         "options": [
+          "Lives until the app quits — once an object escapes, nothing can reclaim it",
+          "The address is discarded, no references remain, and ARC frees the unreachable object",
+          "Stays in makeWallet's frame and dies with it",
+          "Compile error — a returned value must be stored"
+         ],
+         "correct": 1,
+         "explain": "Escaping got the address out, but nothing kept it. An unreachable heap object is garbage — detecting that is ARC's whole job, formally covered in Block 1."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-09",
+     "title": "Scope vs lifetime",
+     "concept": {
+      "definition": "Scope is where a name is visible in the source code — a compile-time, textual concept ending at a closing brace. Lifetime is when a piece of storage actually exists at runtime. For locals they roughly coincide; for heap objects they come apart: the name's scope can end while the object lives on.",
+      "code": "func demo() {\n    let w = Wallet()      // scope of the NAME w: these braces\n    Bank.shared.wallets.append(w)   // address stored elsewhere\n}                          // w's scope ends, w's box dies...\n\n// ...but the Wallet's LIFETIME continues: Bank.shared still\n// holds its address. Name gone, object alive.",
+      "underlying": "Scope is enforced by the compiler: mention a name outside its braces and the code won't build — nothing about this exists at runtime. Lifetime is physical: the stack box `w` exists from its declaration to the frame pop; the heap Wallet exists from `Wallet()` until no references remain. The demo shows the split: appending w to a shared array copied the address into longer-lived storage, so when scope ended, only the name and its box vanished. Reachability, not visibility, is what keeps heap objects alive. Inner braces (`if`, `for`, bare `{}`) create nested scopes; shadowing — an inner name reusing an outer name — hides the outer box without touching it.",
+      "whyItMatters": "Retain cycles (Block 1) are lifetime bugs: objects surviving long after every name for them left scope. And closure capture is precisely the machinery that extends a variable's lifetime beyond its scope. This distinction is the vocabulary for both."
+     },
+     "exercise": {
+      "prompt": "Predict the two prints. Then answer: when does the NAME t stop being usable, and when does the Wallet it referenced stop existing?",
+      "code": "var keeper: Wallet? = nil\n\nfunc run() {\n    let t = Wallet()        // balance 100\n    t.balance = 55\n    keeper = t\n}\n\nrun()\nprint(keeper!.balance)      // ?\nkeeper = nil\n// ...and now?  (second question, no print)",
+      "solution": "55\n\n- The NAME t is usable only inside run's braces — its scope. Its box dies at run's return.\n- The Wallet keeps existing after run() returns, because keeper holds its address (lifetime extended by reachability).\n- After `keeper = nil`, the last reference is gone: the Wallet is unreachable and ARC frees it. That moment — not the end of any scope — ends its lifetime.",
+      "explanation": "Three separate deaths, three separate moments: the name (compile-time concept, 'dies' at the closing brace), the reference box (frame pop), the heap object (last reference removed). Keeping these apart is the entire skill."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: what is the difference between scope and lifetime, and when do they diverge?",
+      "modelAnswer": "Scope is the region of source code where a name is visible — a compile-time concept. Lifetime is when the storage actually exists at runtime. They roughly coincide for stack locals, but diverge for heap objects: if a reference is stored somewhere longer-lived, the object's lifetime extends beyond the scope of the name that created it.",
+      "sets": [
+       [
+        {
+         "q": "Scope is enforced by…",
+         "options": [
+          "ARC, which tracks which names are still visible at runtime",
+          "the compiler: out-of-scope names simply fail to build",
+          "the OS memory manager, when it reclaims a frame's pages",
+          "assertions in debug builds"
+         ],
+         "correct": 1,
+         "explain": "Purely textual, purely compile-time. Nothing checks scope while the program runs — the code that would violate it was never allowed to compile."
+        },
+        {
+         "q": "What determines when a heap object's lifetime ends?",
+         "options": [
+          "The closing brace of the function that made it",
+          "When it becomes unreachable — the last reference is gone",
+          "A fixed timeout",
+          "The end of the app session"
+         ],
+         "correct": 1,
+         "explain": "Reachability, not visibility. A name going out of scope removes one reference; the object dies only when the count hits zero."
+        },
+        {
+         "q": "Inside a for-loop you declare `let row = ...`. Outside the loop, `row` is an error. Which concept is at work?",
+         "options": [
+          "Lifetime — row's storage was freed when the loop ended",
+          "Scope — the name is textually limited to the loop's braces",
+          "ARC — the loop released row's last reference",
+          "Type inference — the compiler can't infer row's type outside"
+         ],
+         "correct": 1,
+         "explain": "The loop body is a nested scope; each iteration also gives the name a fresh box (a lifetime fact), but the error you see is scope."
+        }
+       ],
+       [
+        {
+         "q": "A Wallet created in a function is appended to a global array. The function returns. The Wallet is…",
+         "options": [
+          "destroyed with the frame that created it",
+          "alive: the global array holds its address, sustaining its lifetime",
+          "moved to the stack of whichever function reads it next",
+          "duplicated — the array stores its own private copy"
+         ],
+         "correct": 1,
+         "explain": "The name's scope ended; a copy of the address had already escaped into longer-lived storage. Name gone, object alive — the loop's headline case."
+        },
+        {
+         "q": "Shadowing: inner `let x = 5` inside braces, while an outer x = 1 exists. What happens to the outer x?",
+         "options": [
+          "Overwritten with 5 — same name means same box",
+          "Untouched — the inner NAME merely hides it until the brace closes",
+          "Deallocated, then recreated when the brace closes",
+          "Compile error — one name can't exist twice"
+         ],
+         "correct": 1,
+         "explain": "Two boxes, one temporarily hidden name. Shadowing is a scope phenomenon; no data moved."
+        },
+        {
+         "q": "Why is 'objects live while any name for them is in scope' the WRONG rule for Swift?",
+         "options": [
+          "It's actually correct — ARC frees an object the moment its last in-scope name disappears",
+          "Both directions fail: unreachable objects die mid-scope, reachable ones survive nameless",
+          "Because Swift has no scopes; braces are only formatting",
+          "Because only classes have names"
+         ],
+         "correct": 1,
+         "explain": "Both directions fail: `keeper = nil` kills an object without any scope ending, and the global-array Wallet lives nameless. Reachability is the real law — and its failure mode, the retain cycle, is Block 1's opening topic."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-10",
+     "title": "Compile time vs runtime",
+     "concept": {
+      "definition": "Compile time is when the compiler translates source code into machine code — types are checked, names are resolved, and a whole class of errors is caught before the program exists. Runtime is when the compiled program actually executes with real values, real user input, and real memory.",
+      "code": "let x: Int = \"hi\"        // COMPILE-TIME error: caught before\n                          // any program is produced\n\nlet nums = [1, 2, 3]\nprint(nums[10])           // compiles fine — but RUNTIME crash:\n                          // index is only knowable when it runs",
+      "underlying": "The compiler works with what is knowable from the text alone: types, declarations, scopes, let-vs-var rules. That's why type errors, missing names, and writes to constants are compile-time — no execution needed to spot them. What it cannot know are values that depend on the running world: user input, network data, an index computed at runtime. Those failures surface as crashes or bugs while running. Swift's design philosophy is to shove as many errors as possible leftward into compile time — optionals are the flagship example, turning would-be runtime nil crashes into compile-time obligations. The names compiled away (loop 1), scope enforcement (loop 9): those were compile-time facts all along; frames, heap allocations, ARC — runtime facts.",
+      "whyItMatters": "\"Is this a compile-time or runtime error?\" is a direct interview question, and the distinction organizes everything: what the type system can save you from, what tests must cover, and why Swift's strictness is a feature."
+     },
+     "exercise": {
+      "prompt": "For each numbered line, verdict: COMPILE-TIME ERROR, RUNTIME CRASH (or risk), or FINE. Judge each line as if the earlier broken lines were fixed.",
+      "code": "let limit = 10\nlimit = 20                      // 1\n\nvar names = [\"a\", \"b\"]\nprint(names[5])                 // 2\n\nlet n: Int = 3.14               // 3\n\nlet input = readLine()          // 4 (returns String?)\nprint(input!.count)             // 5",
+      "solution": "1: COMPILE-TIME — write to a let; knowable from text alone.\n2: RUNTIME CRASH — index out of range; the compiler doesn't evaluate indices.\n3: COMPILE-TIME — Double literal into an Int box; type mismatch.\n4: FINE — readLine legitimately returns an optional.\n5: RUNTIME RISK — force-unwrap crashes if input was nil; whether it is nil is only knowable when the program runs.",
+      "explanation": "The test for each line is one question: could the compiler know this from the source text, without running anything? Rules about types and constants — yes. Actual values flowing at runtime — no."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what's the difference between compile time and runtime, and give one example of an error caught at each stage.",
+      "modelAnswer": "Compile time is when source code is translated to machine code: the compiler checks types, scopes, and mutability rules, catching errors like assigning a String to an Int before the program ever runs. Runtime is when the program executes with real values, where failures like an out-of-bounds index or force-unwrapping nil appear as crashes. Swift is designed to move as many errors as possible to compile time — optionals being the prime example.",
+      "sets": [
+       [
+        {
+         "q": "Which is caught at compile time?",
+         "options": [
+          "Reading an array index that's out of range",
+          "Force-unwrapping an optional that is nil",
+          "Assigning a new value to a let constant",
+          "A network request failing mid-flight"
+         ],
+         "correct": 2,
+         "explain": "Mutability is a textual rule — no execution needed. The other three depend on values that exist only while running."
+        },
+        {
+         "q": "Why can't the compiler catch `nums[10]` on a 3-element array?",
+         "options": [
+          "Subscripts are exempt from compile-time checking by design",
+          "Index and contents are runtime values, unknowable from the text in general",
+          "It could, but skips the check to keep compiles fast",
+          "Arrays have no compile-time type"
+         ],
+         "correct": 1,
+         "explain": "This literal case looks knowable, but indices normally arrive from computation or input. Bounds are enforced where the information exists: at runtime."
+        },
+        {
+         "q": "Optionals exist primarily to…",
+         "options": [
+          "save memory — an absent value costs zero bytes instead of the full type",
+          "turn would-be nil crashes into compile-time obligations to handle absence",
+          "speed up dictionary lookups that may miss",
+          "replace error throwing with a lighter mechanism"
+         ],
+         "correct": 1,
+         "explain": "The type system forces every possibly-absent value to be dealt with before the code builds — Swift's philosophy of shifting errors leftward, in one feature."
+        }
+       ],
+       [
+        {
+         "q": "Your app builds cleanly. What is guaranteed?",
+         "options": [
+          "No bugs — a clean build proves the logic is right",
+          "No crashes — crashes are exactly what compilation rules out",
+          "Only that compile-time rules hold — runtime behavior is completely untested",
+          "It will pass App Store review"
+         ],
+         "correct": 2,
+         "explain": "Compilation proves textual consistency, nothing about behavior with real data. That gap is what tests exist to cover."
+        },
+        {
+         "q": "From earlier loops: variable names being compiled into addresses, and frames being pushed per call — classify the two.",
+         "options": [
+          "Both are compile-time work, done before the program runs",
+          "Names→addresses is compile-time work; frame pushes happen at runtime",
+          "Both happen at runtime, as the program executes",
+          "Names are resolved at runtime; frames are laid out at compile time"
+         ],
+         "correct": 1,
+         "explain": "Translation is the compiler's act; execution machinery (frames, allocations, ARC) is the running program's. The whole block splits cleanly along this line."
+        },
+        {
+         "q": "`if user.age >= 18` misbehaves because ages arrive as 0 from a server bug. Compile-time or runtime problem — and could Swift's compiler have caught it?",
+         "options": [
+          "Compile time; yes, with strictness settings turned up",
+          "Runtime; no — the code is type-correct and the wrongness lives in the values",
+          "Compile time; no",
+          "Runtime; yes — optionals exist to catch wrong values like this"
+         ],
+         "correct": 1,
+         "explain": "Type-correct code with wrong data is the category of bug no compiler can catch — the reason logging, testing, and validation exist."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-11",
+     "title": "Array under the hood",
+     "concept": {
+      "definition": "An Array stores its elements in one contiguous block of memory on the heap, side by side in order. Indexing is instant because the address of element i is pure arithmetic: buffer start + i × element size.",
+      "code": "var nums = [10, 20, 30]\n// heap buffer:  [10][20][30][ ][ ][ ]...\n//                ^ start        ^ spare capacity\n\nnums[2]              // start + 2*8 bytes -> one jump. O(1)\nnums.append(40)      // fits in spare capacity: cheap\nnums.insert(5, at: 0) // shift EVERY element right: O(n)",
+      "underlying": "Contiguity is the whole design: it buys arithmetic indexing and cache-friendly scans, and it dictates every cost. Append is usually cheap because arrays keep spare capacity; when it runs out, a bigger buffer (typically double) is allocated and all elements are copied over — occasional expensive appends averaging out to cheap, which is what \"amortized O(1)\" means. Insert at the front is honest O(n): every element must physically shift right to keep the block contiguous. `reserveCapacity(_:)` pre-sizes the buffer when you know the count, skipping the growth-copies. The struct `nums` you hold is small — essentially a handle to the heap buffer — which is what makes copy-on-write (Block 1) possible.",
+      "whyItMatters": "\"Why is insert(at: 0) slow?\" and \"what's amortized O(1)?\" are interview standards, and choosing Array vs other structures in real code is exactly this reasoning."
+     },
+     "exercise": {
+      "prompt": "A colleague builds a queue by calling `list.remove(at: 0)` ten thousand times on a 10,000-element array. Predict: why is this slow, roughly how much total work is done, and what one-line insight would you give them?",
+      "code": "var list = Array(1...10_000)\nwhile !list.isEmpty {\n    let next = list.remove(at: 0)   // take from the FRONT\n    process(next)\n}",
+      "solution": "Each remove(at: 0) shifts every remaining element left by one slot to keep the buffer contiguous: ~9,999 + 9,998 + ... + 1 moves, about 50 MILLION element copies for a 10k queue.\n\nInsight: arrays are cheap at the back and expensive at the front — consume it in reverse, iterate instead of removing, or use a structure designed for front-removal (like Deque in swift-collections).",
+      "explanation": "Nothing here is a Swift quirk — it's geometry. A contiguous block has exactly one cheap growing/shrinking end. Any 'why is this collection slow?' question should start with: what does memory have to physically DO?"
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: how does an Array store elements, and why is reading by index O(1) but inserting at the front O(n)?",
+      "modelAnswer": "An Array keeps its elements in one contiguous heap buffer, in order. Indexing is O(1) because element i's address is computed directly as start + i × element size. Inserting at the front is O(n) because every existing element must shift one slot to keep the buffer contiguous.",
+      "sets": [
+       [
+        {
+         "q": "Why is nums[500000] as fast as nums[0]?",
+         "options": [
+          "Arrays cache recent reads so nearby indices stay hot",
+          "The address is pure arithmetic — start + index × size — one jump",
+          "The compiler prefetches the whole buffer at launch",
+          "It isn't; big indices are slower"
+         ],
+         "correct": 1,
+         "explain": "No walking, no searching. Contiguity turns lookup into multiplication."
+        },
+        {
+         "q": "What makes append 'amortized O(1)'?",
+         "options": [
+          "Every single append is exactly one CPU instruction, with no exceptions",
+          "Most appends fit spare capacity; rare growth-copies average out to constant cost",
+          "Apple optimized it in silicon on their own chips",
+          "Appends are batched and applied when the CPU is idle"
+         ],
+         "correct": 1,
+         "explain": "The doubling strategy spreads occasional big copies across many cheap appends."
+        },
+        {
+         "q": "What physically happens during insert(5, at: 0) on [10,20,30]?",
+         "options": [
+          "5 is written into the empty space just before the buffer",
+          "Every element shifts one slot right, then 5 is written at the start",
+          "A linked-list node holding 5 is prepended in front",
+          "The whole array is rebuilt from a hash of its contents"
+         ],
+         "correct": 1,
+         "explain": "The block must stay contiguous and ordered — there's no empty slot at the front unless one is made, element by element."
+        }
+       ],
+       [
+        {
+         "q": "You'll append exactly 100,000 elements in a loop. What's the optimization and why?",
+         "options": [
+          "Use var not let — constants reallocate on every append",
+          "reserveCapacity(100_000) first — one allocation, no grow-and-copy events",
+          "Append in reverse order to avoid shifting",
+          "Use a Dictionary keyed by index instead"
+         ],
+         "correct": 1,
+         "explain": "Telling the array its final size skips every intermediate buffer growth. Classic, measurable win in hot paths."
+        },
+        {
+         "q": "Removing from the FRONT in a loop is O(n) per removal. The cheap end is…",
+         "options": [
+          "the front, once the optimizer notices the pattern",
+          "the back — removeLast just shrinks the count, nothing shifts",
+          "neither — removing anywhere is O(n)",
+          "the middle, equidistant from both ends"
+         ],
+         "correct": 1,
+         "explain": "One growing/shrinking end is the contiguous block's geometry. Queue-like access patterns fight it; stack-like patterns (push/pop at the back) ride it."
+        },
+        {
+         "q": "The variable `var nums = [1,2,3]` — what does nums's own box contain?",
+         "options": [
+          "All three elements, laid out side by side",
+          "A small struct holding a reference to the heap buffer",
+          "Just the element count, nothing else",
+          "A hash of the contents for fast comparison"
+         ],
+         "correct": 1,
+         "explain": "Array is a struct wrapping a heap buffer handle. That's why copying the array is cheap until mutation — the copy-on-write story Block 1 completes."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-12",
+     "title": "Dictionary under the hood",
+     "concept": {
+      "definition": "A Dictionary is a hash table: it turns each key into a number (its hash), and that number determines which bucket in an internal buffer stores the key-value pair. Lookup jumps straight to the computed bucket — no scanning — which is why access by key is O(1) on average.",
+      "code": "var ages = [\"riya\": 25, \"anik\": 30]\n\n// ages[\"riya\"] does NOT search. It:\n// 1. computes \"riya\".hashValue          -> e.g. 8231...\n// 2. maps it to a bucket index          -> buffer[3]\n// 3. jumps there and finds (\"riya\",25)\n\nfor (k, v) in ages { print(k, v) }   // order NOT guaranteed",
+      "underlying": "Hashing buys arithmetic-speed lookup for arbitrary keys — Array's trick generalized beyond integer indexes. The costs follow from the design. Keys must be `Hashable`, because without a hash there is no bucket to jump to. Two keys can hash to the same bucket (a collision); the table handles it, but heavy collisions degrade toward scanning, which is why hash quality matters. And order is sacrificed: pairs live wherever their hashes landed, so iteration order is arbitrary and can even change between runs — Swift deliberately randomizes hashing per launch so no one accidentally depends on it. When the table gets full it resizes and every pair is re-bucketed. A key's hash must also never change while it's in the table — mutate a stored key's hash-relevant data and the pair is simply lost in the wrong bucket.",
+      "whyItMatters": "Explains three things you'll hit constantly: why dictionary keys demand Hashable conformance, why iteration order differs run to run (a classic confusing 'bug'), and when to reach for a Dictionary over an Array."
+     },
+     "exercise": {
+      "prompt": "You have 50,000 users in an Array and repeatedly look them up by id. Someone suggests the change below. Predict the speed difference mechanically — what does each lookup DO in version A vs version B?",
+      "code": "// A: array scan\nlet user = users.first { $0.id == targetId }\n\n// B: dictionary\nlet byId = Dictionary(uniqueKeysWithValues: users.map { ($0.id, $0) })\nlet user = byId[targetId]",
+      "solution": "A: walks the buffer element by element comparing ids — on average 25,000 comparisons per lookup, O(n).\nB: hashes targetId, computes a bucket index, jumps there — a handful of operations regardless of size, O(1) average.\n\nBuilding byId costs one O(n) pass up front; every subsequent lookup repays it. For repeated lookups the dictionary wins enormously; for a single lookup, the scan is fine.",
+      "explanation": "The trade is always the same: pay hashing + memory for jump-to-bucket lookup. 'How many lookups will I do?' is the deciding question — a pattern you'll reuse when choosing data structures forever."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: how does a Dictionary find a value by key so fast, and why do keys need to be Hashable?",
+      "modelAnswer": "A Dictionary is a hash table: it computes the key's hash and maps it to a bucket index in an internal buffer, then jumps directly to that bucket — no scanning, so average O(1) lookup. Keys must be Hashable because the hash is the address computation; without it there's no way to know which bucket holds the pair.",
+      "sets": [
+       [
+        {
+         "q": "What does `ages[\"riya\"]` fundamentally do?",
+         "options": [
+          "Scans the stored pairs until the key matches",
+          "Hashes \"riya\", derives a bucket index, jumps to that bucket",
+          "Binary-searches the keys, kept in sorted order",
+          "Checks a most-recently-used cache first"
+         ],
+         "correct": 1,
+         "explain": "Hash → bucket → jump. The dictionary generalizes Array's compute-the-address trick to any Hashable key."
+        },
+        {
+         "q": "Why is dictionary iteration order unreliable?",
+         "options": [
+          "A long-standing Swift bug Apple hasn't fixed",
+          "Pairs sit wherever their hashes landed; Swift even randomizes hashing per launch",
+          "Dictionaries sort themselves lazily, so order appears only after a full iteration",
+          "Only large dictionaries are unordered"
+         ],
+         "correct": 1,
+         "explain": "Storage position is hash-determined, not insertion-determined. Need order? Sort the keys, or keep a separate array."
+        },
+        {
+         "q": "A collision is…",
+         "options": [
+          "two stored values that happen to be equal",
+          "two different keys landing in the same bucket",
+          "a crash when two keys clash at insertion",
+          "inserting the same key twice"
+         ],
+         "correct": 1,
+         "explain": "The table resolves collisions, but each one adds comparisons. Good Hashable implementations spread keys evenly."
+        }
+       ],
+       [
+        {
+         "q": "Why would mutating a key's hash-relevant data WHILE it's in a dictionary be catastrophic?",
+         "options": [
+          "It throws an exception the moment the key mutates",
+          "The pair stays in the old bucket while lookups search where the new hash points",
+          "The dictionary detects the change and automatically re-buckets the affected pair",
+          "The value leaks — its key can no longer release it"
+         ],
+         "correct": 1,
+         "explain": "The bucket was chosen by the hash at insertion. Change the hash, break the map. This is why keys should be immutable value types."
+        },
+        {
+         "q": "When does a plain Array beat a Dictionary for lookups?",
+         "options": [
+          "Never — O(1) beats O(n) at every size",
+          "Few lookups over few elements, or when order matters",
+          "Whenever the keys are strings, which hash slowly",
+          "Only on old devices with little memory"
+         ],
+         "correct": 1,
+         "explain": "O(1) has constant overhead; O(n) over 10 elements is trivial. Data structure choice is 'what will I do most often?', not 'which is theoretically fastest'."
+        },
+        {
+         "q": "Set gives O(1) `contains`. What must be true of its elements, and why?",
+         "options": [
+          "Comparable — Sets keep elements sorted for binary search",
+          "Hashable — a Set is the same hash-table machinery, storing only keys",
+          "Codable, so elements can be serialized",
+          "Class types only — Sets store references"
+         ],
+         "correct": 1,
+         "explain": "Set is a dictionary without values. One mental model covers both — and explains their shared conformance requirement."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-13",
+     "title": "String under the hood",
+     "concept": {
+      "definition": "A Swift String stores text as UTF-8 bytes, where a single human-perceived character (a grapheme cluster) may occupy one byte or many. Because character boundaries are irregular, Strings cannot be indexed by integer — finding the nth character requires walking the bytes from the start.",
+      "code": "let s = \"héllo👋\"\n// bytes: h(1) é(2) l(1) l(1) o(1) 👋(4)  = 10 bytes\n\ns.count            // 6 characters — computed by WALKING: O(n)\n// s[2]            // compile error: no integer subscript\ns[s.index(s.startIndex, offsetBy: 2)]   // \"l\" — walking, explicitly",
+      "underlying": "ASCII was one byte per character; the world's text isn't. UTF-8 encodes characters in 1–4 bytes, and what users perceive as one character can even be several combined code points (é as e + combining accent; family emojis as multiple joined emojis). Swift chose honesty: since s[3] cannot be located without walking — the third character starts wherever the first two happened to end — Swift refuses to offer an integer subscript that would look O(1) while costing O(n). Hence String.Index, an opaque byte-position you obtain by walking, and hence `count` being a full O(n) walk rather than a stored field. The clunky API is the true cost of correct Unicode made visible.",
+      "whyItMatters": "Every Swift developer collides with 'why can't I do s[3]?' — most never learn the real answer. It's also a live performance concern: calling .count in a loop over big strings is accidental O(n²)."
+     },
+     "exercise": {
+      "prompt": "Find the hidden performance bug. This function checks whether a (potentially huge) string's characters alternate between vowels and consonants. Predict where the O(n²) is and how to fix it in one line.",
+      "code": "func alternates(_ s: String) -> Bool {\n    var i = s.startIndex\n    var position = 0\n    while position < s.count - 1 {          // <-- look closely\n        let next = s.index(after: i)\n        if isVowel(s[i]) == isVowel(s[next]) { return false }\n        i = next\n        position += 1\n    }\n    return true\n}",
+      "solution": "`s.count` is O(n) — and it's evaluated on EVERY loop iteration: n iterations x n-walk = O(n²) on a string where everything else is a single O(n) pass.\n\nFix: compute it once before the loop —\nlet count = s.count\nwhile position < count - 1 { ... }\n\n(Even more idiomatic: iterate pairs with zip(s, s.dropFirst()) and never index at all.)",
+      "explanation": "The bug is invisible if you assume count is a stored property, obvious once you know it's a walk. That's the block's theme in miniature: costs live in what memory must DO, not in how short the syntax looks."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: why doesn't Swift's String support s[3], and what does that design honestly reflect?",
+      "modelAnswer": "String stores UTF-8 bytes where each character can span one to four bytes (or more for combined characters), so character boundaries are irregular. Finding the nth character requires walking from the start — O(n) — and Swift refuses to hide that cost behind an integer subscript that would look O(1). String.Index makes the walking explicit.",
+      "sets": [
+       [
+        {
+         "q": "Why can't the address of a String's 3rd character be computed arithmetically like an Array element's?",
+         "options": [
+          "Strings live in a special memory region without addresses",
+          "Characters have variable widths — the 3rd starts wherever the first two ended",
+          "String bytes are stored obfuscated for security",
+          "It can be; Swift just hides the subscript from the API"
+         ],
+         "correct": 1,
+         "explain": "Array's start + i × size trick requires uniform element size. UTF-8 deliberately doesn't have it."
+        },
+        {
+         "q": "s.count on a 1-million-character String costs…",
+         "options": [
+          "Nothing — count is a stored property, updated on mutation",
+          "An O(n) walk over the bytes, counting grapheme clusters",
+          "O(log n), via an internal index tree",
+          "One hash lookup in the string's metadata"
+         ],
+         "correct": 1,
+         "explain": "Grapheme boundaries are only discoverable by inspection. Cache it if you'll use it repeatedly."
+        },
+        {
+         "q": "\"é\" can be one code point or e + combining accent. What does Swift's Character represent?",
+         "options": [
+          "Always exactly one byte of UTF-8",
+          "One grapheme cluster — the human-perceived character",
+          "One UTF-16 code unit, like NSString",
+          "One keyboard keystroke's worth of input"
+         ],
+         "correct": 1,
+         "explain": "Swift counts what humans count: \"é\".count == 1 either way. That correctness is precisely what makes indexing expensive."
+        }
+       ],
+       [
+        {
+         "q": "`while i < s.count` recomputing count each iteration causes…",
+         "options": [
+          "a compile warning about the repeated call",
+          "accidental O(n²): an O(n) walk inside an O(n) loop",
+          "a crash when it lands mid-emoji",
+          "nothing; the compiler caches the count for you"
+         ],
+         "correct": 1,
+         "explain": "The classic String performance bug. Hoist the count — or better, iterate without positional indexing at all."
+        },
+        {
+         "q": "Why does Swift make you write s.index(s.startIndex, offsetBy: 2) instead of s[2]?",
+         "options": [
+          "Compatibility with Objective-C's NSString indexing",
+          "Deliberate honesty — the API refuses to disguise an O(n) walk as O(1)",
+          "To nudge developers toward Array<Character>",
+          "A limitation of the optimizer that may be lifted"
+         ],
+         "correct": 1,
+         "explain": "API ergonomics traded for cost transparency — a very Swift design value, worth articulating in interviews."
+        },
+        {
+         "q": "You need heavy positional access to characters. The idiomatic escape hatch is…",
+         "options": [
+          "force-cast to NSString and use its integer APIs",
+          "Array(s) — one O(n) conversion buys true O(1) indexing after",
+          "Regular expressions with positional captures",
+          "There is none — String forbids positional access"
+         ],
+         "correct": 1,
+         "explain": "Materializing characters into an Array restores arithmetic indexing (loop 11's geometry) at the cost of extra memory. An explicit, sensible trade."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-14",
+     "title": "Object graphs",
+     "concept": {
+      "definition": "A running program's heap is a graph: objects are nodes, and every stored reference is an arrow from one object to another. Which objects exist, who points at whom, and what is reachable from your variables — that picture IS your program's state.",
+      "code": "class Person { var name: String; var wallet: Wallet\n               init(n: String, w: Wallet) { name = n; wallet = w } }\nclass Wallet { var balance = 100 }\n\nlet shared = Wallet()\nlet riya = Person(n: \"Riya\", w: shared)\nlet anik = Person(n: \"Anik\", w: shared)\n\n// GRAPH:  riya ──> [Person] ──┐\n//                              ├──> [Wallet 100]   one wallet!\n//         anik ──> [Person] ──┘",
+      "underlying": "Nothing new is introduced here — this is loops 5, 6, and 9 composed. Every `var someObject: SomeClass` stored property is an arrow; local variables and globals are arrows rooted outside the heap (in frames and static storage). The graph answers questions syntax can't: `riya.wallet.balance -= 30` changes what anik sees, because both arrows converge on one node — visible instantly in the picture, invisible in the code. Reachability (loop 9's lifetime rule) becomes graph traversal: an object lives while some path of arrows connects it to a root; sever the last path and it's garbage. Ownership questions — who is responsible for this object, is it shared or exclusive — are questions about arrow patterns.",
+      "whyItMatters": "Retain cycles, Block 1's first boss fight, are literally a shape in this graph (two arrows forming a loop). Debugging shared-state bugs is graph reading. Xcode even draws this exact picture — the Memory Graph Debugger."
+     },
+     "exercise": {
+      "prompt": "Draw this graph on paper (boxes and arrows — really draw it). Then predict both prints, and answer: how many Wallet instances exist, and is any object unreachable by the end?",
+      "code": "let w1 = Wallet()            // balance 100\nvar w2 = Wallet()            // balance 100\n\nlet p1 = Person(n: \"A\", w: w1)\nlet p2 = Person(n: \"B\", w: w1)   // note: w1 again\n\np1.wallet.balance -= 40\nprint(p2.wallet.balance)     // ?\n\nw2 = w1                       // re-aim w2's arrow\nprint(w2.balance)            // ?",
+      "solution": "60\n60\n\nGraph at the end: p1 ─> PersonA ─┐            w1 ─┐\n                  p2 ─> PersonB ─┼─> Wallet(60) <─┤\n                                                w2 ─┘\nTwo Wallet instances were created; the second (w2's original) became UNREACHABLE when w2 was re-aimed at w1's wallet — no arrow leads to it anymore, so ARC frees it.\np2 sees 60 because PersonA and PersonB's wallet arrows converge on the same node that p1 mutated through.",
+      "explanation": "The drawing makes both answers mechanical: convergent arrows = shared mutations; an arrowless node = a dead object. If you predicted from the code alone and got it right, you drew the graph in your head — which is the skill."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: what is an object graph, and why does it matter for understanding a program's behavior?",
+      "modelAnswer": "The object graph is the runtime picture of the heap: objects as nodes and every stored reference as an arrow between them. It matters because shared state, object lifetime, and reachability are properties of the graph, not the source code — two variables converging on one node means shared mutations, and an object with no path from any root is dead.",
+      "sets": [
+       [
+        {
+         "q": "In the graph, what is an 'arrow'?",
+         "options": [
+          "A function call from one object to another",
+          "A reference: any variable or property holding an object's address",
+          "An inheritance relationship between two classes",
+          "A protocol conformance declared on the class"
+         ],
+         "correct": 1,
+         "explain": "Arrows are references. Stored properties draw heap-to-heap arrows; locals and globals draw arrows from the roots."
+        },
+        {
+         "q": "Two Person objects' wallet properties point at one Wallet. Mutating through one person is visible through the other because…",
+         "options": [
+          "Swift syncs the two copies behind the scenes",
+          "the arrows converge on a single node — there is only one wallet to see",
+          "Person is a value type, so wallets are shared",
+          "a compiler optimization that merges duplicate objects"
+         ],
+         "correct": 1,
+         "explain": "Shared state = convergent arrows. The graph shows in one glance what the code hides."
+        },
+        {
+         "q": "An object is 'reachable' when…",
+         "options": [
+          "it was created recently enough to still be tracked",
+          "some chain of arrows connects it to a root — a live variable or global",
+          "it has at least one property pointing somewhere",
+          "its class is public and visible to other modules"
+         ],
+         "correct": 1,
+         "explain": "Loop 9's lifetime rule as graph traversal. Reachable = alive; unreachable = garbage for ARC to collect."
+        }
+       ],
+       [
+        {
+         "q": "`w2 = w1` where both referenced different Wallets. In graph terms, what just happened?",
+         "options": [
+          "The two wallet nodes merged into one, combining their balances",
+          "w2's arrow re-aimed at w1's node, leaving w2's old node unreachable — it dies",
+          "A third wallet node appeared in the graph",
+          "Nothing changes until w2 is next read"
+         ],
+         "correct": 1,
+         "explain": "Reassignment re-aims arrows. Object death is a side effect of the last arrow leaving — no one 'deletes' anything explicitly."
+        },
+        {
+         "q": "Preview reasoning: object A stores a reference to B, and B stores one back to A. All external variables to both are set to nil. What does the graph say?",
+         "options": [
+          "Both immediately die — with no external variables, the graph has no roots left",
+          "Their mutual arrows keep each other reachable — neither can die (a retain cycle)",
+          "The compiler rejects mutual references at build time",
+          "The runtime picks one at random to die first"
+         ],
+         "correct": 1,
+         "explain": "A loop in the graph with no external root: each node has an incoming arrow, so simple reachability-by-counting never hits zero. Block 1 opens with why ARC falls for this and how weak breaks it."
+        },
+        {
+         "q": "The Xcode tool that draws your app's live object graph is called…",
+         "options": [
+          "Interface Builder",
+          "the Memory Graph Debugger",
+          "the View Hierarchy",
+          "Instruments' Time Profiler"
+         ],
+         "correct": 1,
+         "explain": "The picture you drew on paper, generated from your running app — the primary weapon for hunting leaks and cycles."
+        }
+       ]
+      ]
+     }
+    },
+    {
+     "id": "b0-15",
+     "title": "Capstone: reading memory like a diagram",
+     "concept": {
+      "definition": "Every concept in this block collapses into one practice: given code, draw the memory — stack boxes on the left, heap nodes on the right, arrows for references — and read the program's behavior off the picture. Prediction from the diagram, not from hope, is the exit skill.",
+      "code": "// The full checklist when reading any snippet:\n// 1. Each variable: a BOX. Struct box holds data; class box holds an address.\n// 2. Assignment: copy the box's bytes (data OR address).\n// 3. Function call: new frame, parameter boxes get copies. Return: copy out, pop.\n// 4. Heap node lives while any arrow reaches it.\n// 5. Mutation through a reference: follow the arrow, edit the node.",
+      "underlying": "Loops 1–3 gave you boxes, bytes, and blueprints. Loops 4–6: the two memory regions and addresses-in-boxes. Loops 7–8: frames appearing and vanishing around calls. Loops 9–10: name visibility vs storage existence, and what's knowable before running. Loops 11–13: what Array, Dictionary, and String cost, derived from their layouts. Loop 14: the whole heap as a graph. There is no new machinery left in this loop — only fluency. The exercise below mixes structs and classes in one snippet precisely because that mix is where diagrams earn their keep: the same `=` sign does opposite things two lines apart, and only the picture keeps you honest.",
+      "whyItMatters": "This is the exact skill ARC and retain cycles (Block 1, next) assume you have. It's also how senior engineers debug: they don't re-read code louder — they reconstruct the memory picture and find where reality diverged from intention."
+     },
+     "exercise": {
+      "prompt": "The final exam. Draw the complete diagram (stack left, heap right), then predict all four prints. Take real paper. Expect the struct/class mix to try to trick you.",
+      "code": "struct Tag { var label: String }\nclass Doc { var tag: Tag\n            init(t: Tag) { tag = t } }\n\nvar t1 = Tag(label: \"draft\")\nlet d1 = Doc(t: t1)          // Tag COPIED into the Doc\nlet d2 = d1                  // address copied — same Doc\n\nt1.label = \"final\"           // mutates t1's box only\nprint(d1.tag.label)          // 1?\n\nd2.tag.label = \"review\"      // through d2's arrow, into the Doc\nprint(d1.tag.label)          // 2?\n\nvar t2 = d1.tag              // Tag COPIED out of the Doc\nt2.label = \"archived\"\nprint(d1.tag.label)          // 3?\nprint(t2.label)              // 4?",
+      "solution": "1: draft    — the Doc received a COPY of t1 at init; t1's later mutation touched only t1's stack box.\n2: review   — d1 and d2's arrows converge on one Doc node; the write through d2 is visible through d1.\n3: review   — t2 got a copy OUT; mutating it can't reach the Doc's embedded Tag.\n4: archived — t2's own box.\n\nDiagram: STACK: t1[Tag \"final\"], d1[addr]──┐, d2[addr]──┐, t2[Tag \"archived\"]\n         HEAP:                            └──> [Doc | tag: Tag \"review\"] <──┘  (one node, its Tag mutated in place)",
+      "explanation": "Every trap was a value/reference boundary: Tags copy at every crossing (into init, out via d1.tag), Docs share through converging arrows. If all four predictions came off the diagram correctly — Block 0's job is done. If any surprised you, the explanation names which loop to revisit."
+     },
+     "assess": {
+      "explainPrompt": "Final articulation, 3-4 sentences, interviewer-ready: walk through what happens in memory when a struct is stored inside a class instance and that instance is shared between two variables. Use the words heap, copy, and reference.",
+      "modelAnswer": "The class instance is allocated on the heap, and storing the struct in it copies the struct's bytes into that heap allocation — the struct now lives inside the object. Assigning the instance to a second variable copies only the reference, so both variables hold addresses of the same heap object. Mutating the embedded struct through either reference edits the one shared copy inside the object, visible through both. Copying the struct back out into a local produces an independent value again, disconnected from the object.",
+      "sets": [
+       [
+        {
+         "q": "`let d2 = d1` (Doc is a class) then `d2.tag.label = \"x\"`. Why does d1 see the change?",
+         "options": [
+          "Doc automatically syncs its copies whenever either one is written",
+          "One Doc node, two converging arrows — the write reached the shared node",
+          "tag is a static property shared by all Docs",
+          "It doesn't — d1 still prints the old value"
+         ],
+         "correct": 1,
+         "explain": "Reference copy = shared node. The embedded Tag mutated in place inside the one Doc."
+        },
+        {
+         "q": "A Tag struct stored in a heap-allocated Doc lives…",
+         "options": [
+          "on the stack, because structs live on the stack",
+          "inside the Doc's heap allocation — storage follows the container",
+          "in a separate heap block",
+          "in static memory"
+         ],
+         "correct": 1,
+         "explain": "Loop 5's nuance, now load-bearing: 'structs on the stack' is a tendency; embedded in a class, the struct's bytes are heap bytes."
+        },
+        {
+         "q": "`var t2 = d1.tag` then mutating t2 — the Doc is unaffected because…",
+         "options": [
+          "let protected the Doc from outside writes",
+          "reading .tag copied the struct's bytes OUT into t2's independent box",
+          "Doc instances are frozen once init completes",
+          "t2 is lazily evaluated and hasn't materialized yet"
+         ],
+         "correct": 1,
+         "explain": "Value types copy at every boundary crossing — into functions, into inits, and out of properties."
+        }
+       ],
+       [
+        {
+         "q": "The single most reliable question to ask at every `=` in mixed struct/class code:",
+         "options": [
+          "Is the source variable declared let or var?",
+          "What is IN the source box — data or an address?",
+          "Does the assignment cross a function boundary?",
+          "Does the type conform to Equatable?"
+         ],
+         "correct": 1,
+         "explain": "One rule governs all assignment; the contents of the box determine whether the copy shares or separates."
+        },
+        {
+         "q": "Two variables 'mysteriously' see each other's changes. Diagram-first debugging says the cause must be…",
+         "options": [
+          "a compiler bug in the optimizer",
+          "convergent arrows — both paths lead to one heap node",
+          "a stale cache the runtime hasn't flushed yet",
+          "an optional silently unwrapping to a shared default"
+         ],
+         "correct": 1,
+         "explain": "Shared mutation requires shared storage. The diagram converts a spooky symptom into a search for the converging arrow."
+        },
+        {
+         "q": "Block 0's exit skill, in one sentence:",
+         "options": [
+          "Writing correct Swift faster, with fewer compile errors",
+          "Predicting behavior by reconstructing memory instead of guessing from syntax",
+          "Memorizing Swift's keywords, operators, and standard library by heart",
+          "Avoiding classes and reference semantics entirely"
+         ],
+         "correct": 1,
+         "explain": "Syntax describes; memory explains. Everything ahead — ARC, closures, concurrency — is variations on this picture."
+        }
+       ]
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "b1",
+   "name": "Semantics Under the Sugar",
+   "tagline": "ARC, closures, copy-on-write — what Swift's conveniences actually cost",
+   "loops": [
+    {
+     "id": "b1-01",
+     "title": "Optionals and enums under the hood",
+     "concept": {
+      "definition": "An Optional is an ordinary enum with two cases — `.none` and `.some(wrapped)` — declared in the standard library; `Int?` is sugar for `Optional<Int>` and `nil` is sugar for `.none`. In memory, an enum with a payload is a tagged union: storage for the payload plus a discriminant recording which case is present. So nil is a tag state — not a zero, and not a null pointer.",
+      "code": "var age: Int? = 27\n// box: [ 27 — 8 payload bytes ][ tag: .some ]   9 bytes\n\nage = nil\n// box: [ stale bytes, ignored ][ tag: .none ]   same box\n\nprint(MemoryLayout<Int>.size)    // 8\nprint(MemoryLayout<Int?>.size)   // 9 — the tag is real memory",
+      "underlying": "The standard library declares `enum Optional<Wrapped> { case none; case some(Wrapped) }` — about a screen of code you can read. All the sugar desugars to it: `Int?` to `Optional<Int>`, `nil` to `.none`, `if let` to a tag check plus a payload copy.\n\nThe layout rule: payload storage plus a tag. `Int` uses all 2^64 of its bit patterns, so `Int?` needs a real extra byte for the tag — 9 bytes. But when the payload type has spare patterns, the compiler hides the tag inside one: `Bool` uses 2 of its byte's 256 patterns, so `Bool?` stays 1 byte; a class reference never uses address 0, so an optional reference stays 8 bytes with address 0 meaning `.none`. This \"niche\" trick is why optional references cost nothing extra.\n\nForce-unwrap (`!`) compiles to: check the tag; if `.some`, hand over the payload bytes; if `.none`, trap. The famous crash is that deliberate trap firing — a checked failure, not memory corruption.",
+      "whyItMatters": "\"Unexpectedly found nil while unwrapping an Optional\" is iOS's most common crash — a tag check firing, not a bad pointer. And \"an enum with two cases\" instantly separates your interview answer from everyone who says \"a value that can be nil\"."
+     },
+     "exercise": {
+      "prompt": "Predict the five printed sizes. Two of them are traps if your rule is \"optional = wrapped size + 1\". Reason from bit patterns: does the payload type have any to spare?",
+      "code": "class Wallet { var balance = 0 }\n\nprint(MemoryLayout<Bool>.size)     // 1?\nprint(MemoryLayout<Bool?>.size)    // 2?\nprint(MemoryLayout<Int?>.size)     // 3?\nprint(MemoryLayout<Int??>.size)    // 4?\nprint(MemoryLayout<Wallet?>.size)  // 5?",
+      "solution": "1\n1\n9\n10\n8\n\n- Bool: one byte, but it uses only 2 of that byte's 256 patterns.\n- Bool?: the tag hides in a spare pattern — still 1 byte, zero cost.\n- Int?: Int uses every 64-bit pattern, so the tag needs its own byte: 9.\n- Int??: the outer optional must distinguish .none from .some(.none) — another tag byte: 10.\n- Wallet?: a reference never uses address 0, so address 0 IS the .none case: 8.",
+      "explanation": "One question decides every row: does the payload have an impossible bit pattern the tag can borrow? References and Bools do; Int doesn't — it pays a real ninth byte."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: what is an Optional really, and what does nil actually mean in memory?",
+      "modelAnswer": "An Optional is an enum with two cases, none and some(wrapped), so its storage is the wrapped value plus a discriminant recording which case is present. nil means the discriminant says none — it is not a zero and not a null pointer. When the wrapped type has spare bit patterns, like a reference that can never be address 0, Swift hides the discriminant in one of them and the optional costs no extra memory.",
+      "sets": [
+       [
+        {
+         "q": "What is `Int?`, with the sugar removed?",
+         "options": [
+          "An Int the compiler permits to hold a special zero",
+          "Optional<Int> — an enum with cases .none and .some(Int)",
+          "A pointer to an Int that may be null",
+          "An Int paired with a hidden Bool flag named isNil"
+         ],
+         "correct": 1,
+         "explain": "`Int?` desugars to `Optional<Int>`, a plain generic enum you could write yourself. (The hidden-flag guess is closest — but the tag is an enum discriminant, and it can vanish into spare bits.)"
+        },
+        {
+         "q": "Physically, what does `age = nil` do (age is `Int?`)?",
+         "options": [
+          "Zeroes the 8 payload bytes for safety",
+          "Sets the tag to .none; the payload bytes just stop meaning anything",
+          "Deallocates the box's memory until a new value is assigned",
+          "Writes a null pointer into the box"
+         ],
+         "correct": 1,
+         "explain": "nil is a tag state. The stale 27 may still sit in the payload bytes — nothing will ever read them while the tag says .none."
+        },
+        {
+         "q": "Why does force-unwrapping nil crash?",
+         "options": [
+          "The CPU faults reading uninitialized payload bytes",
+          "The compiled code checks the tag and deliberately traps on .none",
+          "iOS kills apps that touch empty optionals",
+          "It doesn't — it silently returns a default value"
+         ],
+         "correct": 1,
+         "explain": "`!` compiles to: check tag; .some hands over the payload, .none runs a deliberate trap. A checked failure, not memory corruption."
+        }
+       ],
+       [
+        {
+         "q": "`String?` is exactly the size of `String` (16 bytes). Where did the tag go?",
+         "options": [
+          "String reserves a hidden isNil byte from birth, optional or not",
+          "Into a bit pattern String can never use — a spare \"niche\" means .none",
+          "Into a CPU register, so it never touches memory",
+          "Nowhere — the measurement ignores enum tags"
+         ],
+         "correct": 1,
+         "explain": "Payload types with impossible patterns lend one to Optional for free. Int has no impossible patterns, so Int? really pays a ninth byte."
+        },
+        {
+         "q": "Code review: a teammate writes \"nil is just a null pointer, like C.\" Your correction?",
+         "options": [
+          "They're right — every Swift value is secretly a pointer",
+          "nil is an enum case; `Int?` contains no pointer at all, only a tag",
+          "They're right for classes but backwards for structs",
+          "nil is erased at compile time, so it's nothing at all"
+         ],
+         "correct": 1,
+         "explain": "nil means \"tag = .none\" for any wrapped type. That a class optional stores .none as address 0 is a layout trick, not the meaning."
+        },
+        {
+         "q": "`if let x = maybe { … }` — what does the compiler emit?",
+         "options": [
+          "A do/catch that quietly swallows the nil case",
+          "A tag check; on .some the payload is copied into x's own box",
+          "A comparison of the payload bytes against zero",
+          "A runtime search for the nearest non-nil binding"
+         ],
+         "correct": 1,
+         "explain": "Optional binding is Block 0 box mechanics: check the tag, copy the payload out. x is a fresh box holding the Int itself, not an optional."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one force-unwrap (`!`) in your current project. Write one sentence: what makes the tag provably .some at that line? If you can't write the sentence, that `!` is a crash waiting for input you haven't seen — replace it with `if let` or `guard let`.",
+     "verify": "print(MemoryLayout<Int?>.size)    // 9 — a real tag byte\nprint(MemoryLayout<Bool?>.size)   // 1 — tag hides in Bool's 254 spare patterns\nclass C {}\nprint(MemoryLayout<C?>.size)      // 8 — address 0 is the .none pattern\nprint(MemoryLayout<Int??>.size)   // 10 — .some(.none) needs its own tag state",
+     "goDeeper": "Swift stdlib source: Optional.swift — the whole type is one screen of code. WWDC 2016 \"Understanding Swift Performance\" (enum layout, niches). The Swift book: \"The Basics\", Optionals section."
+    },
+    {
+     "id": "b1-02",
+     "title": "What ARC actually does",
+     "concept": {
+      "definition": "ARC — Automatic Reference Counting — is how Swift decides when a heap object dies: every class instance carries a count of how many references currently point at it. The compiler inserts count-increment and count-decrement instructions wherever references are created, copied, or destroyed; the instant a decrement takes the count to zero, `deinit` runs and the memory is freed. It is bookkeeping compiled into your code — not a garbage collector scanning in the background.",
+      "code": "class Session { deinit { print(\"gone\") } }\n\nvar a: Session? = Session()  // count: 1\nvar b = a                    // count: 2 (a retain was compiled in)\na = nil                      // count: 1 — object still alive\nb = nil                      // count: 0 → \"gone\", freed on THIS line",
+      "underlying": "Every class instance begins with a 16-byte header your properties sit behind: a pointer to the type's metadata, and the reference-count word. An empty class instance is 16 bytes; add one Int property and it's 24. That header is part of why Block 0 called heap objects heavier than structs — a struct has no header because nothing counts it.\n\nThe counting itself is code the compiler writes into your program at build time: `b = a` compiles to roughly \"retain the incoming object, store the address, release whatever b held before.\" Scope exits get releases the same way. When a release finds the count has hit zero, it calls `deinit` synchronously and hands the memory back — on that exact line, every run. That determinism is the contrast with garbage collection: Java or JS frees objects whenever the collector next runs; Swift frees them at a fixed instruction you could set a breakpoint on.\n\nThe count is ARC's whole worldview: it cannot see WHO references an object, only HOW MANY. Keep that limitation in mind — it is exactly the blind spot the next loop exploits.",
+      "whyItMatters": "\"Is ARC a garbage collector?\" is a top-tier interview question — the real answer (compile-time-inserted counting, deterministic, no pauses) shows you know the machine. And retain/release traffic is real work that shows up in Instruments on hot paths."
+     },
+     "exercise": {
+      "prompt": "Predict the exact output, in order. Two traps: does `s1 = nil` print anything, and on precisely which line does \"gone 1\" appear?",
+      "code": "class Session {\n    let id: Int\n    init(_ i: Int) { id = i; print(\"alive \\(id)\") }\n    deinit { print(\"gone \\(id)\") }\n}\n\nvar s1: Session? = Session(1)\nvar s2: Session? = Session(2)\nvar extra = s1\n\ns1 = nil\ns2 = nil\nprint(\"checkpoint\")\nextra = nil\nprint(\"end\")",
+      "solution": "alive 1\nalive 2\ngone 2\ncheckpoint\ngone 1\nend\n\n- `extra = s1` retains object 1: count 2.\n- `s1 = nil` releases it to count 1 — prints NOTHING; releasing a reference is not destroying an object.\n- `s2 = nil` takes object 2 to zero: \"gone 2\", immediately.\n- `extra = nil` takes object 1 to zero: \"gone 1\" — after \"checkpoint\", before \"end\".",
+      "explanation": "Only the release that reaches zero destroys, and it does so synchronously on that exact line — deterministic enough to set a breakpoint on. Every other release is silent bookkeeping."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: how does ARC decide when to free an object, and how is that different from a garbage collector?",
+      "modelAnswer": "Every class instance carries a reference count, and the compiler inserts increment and decrement operations wherever references are created, copied, or destroyed. When a decrement takes the count to zero, deinit runs immediately and the memory is freed on that exact line. Unlike a garbage collector there is no background scanning and no unpredictable pauses — lifetime is decided by bookkeeping compiled into the program, deterministically.",
+      "sets": [
+       [
+        {
+         "q": "When exactly does a class instance's deinit run?",
+         "options": [
+          "At the end of the scope where the instance was created",
+          "The moment a release takes its reference count to zero",
+          "On the next pass of Swift's background collector",
+          "When the app receives a memory warning"
+         ],
+         "correct": 1,
+         "explain": "Deterministic and synchronous: the last release, wherever it happens, runs deinit right there. No scope rule, no collector, no waiting."
+        },
+        {
+         "q": "Who performs the reference-count increments and decrements?",
+         "options": [
+          "A runtime thread that watches every assignment",
+          "Instructions the compiler inserted into your code at build time",
+          "The kernel, via virtual-memory page tracking",
+          "You — Swift requires manual retain calls in some cases"
+         ],
+         "correct": 1,
+         "explain": "ARC is compile-time code insertion: every reference assignment, copy, and scope exit gets a retain or release baked in. \"Automatic\" means the compiler now writes what Objective-C programmers once wrote by hand."
+        },
+        {
+         "q": "`var b = a`, where a references an object with count 1. What gets compiled in?",
+         "options": [
+          "Nothing — copying an address involves no bookkeeping",
+          "A retain: the count becomes 2 because a second reference now exists",
+          "A full copy of the object, so each variable owns one",
+          "A release, because a hands its ownership over to b"
+         ],
+         "correct": 1,
+         "explain": "Copying a reference creates another pointer to the object, so ARC increments. This retain/release traffic is real work — measurable in Instruments in hot loops."
+        }
+       ],
+       [
+        {
+         "q": "Java frees objects \"eventually, when the GC runs\". Why can Swift's deinit print at the same line every run?",
+         "options": [
+          "Swift's collector simply runs far more often than Java's",
+          "The zeroing release is a compiled instruction at a fixed place in the code",
+          "Apple hardware has a dedicated memory-management coprocessor",
+          "It can't — deinit order is as unpredictable as any GC"
+         ],
+         "correct": 1,
+         "explain": "Death is an instruction, not an event a collector discovers later. That's why deinit is reliable for cleanup while Java's finalizers never were."
+        },
+        {
+         "q": "Code review: a teammate writes `obj = nil` and expects the object destroyed on that line. When are they wrong?",
+         "options": [
+          "Never — nil-ing a reference always destroys the object",
+          "Whenever any other reference still exists — the count is still above zero",
+          "Always — only scope exit can actually destroy an object",
+          "Only in debug builds, where destruction is delayed for diagnostics"
+         ],
+         "correct": 1,
+         "explain": "nil-ing removes ONE reference. The object dies only if that was the last — which is exactly why \"I set it to nil but memory keeps growing\" bugs happen."
+        },
+        {
+         "q": "An empty class instance occupies 16 bytes before any properties. What fills them?",
+         "options": [
+          "Reserved space for properties added in future versions",
+          "The type-metadata pointer and the reference-count word — ARC's header",
+          "Padding required by the 16-byte heap allocator granularity",
+          "A cached copy of the class's deinit code for fast access"
+         ],
+         "correct": 1,
+         "explain": "Every heap object carries its type info and retain count in a header; your stored properties start at byte 16. It's a concrete part of why tiny classes cost more than tiny structs."
+        }
+       ]
+      ]
+     },
+     "transfer": "Pick one class in your current project and temporarily add `deinit { print(\"gone: \\(type(of: self))\") }`. Run the app, use that feature, navigate away — does it print when you expect? If it never prints, you have likely found a live retain cycle: next loop's subject, in your own code.",
+     "verify": "import ObjectiveC\nclass Empty {}\nprint(class_getInstanceSize(Empty.self))  // 16 — type pointer + refcount header\n\nclass T { let n: Int; init(_ n: Int) { self.n = n }; deinit { print(\"gone\", n) } }\nvar x: T? = T(1)\nvar y = x\nx = nil                     // prints nothing — count 2 → 1\nprint(\"x niled\")\ny = nil                     // \"gone 1\" fires on THIS line — count 0",
+     "goDeeper": "WWDC 2021 \"ARC in Swift: Basics and beyond\". The Swift book: \"Automatic Reference Counting\". For contrast, read about Objective-C's pre-ARC manual retain/release — why \"automatic\" was a big deal."
+    },
+    {
+     "id": "b1-03",
+     "title": "Retain cycles",
+     "concept": {
+      "definition": "A retain cycle is a group of objects whose strong references form a closed loop, so each keeps the others' reference counts above zero. Even after every outside reference is gone, no count can reach zero, deinit never runs, and the memory is unreachable but never freed — a leak. It is the one failure mode of reference counting: ARC counts incoming references but never checks whether a group is kept alive only by itself.",
+      "code": "class Person { var pet: Dog?    ; deinit { print(\"person gone\") } }\nclass Dog    { var owner: Person?; deinit { print(\"dog gone\") } }\n\nvar p: Person? = Person()\nvar d: Dog? = Dog()\np!.pet = d      // dog count: 2\nd!.owner = p    // person count: 2\n\np = nil         // person count: 1 — the dog still points at it\nd = nil         // dog count: 1 — the person still points at it\n// nothing prints. Both alive, both unreachable. LEAKED.",
+      "underlying": "Draw it as a Block 0 loop-14 graph: after `p = nil; d = nil`, no arrow from any root reaches either object — yet Person→Dog and Dog→Person each contribute one incoming arrow, so both counts sit at 1 forever. ARC's worldview from b1-02 — how many, never who — is exactly the blind spot: a count of 1 from a dead ring looks identical to a count of 1 from a live variable.\n\nThis is where reference counting and tracing garbage collection genuinely differ. A tracer (Java, JS) starts at the roots and walks arrows; anything it can't reach is garbage, cycles included. ARC never traces — that's the price paid for b1-02's deterministic, pause-free deinit. Swift chose the trade and handed the cycle problem to you.\n\nIn real apps the ring is rarely as obvious as pet/owner: it's a delegate pointing back at its owner, a timer or observer holding its target, a closure capturing self (a few loops ahead). Detection is standard practice: a deinit print that never fires, Xcode's Memory Graph Debugger (it draws the loop-14 picture live and badges leaked rings), and the Leaks instrument. The fix is to make one arrow in the ring not count — that is `weak`, the next loop.",
+      "whyItMatters": "Retain cycles are the most common memory leak in iOS apps, and \"what's a retain cycle and how do you find one\" is a guaranteed interview question. The delegate pattern's `weak var delegate` idiom exists purely because of this loop's diagram."
+     },
+     "exercise": {
+      "prompt": "Predict the full output. Then answer: how many Nodes are still alive after run() returns, and what single line would you delete to change the answer to zero? (For that variant, also predict where the deinit prints land.)",
+      "code": "class Node {\n    let name: String\n    var next: Node?\n    init(_ n: String) { name = n; print(\"+\\(name)\") }\n    deinit { print(\"-\\(name)\") }\n}\n\nfunc run() {\n    let a = Node(\"A\")\n    let b = Node(\"B\")\n    let c = Node(\"C\")\n    a.next = b      // A -> B\n    b.next = c      // B -> C\n    c.next = a      // C -> A   (closes the ring)\n}\nrun()\nprint(\"after run\")",
+      "solution": "+A\n+B\n+C\nafter run\n\nAll three Nodes are still alive — a closed ring of strong arrows, zero names pointing at it. When run() returned, the locals a, b, c died, but each Node still has one incoming arrow from its predecessor: counts 1, 1, 1, forever.\n\nDelete `c.next = a` and the ring opens: at run()'s return the output becomes -A, -B, -C before \"after run\" — releasing a takes A to zero, A's death releases B, B's death releases C.",
+      "explanation": "A cycle needs no pair — any closed ring of strong arrows leaks as a unit, and it leaks silently: no crash, no warning, just deinits that never print. The open-chain variant shows the healthy version: one death cascading down the arrows, deterministically."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: what is a retain cycle, why can't ARC free the objects involved, and how do you detect one?",
+      "modelAnswer": "A retain cycle is a group of objects whose strong references form a closed loop, so each keeps the others' reference counts above zero even after every outside reference is gone. ARC only counts incoming references — it never traces reachability from live variables — so the counts sit at one forever, deinit never runs, and the memory leaks. You detect cycles with deinit logs that never fire, Xcode's Memory Graph Debugger, or the Leaks instrument.",
+      "sets": [
+       [
+        {
+         "q": "Two objects reference each other; every external reference is set to nil. Their counts are now…",
+         "options": [
+          "0 and 0 — both objects are freed together",
+          "1 and 1 — each is held alive solely by the other",
+          "2 and 2 — cycles double every reference count",
+          "unknowable — ARC stops counting inside cycles"
+         ],
+         "correct": 1,
+         "explain": "Each object keeps exactly one incoming strong arrow: its partner's. Nonzero count means no deinit — forever."
+        },
+        {
+         "q": "Why does ARC leak this cycle when a Java-style garbage collector would collect it?",
+         "options": [
+          "Java scans far more memory per pass than ARC does",
+          "ARC counts incoming references; a GC traces reachability from the roots",
+          "ARC only inspects objects when memory pressure rises",
+          "Java simply forbids objects from referencing each other"
+         ],
+         "correct": 1,
+         "explain": "A tracer asks \"can I walk here from a live variable?\" — the dead ring fails and is collected. Counting asks only \"is the count zero?\", and inside a ring it never is. This blind spot is the price of b1-02's deterministic deinit."
+        },
+        {
+         "q": "Which tool draws your running app's object graph and badges leaked cycles?",
+         "options": [
+          "The view hierarchy inspector in the debug bar",
+          "Xcode's Memory Graph Debugger",
+          "The thread sanitizer, enabled in the scheme",
+          "SwiftLint's retain-cycle rule"
+         ],
+         "correct": 1,
+         "explain": "It is loop b0-14's paper diagram, generated live: nodes, arrows, and purple badges on leaked rings. deinit prints and the Leaks instrument are the other everyday detectors."
+        }
+       ],
+       [
+        {
+         "q": "A Detail object stores `var delegate: Screen?` (strong), and the Screen stores the Detail. The Screen is dismissed but its deinit never prints. Diagnosis?",
+         "options": [
+          "Screens never deinit; iOS caches them for reuse",
+          "Screen and Detail form a two-node ring; dismissal only removed outside references",
+          "The deinit print was stripped by the release-build optimizer",
+          "Dismissing only hides a screen; freeing it needs an explicit call"
+         ],
+         "correct": 1,
+         "explain": "The delegate arrow pointing back at its owner is THE classic accidental ring — the reason the delegate idiom is a non-counting reference, next loop's subject."
+        },
+        {
+         "q": "Three objects: A → B → C → A, all strong, no external references. How many leak?",
+         "options": [
+          "None — rings of three or more get collected",
+          "All three — a closed ring of strong arrows leaks as one unit",
+          "Only A, since the ring was entered through it",
+          "One of the three, chosen by the runtime at random"
+         ],
+         "correct": 1,
+         "explain": "Cycle does not mean pair. Every node in the ring receives one arrow from its predecessor, so no count can be first to reach zero."
+        },
+        {
+         "q": "A teammate \"fixes\" a cycle with `deinit { self.pet = nil }`. Why is this no fix at all?",
+         "options": [
+          "Stored properties cannot be reassigned inside deinit",
+          "deinit is precisely what the cycle prevents from ever running",
+          "Assigning nil inside deinit triggers a second release and crashes",
+          "It works for two-object rings but not for longer ones"
+         ],
+         "correct": 1,
+         "explain": "Circular logic: deinit would break the ring, but the ring blocks deinit. Cycles are prevented by design — one non-counting arrow — or broken from outside while the objects are still alive."
+        }
+       ]
+      ]
+     },
+     "transfer": "Run your app from Xcode, exercise one screen and navigate away, then click the Memory Graph Debugger button (three joined circles in the debug bar). Check the left panel for purple leak badges; click one and read the ring of arrows out loud. Finding zero leaks still counts — you've learned the tool you'll use for years.",
+     "verify": "class A { var b: B?; deinit { print(\"A gone\") } }\nclass B { var a: A?; deinit { print(\"B gone\") } }\nvar x: A? = A()\nvar y: B? = B()\nx!.b = y\ny!.a = x\nx = nil\ny = nil\nprint(\"nothing above = both leaked\")   // the cycle in four lines\n\nvar lone: A? = A()\nlone = nil                              // \"A gone\" — control: no ring, count hit zero",
+     "goDeeper": "WWDC 2021 \"ARC in Swift: Basics and beyond\" — the second half walks a real cycle. WWDC 2018 \"iOS Memory Deep Dive\". Xcode documentation: \"Gathering information about memory use\" (the Memory Graph Debugger)."
+    },
+    {
+     "id": "b1-04",
+     "title": "weak and unowned: the arrow that doesn't count",
+     "concept": {
+      "definition": "weak and unowned are references that don't count: they let one object point at another without keeping it alive, which is how a back-arrow can exist without closing a retain cycle. A weak reference must be an optional var, because the runtime automatically sets it to nil when the target dies; unowned skips the optional but traps if touched after the target is gone. weak says \"it may die before me\"; unowned says \"it will outlive me — I promise.\"",
+      "code": "class Person { var pet: Dog?          ; deinit { print(\"person gone\") } }\nclass Dog    { weak var owner: Person? ; deinit { print(\"dog gone\") } }\n\nvar p: Person? = Person()\nvar d: Dog? = Dog()\np!.pet = d\nd!.owner = p    // person count STAYS 1 — weak doesn't count\n\np = nil         // \"person gone\" — and dog's owner auto-nils\nd = nil         // \"dog gone\". b1-03's leak, fixed by one keyword",
+      "underlying": "Count-wise, `weak var w = obj` compiles to no retain at all: the address is stored, the strong count is untouched. The auto-nil is not magic either — the first time an object gains a weak reference, the runtime creates a side table for it; weak loads go through that table, and when the strong count hits zero the table is marked dead, so every later weak read returns nil. That indirection is why weak must be a var (the runtime effectively writes to it) and an Optional (nil must be representable) — and why reading a weak reference costs slightly more than reading a strong one.\n\nunowned is the leaner deal: non-counting, stored non-optionally, but it keeps a lifetime check. Touch an unowned reference after its target died and you get a clean, deterministic trap — \"Attempted to read an unowned reference but object was already destroyed\" — a lifetime assertion, not memory corruption. (A truly unchecked `unowned(unsafe)` exists for interop; treat it as radioactive.)\n\nThe decision rule is one question: can the target die while I still exist? Possibly → weak, and every use handles the optional. Provably never — the target owns me, my lifetime is inside its lifetime → unowned is honest and cheaper. When in doubt, weak: a surprising nil beats a crash.",
+      "whyItMatters": "\"What's the difference between weak and unowned?\" is asked in nearly every iOS interview. In code, `weak var delegate` is the single most load-bearing idiom in UIKit — and choosing unowned on a lifetime you couldn't actually promise is a production crash."
+     },
+     "exercise": {
+      "prompt": "Predict all four marked outputs — including whether the unmarked line prints anything. Then answer: which single line of output PROVES that `badge` never counted?",
+      "code": "class Account {\n    let name = \"main\"\n    deinit { print(\"account gone\") }\n}\n\nvar acct: Account? = Account()\nweak var badge = acct\n\nprint(badge?.name)    // 1?\nacct = nil            //  ← anything?\nprint(badge?.name)    // 2?\nprint(badge == nil)   // 3?",
+      "solution": "1: Optional(\"main\") — badge reads through to the live object (an optional read, b1-01 style).\n←: \"account gone\" prints — acct was the ONLY counting reference, so nil-ing it took the count straight to zero.\n2: nil — the runtime auto-niled badge at the moment of death.\n3: true.\n\nThe proof is the unmarked line: if badge had counted, the count would still be 1 there and nothing would print.",
+      "explanation": "A weak reference is a spectator: it may watch the object while it lives, but its existence never delays the funeral. The optional-chained read is the working idiom — after death it simply evaluates to nil instead of crashing."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what do weak and unowned have in common, how do they differ, and how do you choose between them?",
+      "modelAnswer": "Both are non-counting references: they point at an object without raising its reference count, so neither can close a retain cycle. weak is an optional var that the runtime sets to nil when the target dies; unowned is non-optional and cheaper, but traps deterministically if read after the target is gone. Choose weak whenever the target could die first, and unowned only when the target provably outlives the holder — like a child object pointing back at the owner that created it.",
+      "sets": [
+       [
+        {
+         "q": "Why must a weak reference be declared as an optional var?",
+         "options": [
+          "Optionals are cheaper for the runtime to store and scan",
+          "The runtime nils it on target death — nil must fit, and the box must be writable",
+          "weak is only legal on class properties, which are always optional",
+          "To force an unwrap at every use, which briefly retains the object"
+         ],
+         "correct": 1,
+         "explain": "Auto-niling is a real write performed by the runtime behind your back. A let or a non-optional type could not receive it."
+        },
+        {
+         "q": "`weak var w = obj` — what does this compile to, count-wise?",
+         "options": [
+          "A retain that is released again at the end of the scope",
+          "No retain at all — the strong count is untouched",
+          "Half a retain, tracked separately from whole ones",
+          "A retain only if obj has no other references yet"
+         ],
+         "correct": 1,
+         "explain": "Weak stores the address without counting. The runtime does register the weak reference in a side table — that's the auto-nil machinery, not a strong count."
+        },
+        {
+         "q": "You read an unowned reference after its target was deallocated. What happens?",
+         "options": [
+          "You get nil back, exactly like a weak reference",
+          "A deterministic trap: \"object was already destroyed\"",
+          "Undefined behavior — whatever bytes now live at that address",
+          "ARC resurrects the object from its side table"
+         ],
+         "correct": 1,
+         "explain": "Safe unowned keeps a lifetime check: use-after-death crashes cleanly and reproducibly — an assertion, not corruption. The unchecked variant, unowned(unsafe), is the one that reads garbage."
+        }
+       ],
+       [
+        {
+         "q": "Code review: a teammate suggests making a delegate strong \"just to be safe.\" Your answer?",
+         "options": [
+          "Strong is fine if you remember to nil the delegate in deinit",
+          "The delegate usually owns this object — a strong back-arrow closes a ring",
+          "Strong references to protocol types don't compile in Swift",
+          "Delegates change too often for a strong reference to stay current"
+         ],
+         "correct": 1,
+         "explain": "The owner→owned arrow is already strong; the back-arrow must not count or you've rebuilt b1-03's pet/owner ring. And \"nil it in deinit\" was last loop's non-fix — deinit never runs while the ring holds."
+        },
+        {
+         "q": "Choosing unowned over weak encodes a promise. Which statement is that promise?",
+         "options": [
+          "This reference is read rarely, so the counting can be skipped",
+          "The target outlives me — whenever I exist, it exists",
+          "The target is a value type, so counting does not apply to it",
+          "I will only ever read, never write, through this reference"
+         ],
+         "correct": 1,
+         "explain": "unowned states a lifetime guarantee: a CreditCard pointing at the Customer who owns it. If the guarantee can ever break, use weak — handling an optional beats a trap in production."
+        },
+        {
+         "q": "After `strong = nil`, a weak reference to that object already reads nil on the next line. What mechanism did that?",
+         "options": [
+          "The weak getter pings the address to see if anything answers",
+          "The object's side table was marked dead; weak loads consult it and return nil",
+          "The compiler reordered the nil assignment to run first",
+          "Freed memory reads back as zero on ARM processors"
+         ],
+         "correct": 1,
+         "explain": "Every object with weak references has a runtime side table; death flips it, and each weak load checks it. That hop is the small extra cost of weak — and why the nil is guaranteed, not lucky."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one `weak` in your current project (a delegate property is the likely catch) and answer in one sentence: can its target really die before the holder does? If yes, weak is correct — now check every use handles the nil. If it provably cannot, write down why: you've found an unowned candidate, even if you sensibly leave it weak.",
+     "verify": "class Person { var pet: Dog?; deinit { print(\"person gone\") } }\nclass Dog { weak var owner: Person?; deinit { print(\"dog gone\") } }\nvar p: Person? = Person()\nvar d: Dog? = Dog()\np!.pet = d\nd!.owner = p\np = nil                        // \"person gone\" — the weak arrow never counted\nprint(d!.owner == nil)         // true — auto-niled by the side table\nd = nil                        // \"dog gone\" — b1-03's leak, fixed\n\n// unowned trap (run separately — it aborts the process, deterministically):\n// class T {}; var t: T? = T(); unowned let u = t!; t = nil; _ = u",
+     "goDeeper": "WWDC 2021 \"ARC in Swift: Basics and beyond\" — the weak/unowned segment. The Swift book: \"Automatic Reference Counting\", resolving strong reference cycles. Mike Ash, \"Swift weak references\" — the side-table design in detail."
+    },
+    {
+     "id": "b1-05",
+     "title": "Closures as data",
+     "concept": {
+      "definition": "A closure is a value with two parts: a pointer to its compiled code, and a reference to a context holding the variables it captured — 16 bytes you can store in properties, put in arrays, pass, and return like any other data. When a closure captures a local variable, the compiler moves that variable into a heap-allocated context box so it can outlive the function that created it.",
+      "code": "let double: (Int) -> Int = { n in n * 2 }\nprint(MemoryLayout<(Int) -> Int>.size)   // 16 — code ptr + context ptr\n\nfunc apply(_ f: (Int) -> Int, to x: Int) -> Int { f(x) }\nprint(apply(double, to: 21))             // 42 — passed like any value\n\nvar handlers: [() -> Void] = []          // closures in an Array buffer",
+      "underlying": "The 16 bytes are a pair: where the code lives (compiled once, at build time), and where the captured state lives. A closure that captures nothing carries an empty context; the interesting case is capture.\n\nA local like `count` normally dies at frame pop (b0-07/08). If a closure needs it beyond that, the compiler never puts it in the frame at all — `count` is born inside a heap-allocated context box, and both the enclosing function and the closure work through references to that box. When the function returns, the frame dies but the box survives, referenced by the closure. That is b0-09's scope-vs-lifetime split, engineered deliberately: this is the machinery that extends a variable's lifetime beyond its scope.\n\nThe context box is an ordinary reference-counted heap object — ARC retains and releases closure contexts exactly like class instances. File that fact: it is why closures can create retain cycles, two loops from now. `@escaping` is b0-08's escape concept with a keyword: a closure that may outlive the call (stored, run later) forces its context onto the heap with guaranteed lifetime, which is why the compiler makes escape part of the function's signature.",
+      "whyItMatters": "Completion handlers, DispatchQueue.async, SwiftUI view builders — the APIs you use daily all store closures as data. And \"what IS a closure, in memory?\" is an interview question most self-taught developers fumble; \"code pointer plus captured context\" is the answer."
+     },
+     "exercise": {
+      "prompt": "Predict the four printed values. Then answer: where does `count` live after makeCounter returns, and why can it not be in makeCounter's frame?",
+      "code": "func makeCounter() -> () -> Int {\n    var count = 0\n    return { count += 1; return count }\n}\n\nlet a = makeCounter()\nlet b = makeCounter()\n\nprint(a())   // ?\nprint(a())   // ?\nprint(b())   // ?\nprint(a())   // ?",
+      "solution": "1\n2\n1\n3\n\ncount lives in a heap-allocated context box created by makeCounter — one box per call, so a and b hold different boxes. It cannot live in the frame because the frame was destroyed when makeCounter returned (b0-07), while the closure must keep reading and writing count afterward.\n\na's box: 0 → 1 → 2 → 3 across its three calls. b's box: 0 → 1, untouched by a's calls.",
+      "explanation": "One compiled body, two context boxes — the same blueprint-vs-instance split as b0-03, now applied to code. If you predicted 1 2 1 2 for the last line, you imagined the counters sharing state; each maker call allocates a fresh box."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: what is a closure in memory, and what happens when it captures a local variable?",
+      "modelAnswer": "In memory a closure is two pointers: one to its compiled code and one to a context holding its captured variables — a 16-byte value you can store and pass around. When it captures a local, the compiler allocates that variable in a heap context box instead of the stack frame, so the closure can keep using it after the enclosing function returns. The context box is reference-counted by ARC like any other heap object.",
+      "sets": [
+       [
+        {
+         "q": "What are the two parts of a closure value in memory?",
+         "options": [
+          "The source text and an interpreter that runs it on demand",
+          "A pointer to its compiled code and a reference to its captured context",
+          "A copy of every variable it might touch, plus a private stack frame",
+          "Its parameter list and return type, stored as runtime metadata"
+         ],
+         "correct": 1,
+         "explain": "16 bytes: code pointer + context pointer. The code was compiled once at build time; capturing nothing just leaves the context empty."
+        },
+        {
+         "q": "makeCounter's local `count` survives the function's return. What made that possible?",
+         "options": [
+          "return copied count out to the caller, like any struct result",
+          "The compiler allocated count in a heap box that the closure references",
+          "Locals survive as long as any function in the file is still running",
+          "count was silently promoted to a hidden global variable"
+         ],
+         "correct": 1,
+         "explain": "The compiler sees the closure needs count beyond the frame's life, so count is never in the frame — it's born in a heap context box. b0-09's scope/lifetime split, engineered on purpose."
+        },
+        {
+         "q": "Who cleans up a closure's heap context box when the closure is no longer referenced?",
+         "options": [
+          "The frame pop of the function that created the closure",
+          "ARC — the context is reference-counted like any heap object",
+          "A dedicated closure collector that runs between function calls",
+          "Nobody — closure contexts persist until the app terminates"
+         ],
+         "correct": 1,
+         "explain": "Closure contexts are ordinary ARC-managed heap allocations. That means they can hold strong references — and therefore participate in retain cycles, coming in two loops."
+        }
+       ],
+       [
+        {
+         "q": "`var handlers: [() -> Void]` — what does the array's buffer actually store per element?",
+         "options": [
+          "Each closure's source code, compiled lazily on first call",
+          "A 16-byte pair: code pointer plus context reference",
+          "A full inline copy of each closure's captured variables",
+          "Nothing — the compiler inlines closures at their call sites"
+         ],
+         "correct": 1,
+         "explain": "Closures are ordinary values, so b0-11's contiguous buffer holds 16-byte pairs. Each closure's captured state lives in its own heap context, outside the array."
+        },
+        {
+         "q": "Why is `@escaping` part of a function's signature instead of being automatic?",
+         "options": [
+          "Legacy from Objective-C blocks, preserved only for source compatibility",
+          "Escape has a real cost — a heap-kept, retained context — so it must be declared",
+          "Escaping closures are forbidden from capturing var variables",
+          "It marks closures that are permitted to throw errors upward"
+         ],
+         "correct": 1,
+         "explain": "A non-escaping closure dies with the call, so it can be cheap. One that may outlive the call (stored, async) needs guaranteed heap lifetime for its context — b0-08's escape concept, now costing something."
+        },
+        {
+         "q": "Two counters from the same maker function count independently. The memory-level diagnosis?",
+         "options": [
+          "The compiler duplicated the function's compiled code per call",
+          "Each maker call allocated its own context box for its closure",
+          "The counters share one box but read it at different offsets",
+          "Swift copies the closure's whole context on every invocation"
+         ],
+         "correct": 1,
+         "explain": "One compiled body, many context boxes — blueprint vs instance (b0-03), applied to code. The code pointer is shared; the state is per-closure."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one completion handler or stored closure property in your project. Write down: what does it capture, and where do those captured things live right now? If the closure sits on a long-lived object, its captures live exactly that long too — sit with that thought; it becomes a bug pattern in two loops.",
+     "verify": "print(MemoryLayout<(Int) -> Int>.size)   // 16 — code pointer + context pointer\nprint(MemoryLayout<() -> Void>.size)     // 16 — same pair, any signature\n\nfunc makeCounter() -> () -> Int {\n    var count = 0\n    return { count += 1; return count }\n}\nlet a = makeCounter()\nlet b = makeCounter()\nprint(a(), a(), b(), a())                // 1 2 1 3 — one body, two boxes",
+     "goDeeper": "WWDC 2016 \"Understanding Swift Performance\" — the closure memory segment. The Swift book: \"Closures\", especially Capturing Values. Swift Evolution SE-0103 (why non-escaping became the default)."
+    },
+    {
+     "id": "b1-06",
+     "title": "Capture semantics: shared box or snapshot",
+     "concept": {
+      "definition": "By default a closure captures a variable by sharing its box: the closure and the enclosing scope read and write the same storage, so changes are visible in both directions. A capture list — `{ [x] in … }` — instead copies x's current value into a constant owned by the closure, fixed at the moment the closure is created. Default capture shares the variable; a capture list snapshots it.",
+      "code": "var score = 1\nlet live   = {         print(score) }   // shares score's box\nlet frozen = { [score] in print(score) }  // copies 1, NOW, forever\n\nscore = 2\nlive()     // 2 — reads the shared box\nfrozen()   // 1 — reads its own frozen copy",
+      "underlying": "The shared box is b1-05's heap context box. When several closures capture the same local, the compiler gives them references to ONE box — increment through one closure and the other sees it. That sharing is the feature: b1-05's counter is only possible because the closure writes back into storage the function also used.\n\nA capture list compiles to: evaluate each entry once, at creation, and store the copy as a `let` inside the closure's own context. Later changes to the outer variable are invisible — and the capture happens at creation time, never at call time.\n\nFor reference types, b0-06's rule passes through untouched: `[box]` copies the REFERENCE. That freezes WHICH object the closure sees — re-aiming the outer variable no longer affects it — but not the object's contents: mutations through the shared instance remain visible. Value snapshot vs frozen arrow: keep those separate and every capture puzzle becomes mechanical.",
+      "whyItMatters": "\"Why does my closure see the new value?\" — or the old one — is a daily async bug, and the answer is always which capture you got. The capture-list syntax is also the doorway to `[weak self]`, next loop's subject."
+     },
+     "exercise": {
+      "prompt": "Predict all four prints. Then answer precisely: at what moment was frozen's value determined — and what single deletion would make frozen print 3 at the end?",
+      "code": "var score = 1\n\nlet live   = { print(\"live:\", score) }\nlet frozen = { [score] in print(\"frozen:\", score) }\n\nscore = 2\nlive()     // ?\nfrozen()   // ?\n\nscore = 3\nlive()     // ?\nfrozen()   // ?",
+      "solution": "live: 2\nfrozen: 1\nlive: 3\nfrozen: 1\n\nfrozen's value was determined on the line `let frozen = …` — the capture list evaluated score (then 1) and stored a private copy. Calls never re-read the outer variable.\n\nDelete `[score] in` and frozen becomes a default capture sharing the box, printing 3 at the end, exactly like live.",
+      "explanation": "Creation time vs call time is the whole game: a capture list runs at creation, the closure body at each call. If you predicted frozen: 2, you snapshotted at the wrong moment — the closure was created while score was still 1."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: how does default closure capture differ from a capture list, and when exactly does a capture list take its copy?",
+      "modelAnswer": "Default capture shares the variable's box: closure and enclosing scope use the same storage, so each sees the other's writes. A capture list copies the variable's current value into a constant owned by the closure — taken once, at the moment the closure is created, never at call time. For reference types the copied thing is the reference, so the capture list freezes which object the closure sees but not that object's contents.",
+      "sets": [
+       [
+        {
+         "q": "Default capture — `{ print(x) }` — gives the closure…",
+         "options": [
+          "a snapshot of x's value, taken when the closure is created",
+          "shared access to x's box — the same storage the outer code uses",
+          "a lazy binding that looks x up by name at every call",
+          "a compile error unless x was declared with let"
+         ],
+         "correct": 1,
+         "explain": "Default capture shares the variable itself — one box in the heap context, visible from both sides. That's what \"closing over\" a variable means."
+        },
+        {
+         "q": "What does the capture list in `{ [x] in … }` change?",
+         "options": [
+          "It makes the capture weak automatically",
+          "x's current value is copied into the closure's own constant, at creation",
+          "The closure re-reads the outer x freshly on every call",
+          "x becomes writable (inout) inside the closure body"
+         ],
+         "correct": 1,
+         "explain": "A capture list evaluates each entry once, at creation, and stores the copy as a let. `[weak x]` is this same syntax with an ownership annotation bolted on — next loop."
+        },
+        {
+         "q": "Two closures in one function both capture the local `n` by default. How many boxes exist for n?",
+         "options": [
+          "Two — each closure copied its own n at creation",
+          "One — both closures reference the same heap box",
+          "Three — the original plus one copy per closure",
+          "Zero — n stays in the function's stack frame"
+         ],
+         "correct": 1,
+         "explain": "Shared capture is genuinely shared: increment through one closure and the other sees it. One box, many referrers — b0-14's convergent arrows, drawn from closures."
+        }
+       ],
+       [
+        {
+         "q": "`let f = { [box] in print(box.v) }` — box is a class instance. After creation, `box.v = 9`. f() prints…",
+         "options": [
+          "the old value — the capture list snapshotted the whole object",
+          "9 — the list copied the reference; the object behind it is shared",
+          "nil — box was consumed when the list captured it",
+          "either value — it depends on when the context was allocated"
+         ],
+         "correct": 1,
+         "explain": "b0-06 survives inside capture lists: copying a reference copies the address. [box] freezes WHICH object the closure sees, not that object's contents."
+        },
+        {
+         "q": "An async task's captured `requestID` keeps \"mysteriously\" holding the newest ID by the time the task runs. The fix?",
+         "options": [
+          "Make requestID a global so nothing else can change it",
+          "Capture it by list — [requestID] — pinning the value the task was made for",
+          "Invoke the closure once immediately to lock its captures in place",
+          "Mark the closure @escaping so its captures become constants"
+         ],
+         "correct": 1,
+         "explain": "Default capture shares the live variable, so by run time it holds whatever is current. The capture list pins the value at creation — the standard fix for this async race."
+        },
+        {
+         "q": "Why did Swift make SHARING the default and snapshotting the opt-in, rather than the reverse?",
+         "options": [
+          "Taking a snapshot at every closure creation would cost too much",
+          "Mutating enclosing state requires sharing — a snapshot could never write back",
+          "It matches the default of C++ lambdas, easing migration",
+          "Sharing always uses less memory than copying would"
+         ],
+         "correct": 1,
+         "explain": "Closures that update their enclosing function's state are the feature — b1-05's counter is impossible with snapshots. When you don't need write-back, the pin is one bracket away."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one closure in your project that reads a `var` from its surrounding scope — a flag, an index, a request token. Decide deliberately: should it see the latest value (default, shared) or the value from when it was created ([x])? Write the one-line answer next to it. If you can't decide, you've found a latent bug.",
+     "verify": "var score = 1\nlet live   = { print(\"live:\", score) }\nlet frozen = { [score] in print(\"frozen:\", score) }\nscore = 2\nlive()     // live: 2\nfrozen()   // frozen: 1 — copied at creation\n\nclass Box { var v = 1 }\nvar b = Box()\nlet pinned = { [b] in print(\"pinned:\", b.v) }\nb.v = 5\npinned()   // pinned: 5 — the reference was copied, the object is shared\nb = Box()\npinned()   // pinned: 5 — re-aiming the outer variable can't reach it",
+     "goDeeper": "The Swift book: \"Closures > Capturing Values\" and \"Expressions > Capture Lists\". WWDC 2016 \"Understanding Swift Performance\". Swift Evolution SE-0269 (implicit self in closures — context for next loop)."
+    },
+    {
+     "id": "b1-07",
+     "title": "Closure retain cycles and [weak self]",
+     "concept": {
+      "definition": "A closure retain cycle is b1-03's ring built from a closure: an object stores a closure, and that closure's context captures self strongly — object → context → object, so neither count can reach zero. `[weak self]` breaks the ring using b1-06's capture-list syntax with b1-04's non-counting reference: the context holds self weakly, and inside the body self is an optional. A strong self capture is only a leak when a ring actually forms — a closure that self does not store merely extends self's lifetime until the closure runs and dies.",
+      "code": "class Screen {\n    var refresh: (() -> Void)?\n    func wireUp() {\n        refresh = { print(self.name) }         // ring: LEAK\n        refresh = { [weak self] in             // no ring\n            guard let self else { return }\n            print(self.name)\n        }\n    }\n    let name = \"home\"\n    deinit { print(\"gone\") }\n}",
+      "underlying": "Draw the ring with the context box as a real node: arrow one is self's stored property pointing at the closure; arrow two is the closure's context holding its strong capture of self. Two arrows, closed ring — b0-14's picture, and b1-03's verdict: unreachable, counts stuck at 1, deinit blocked. (And \"I'll release it in deinit\" fails for the same circular reason as last loop.)\n\n`[weak self]` changes what the context stores: a weak reference, through b1-04's side table, counting nothing. The ring never closes. The price is honesty about lifetime: self is optional inside the body, and `guard let self else { return }` is the standard prologue — a b1-01 tag check that either bails or gives you a strong self for the duration of that one call. `[unowned self]` is the cheaper promise — non-optional, but a call after self's death traps deterministically.\n\nThe discrimination skill interviews probe: not every strong self is a cycle. `queue.async { self.save() }` where self never stores the closure builds no ring — the queue holds self until the task finishes, then the context dies and releases it. That temporary extension is often exactly what you want: the save completes. The question to ask at every closure: is there a strong path from self back to this closure?",
+      "whyItMatters": "This exact ring is the most common real leak in iOS codebases, and \"when do you actually need [weak self]?\" is a favorite senior-filter interview question. Blanket [weak self] is its own bug: work that silently vanishes because self died mid-flight."
+     },
+     "exercise": {
+      "prompt": "Predict everything this prints, in order. The traps: does A's deinit ever fire, and what does the saved closure print after B is gone?",
+      "code": "class Screen {\n    var refresh: (() -> Void)?\n    let name: String\n    init(_ n: String) { name = n }\n    func wireUp() {\n        refresh = { print(\"refreshing \\(self.name)\") }\n    }\n    func wireUpWeak() {\n        refresh = { [weak self] in print(\"refreshing \\(self?.name ?? \"gone\")\") }\n    }\n    deinit { print(\"deinit \\(name)\") }\n}\n\nvar a: Screen? = Screen(\"A\")\na!.wireUp()\na = nil            // ?\n\nvar b: Screen? = Screen(\"B\")\nb!.wireUpWeak()\nlet saved = b!.refresh\nb = nil            // ?\nsaved?()           // ?\nprint(\"end\")",
+      "solution": "(nothing)\ndeinit B\nrefreshing gone\nend\n\n- `a = nil` prints NOTHING: A → refresh closure → context → A is a closed ring; A's count never reaches zero. Leaked, silently.\n- `b = nil` prints \"deinit B\": the weak capture never counted, so b was the only strong reference. (saved holds the CLOSURE alive — not B; the closure only holds B weakly.)\n- `saved?()` prints \"refreshing gone\": the closure outlived its subject; the weak self auto-niled (b1-04) and ?? supplied the fallback.",
+      "explanation": "The saved closure surviving B is the detail worth savoring: closure lifetime and captured-object lifetime are independent once the capture is weak. A strong capture would have made saved a second leak-path keeping B alive."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: how does a closure create a retain cycle with self, how does [weak self] break it, and when is a strong self capture NOT a leak?",
+      "modelAnswer": "The cycle forms when self stores a closure whose context captures self strongly — object points at closure, closure context points back, and neither reference count can reach zero. [weak self] makes the context hold self through a non-counting weak reference, so the ring never closes; inside the body self is optional and is typically unwrapped with guard let self. A strong capture is not a leak when self doesn't store the closure — like a queued task — it just keeps self alive until the closure runs and is released, which is often intended.",
+      "sets": [
+       [
+        {
+         "q": "self stores a closure; the closure captures self strongly. What are the ring's two arrows?",
+         "options": [
+          "self → the closure's code, and the code → self's class metadata",
+          "self → the closure (stored property), and the closure's context → self (capture)",
+          "The stack frame → self, and self → the same stack frame",
+          "self → its deinit, and the deinit → the stored closure"
+         ],
+         "correct": 1,
+         "explain": "The context box is a real heap node whose capture is a strong arrow back to self, while self's property points at the closure. Two arrows, one ring — b1-03 with a context box as the second node."
+        },
+        {
+         "q": "What exactly does `[weak self]` change in memory?",
+         "options": [
+          "The closure's code pointer becomes lazily loaded on first call",
+          "The context stores a weak reference to self, so the capture doesn't count",
+          "self is copied into the context by value when the closure is created",
+          "The closure's context is moved from the heap onto the stack"
+         ],
+         "correct": 1,
+         "explain": "b1-06's capture list plus b1-04's non-counting arrow: the context's reference goes through the side table and keeps nothing alive. The ring never closes."
+        },
+        {
+         "q": "Inside a `[weak self]` closure, what is self, and what's the idiomatic first line?",
+         "options": [
+          "The usual non-optional self; the body needs no change at all",
+          "An optional — typically unwrapped with `guard let self else { return }`",
+          "A value copy of self whose mutations must be written back",
+          "A compile-time placeholder substituted at each call site"
+         ],
+         "correct": 1,
+         "explain": "Weak means optional (b1-04), so the body must face self-already-gone. The guard is a b1-01 tag check — and on success it holds a strong self just for the duration of this one call."
+        }
+       ],
+       [
+        {
+         "q": "`queue.async { self.save() }` — self does NOT store this closure. Is this a leak?",
+         "options": [
+          "Yes — any strong capture of self inside a closure forms a cycle",
+          "No — the queue holds self only until the task runs; a delay, not a ring",
+          "Yes, but only when the target is the main queue",
+          "No, because async closures are barred from capturing references"
+         ],
+         "correct": 1,
+         "explain": "No arrow from self back to the closure means no ring: self lives until the save finishes, then the dying context releases it. [weak self] here would risk silently skipping the save."
+        },
+        {
+         "q": "When is `[unowned self]` the honest choice over `[weak self]`?",
+         "options": [
+          "Whenever the closure only ever runs on the main thread",
+          "When the closure provably cannot outlive self",
+          "When self is a value type rather than a class",
+          "Whenever call-site performance outweighs correctness"
+         ],
+         "correct": 1,
+         "explain": "It restates b1-04's promise inside a capture list. If the closure can escape self's lifetime — queues, timers, saved references — a post-deinit call traps, so weak stays the default."
+        },
+        {
+         "q": "Code review: a teammate adds [weak self] to every closure \"to be safe.\" The strongest objection?",
+         "options": [
+          "Each capture list doubles the closure's creation cost",
+          "Work can silently vanish — self may die mid-flight and guarded bodies just return",
+          "weak self is compiled down to unowned in release builds anyway",
+          "Capture lists prevent the optimizer from inlining closures"
+         ],
+         "correct": 1,
+         "explain": "Blanket weak trades leaks for silent no-ops — an upload that quietly never completes. Capture strength is a per-closure lifetime decision: ring → weak; intended extension → strong."
+        }
+       ]
+      ]
+     },
+     "transfer": "Grep your project for `[weak self]`. Pick one and answer: is there really a strong path from self back to that closure (a ring), or was it reflex? Then find one strong-self closure and decide whether its lifetime extension is intended. Two closures, two verdicts, one sentence each.",
+     "verify": "class Screen {\n    var refresh: (() -> Void)?\n    let name: String\n    init(_ n: String) { name = n }\n    deinit { print(\"deinit \\(name)\") }\n}\n\nvar a: Screen? = Screen(\"A\")\na!.refresh = { [a] in _ = a }          // self-shaped ring via capture\na = nil                                 // prints nothing — leaked\nprint(\"A leaked\")\n\nvar b: Screen? = Screen(\"B\")\nb!.refresh = { [weak b] in _ = b }      // weak capture — no ring\nb = nil                                 // \"deinit B\"\nprint(\"B freed\")",
+     "goDeeper": "WWDC 2021 \"ARC in Swift: Basics and beyond\" — the closure-cycle walkthrough with graphs. The Swift book: \"Strong Reference Cycles for Closures\". Swift Evolution SE-0269 — why `guard let self` re-enables implicit self."
+    },
+    {
+     "id": "b1-08",
+     "title": "Copy-on-write: the deferred copy",
+     "concept": {
+      "definition": "Copy-on-write is the trick that makes value semantics affordable: assigning an Array, Dictionary, String, or Set copies only the small handle struct, and both variables share one heap buffer. The real element copy is deferred until someone tries to mutate a shared buffer — at that moment the mutator first copies the buffer, then writes to its private copy. Observable behavior stays pure value semantics; only the timing of the cost changes.",
+      "code": "var a = [1, 2, 3]\nvar b = a            // copies the HANDLE — one buffer, count 2\n// a: [handle] ──┐\n// b: [handle] ──┴──> [1][2][3]   (one shared heap buffer)\n\nb.append(4)          // shared! copy all elements first, THEN write\nprint(a)             // [1, 2, 3]    — untouched\nprint(b)             // [1, 2, 3, 4] — private buffer now",
+      "underlying": "b0-11 said an Array is a small handle referencing a heap buffer; b0-02 admitted the copy story was simplified \"until Block 1.\" Here is the machinery. Assignment copies the handle and retains the buffer — b1-02's reference counting, reused on buffers instead of your objects.\n\nEvery mutating method starts with a prologue: is this buffer's reference count exactly 1? Unique → mutate in place, free. Shared → allocate a new buffer, copy every element (O(n), right here, right now), release the old buffer, then write. The reference count is doing double duty: not just \"when may this die?\" (b1-02) but \"do I own this exclusively?\" That test is public — `isKnownUniquelyReferenced(&ref)` — and it's how you'd build a COW type of your own.\n\nThe cost model to internalize: copies are free until the first mutation of a shared value; that one mutation pays O(n); afterwards BOTH sides are unique again and mutate cheaply. So a snapshot (`let before = state`) costs one deferred copy total — not one per change. COW is hand-built into the stdlib collections; your own structs don't do it, and don't need to unless they carry big buffers.",
+      "whyItMatters": "\"Are Swift arrays copied on assignment?\" is an interview classic where the layered answer — semantically yes, physically on first shared mutation — marks you as someone who's looked underneath. In profiling, this explains sudden memcpy spikes on innocent-looking `array[i] = x` lines."
+     },
+     "exercise": {
+      "prompt": "For each marked line, verdict: INSTANT or PAYS O(n). Predict the final print — and state exactly which line the million-element copy happens on.",
+      "code": "var a = Array(repeating: 0, count: 1_000_000)\n\nvar b = a          // 1\nb[0] = 7           // 2\nb[1] = 8           // 3\na[0] = 5           // 4\nprint(a[0], b[0])  // 5?",
+      "solution": "1: INSTANT — handle copied, buffer shared, count 2.\n2: PAYS O(n) — first mutation of a shared buffer: allocate, copy 1,000,000 elements, then write 7. This is THE copy line.\n3: INSTANT — b's buffer is private now; write in place.\n4: INSTANT — the split at line 2 left a's buffer unique too; write in place.\n5: prints 5 7 — value semantics held perfectly throughout.",
+      "explanation": "One deferred copy, paid by whoever mutates shared data first — then everyone owns their buffer and mutation is cheap again. Line 4 is the subtle one: b paying the copy also freed a."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: what does `var b = a` really copy when a is an Array, and when does the real copy of the elements happen?",
+      "modelAnswer": "Assignment copies only the array's small handle struct and retains the shared heap buffer — the elements are not copied. The real copy is deferred until a mutation hits a buffer whose reference count is above one: the mutator allocates a new buffer, copies all elements, and then writes. Behavior is still value semantics — the other variable never sees the change — but the O(n) cost moves from assignment time to first-shared-mutation time.",
+      "sets": [
+       [
+        {
+         "q": "`var b = a` where a holds a million-element Array. What is physically copied?",
+         "options": [
+          "All million elements, immediately — value semantics demands it",
+          "The small handle struct; the heap buffer is shared and retained",
+          "Nothing at all — b becomes a second name for the variable a",
+          "The first memory page of elements; the rest copy on access"
+         ],
+         "correct": 1,
+         "explain": "A handle's worth of bytes plus one retain on the buffer (b1-02, reused). The million elements sit untouched, shared."
+        },
+        {
+         "q": "When does the real element copy happen?",
+         "options": [
+          "On the first read through either of the two variables",
+          "At the first mutation attempted on a shared buffer",
+          "On a background thread, shortly after the assignment",
+          "Never — the two arrays remain linked from then on"
+         ],
+         "correct": 1,
+         "explain": "Reads can share forever — sharing is only dangerous to value semantics when someone writes. So mutation pays: copy first, then write. Copy-on-write, literally."
+        },
+        {
+         "q": "How does a mutating method decide whether it must copy before writing?",
+         "options": [
+          "It checks a wasCopied flag that assignment sets on the handle",
+          "It checks whether the buffer's reference count is exactly one",
+          "It compares the two arrays' contents element by element",
+          "It always copies, then throws the copy away if it wasn't needed"
+         ],
+         "correct": 1,
+         "explain": "Unique → mutate in place. Shared → copy out first. The ARC count doubles as an exclusive-ownership test, and `isKnownUniquelyReferenced` is that exact check, public."
+        }
+       ],
+       [
+        {
+         "q": "You keep `let snapshot = state` (a huge array) and keep mutating state. Total extra cost of the snapshot?",
+         "options": [
+          "O(n) added to every later mutation of state",
+          "One O(n) copy at state's first mutation; then state is unique again",
+          "Zero forever — snapshots share the buffer no matter what",
+          "O(n log n) — the shared buffer gets rebalanced on the split"
+         ],
+         "correct": 1,
+         "explain": "The first mutation pays the split; every one after writes into state's now-private buffer. Snapshots cost one copy, not one per change — a genuinely cheap pattern."
+        },
+        {
+         "q": "Array, String, and Dictionary all COW. What about your own `struct Point { var x, y: Int }`?",
+         "options": [
+          "It COWs too — every Swift struct does automatically",
+          "It has no heap buffer to share; its 16 bytes simply copy — nothing to defer",
+          "It copies lazily only once it grows past 16 bytes",
+          "It allocates a hidden shared buffer, the same as Array"
+         ],
+         "correct": 1,
+         "explain": "COW is hand-built into the stdlib collections, not a language feature of structs. A small fixed-size struct copies its bytes directly (b0-02) — already as cheap as copying gets."
+        },
+        {
+         "q": "Instruments shows a huge memcpy spike inside a single innocent `array[i] = x` line. Explain it.",
+         "options": [
+          "Subscript writes on Swift arrays are always O(n)",
+          "The buffer was shared right then; the write triggered the deferred full copy",
+          "The optimizer relocated an unrelated copy onto that line",
+          "Bounds checking scans the whole array before every write"
+         ],
+         "correct": 1,
+         "explain": "The mutation found count > 1 and paid the deferred bill: allocate, copy every element, then write. If the spike surprises you, go find who's still holding the other reference."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one place in your project where a big Array or Dictionary gets stored twice or passed along (a snapshot, a cache, a completion argument). Answer in a sentence: who mutates it first after the sharing point, and is that line paying a hidden O(n) copy? If nothing ever mutates a shared copy, say that out loud too — then the sharing is free.",
+     "verify": "var a = [1, 2, 3]\nvar b = a\nlet pa = a.withUnsafeBufferPointer { $0.baseAddress! }\nlet pb = b.withUnsafeBufferPointer { $0.baseAddress! }\nprint(pa == pb)     // true — one buffer, two handles\nb.append(4)          // first shared mutation: the copy happens HERE\nlet pb2 = b.withUnsafeBufferPointer { $0.baseAddress! }\nprint(pa == pb2)    // false — b moved to a private buffer\nprint(a)             // [1, 2, 3] — value semantics held\n\nfinal class Ref {}\nvar r = Ref()\nprint(isKnownUniquelyReferenced(&r))   // true\nlet r2 = r\nprint(isKnownUniquelyReferenced(&r))   // false — the stdlib's COW test",
+     "goDeeper": "WWDC 2016 \"Understanding Swift Performance\" — the copy-on-write segment. Swift stdlib documentation: isKnownUniquelyReferenced. \"Advanced Swift\" (objc.io) — building your own COW type, step by step."
+    },
+    {
+     "id": "b1-09",
+     "title": "Struct vs class: the decision",
+     "concept": {
+      "definition": "A struct is its bytes: copied on assignment, no header, no reference count, storable inline. A class instance is a headed heap object with identity, shared through counted references. Choose by asking one question: is this thing DATA — a value where equal contents mean interchangeable — or an ENTITY — one specific thing whose identity and lifetime matter? Data → struct; entity → class.",
+      "code": "struct PointS      { var x = 0.0; var y = 0.0 }  // 16 bytes, period\nfinal class PointC { var x = 0.0; var y = 0.0 }  // 8-byte ref +\n                                                  // 32-byte heap object\n\n// [PointS] buffer: [x y][x y][x y]   — the data itself, contiguous\n// [PointC] buffer: [ptr][ptr][ptr]  — pointers to scattered objects",
+      "underlying": "The cost anatomy, all from earlier loops: a PointC instance is 32 heap bytes (b1-02's 16-byte header + 16 of fields), costs allocator work at birth (b0-04), and generates retain/release traffic every time it's assigned or passed. PointS is 16 bytes wherever it sits; copying is a plain byte copy with no ARC — with one asterisk: a struct whose FIELDS are reference-typed (String, Array, a closure) still retains those handles on copy (b1-08's machinery).\n\nIn collections the gap widens: `[PointS]` lays the data itself contiguously — b0-11's cache-friendly streaming — while `[PointC]` is a contiguous row of pointers to objects scattered across the heap, one dereference (and likely cache miss) per element.\n\nWhat structs give up is exactly what entities need: identity (`===` exists only for classes), deinit (b1-02's deterministic cleanup), inheritance and Objective-C interop (why UIKit's views are classes), and genuinely shared mutable state — a struct cannot be the single thing two screens both watch. One bonus of value-only models: b1-03's rings are made of reference arrows, so an all-struct model cannot form a retain cycle at all.\n\nApple's published guidance agrees with the machinery: default to struct; reach for class when identity, lifetime, or interop demand it.",
+      "whyItMatters": "\"When do you use a class vs a struct?\" is the single most-asked Swift interview question, and 'data vs entity, and here's the memory cost of each' beats the memorized 'structs are on the stack' every time. Your B1 checkpoint project's model layer starts with exactly this call."
+     },
+     "exercise": {
+      "prompt": "A reasoning exercise, like b0-04's. For each type, verdict: STRUCT or CLASS — and justify with the machinery (identity, deinit, sharing, contiguity), not taste.",
+      "code": "// 1. Point(x:y:) — 2D coordinate used in drawing math\n// 2. DatabaseConnection — wraps an open socket that must be\n//    closed exactly once when finished\n// 3. UserProfile — two screens must edit and observe the SAME\n//    profile, seeing each other's changes live\n// 4. AuditEvent(timestamp:message:) — appended by the thousands\n//    to an in-memory log array",
+      "solution": "1. STRUCT — pure data: two equal Points are interchangeable; 16 inline bytes, no header, no counting.\n2. CLASS — an entity with a lifetime: identity matters (THE connection), and deinit closes the socket exactly once (b1-02). Struct copies would each 'own' the socket — double-close or no-close.\n3. CLASS (or a struct published by one class-owned source of truth) — 'same profile, two watchers' is shared mutable state: b0-14's convergent arrows are the requirement.\n4. STRUCT — thousands of instances in an array: inline contiguous storage (b0-11), zero per-instance allocations, no ARC traffic on append.",
+      "explanation": "Notice every justification is a memory fact, not a style preference — that's the point of having built the machinery first. Case 3 is the honest gray zone: UIKit-era code shares a class; SwiftUI-era code often keeps the struct and centralizes ownership instead."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: how do you decide between a struct and a class, and what does each choice cost or buy in memory terms?",
+      "modelAnswer": "I ask whether the type is data — interchangeable by contents — or an entity whose identity and lifetime matter: data becomes a struct, entities become classes. A class buys identity, shared mutation, and deinit, but costs a heap allocation with a 16-byte header per instance plus retain/release traffic on every share. A struct is just its bytes — copied on assignment, stored inline in collections, no reference counting — so it's the default, and Apple's guidance says the same.",
+      "sets": [
+       [
+        {
+         "q": "The one-question heuristic for struct vs class:",
+         "options": [
+          "Will it ever hold more than 64 bytes of data?",
+          "Is it interchangeable data, or an entity with identity and lifetime?",
+          "Will it need to conform to protocols later on?",
+          "Does it have to be Codable for the networking layer?"
+         ],
+         "correct": 1,
+         "explain": "Two Points with equal fields are the same for every purpose — data. Two Sessions with equal fields are still two different sessions — entity. Everything else follows from this split."
+        },
+        {
+         "q": "Per instance, what does choosing a class over a struct physically add?",
+         "options": [
+          "Nothing measurable on modern iPhone hardware",
+          "A 16-byte header, a heap allocation, and counting traffic on every share",
+          "Only the 8 bytes that the reference itself occupies",
+          "A private copy of the class's method table per instance"
+         ],
+         "correct": 1,
+         "explain": "b1-02's header, b0-04's allocator work, b1-02's retain/release — per instance, per share. For a 16-byte Point on a hot path, the overhead outweighs the data."
+        },
+        {
+         "q": "An array of 10,000 struct enemies vs class enemies. The struct array's layout advantage?",
+         "options": [
+          "Its elements are kept sorted, enabling binary search on reads",
+          "Elements sit inline and contiguous — iteration streams the cache",
+          "It skips bounds checking on every single subscript access",
+          "It deduplicates equal elements to shrink the buffer automatically"
+         ],
+         "correct": 1,
+         "explain": "b0-11's contiguity holds the data itself for structs. The class array is a contiguous row of pointers to scattered heap objects — a dereference, and likely a cache miss, per element."
+        }
+       ],
+       [
+        {
+         "q": "DatabaseConnection wraps an open socket that must be closed exactly once. Struct or class?",
+         "options": [
+          "Struct — copies make connections safer to hand around",
+          "Class — one entity with a lifetime; deinit closes the socket exactly once",
+          "Struct — a socket is just a value-like file descriptor",
+          "Either works — a defer statement handles the closing"
+         ],
+         "correct": 1,
+         "explain": "Struct copies would each \"own\" the socket — close it twice, or never. Identity plus b1-02's deterministic deinit is precisely the class feature set."
+        },
+        {
+         "q": "Your model layer is all structs, and retain cycles are IMPOSSIBLE in it. Why?",
+         "options": [
+          "Struct memory is scanned by a cycle collector",
+          "Rings need reference arrows; struct assignment copies instead",
+          "The compiler inserts weak into struct fields silently",
+          "Structs live on the stack, which clears every frame"
+         ],
+         "correct": 1,
+         "explain": "b1-03's rings are built from references; value composition copies instead (b0-02). The fine print: a struct holding a closure or class reference can still participate — 'all structs' is doing real work in the claim."
+        },
+        {
+         "q": "Two screens must edit and observe the SAME user profile, live. Your call?",
+         "options": [
+          "Struct — copies keep each screen's edits safely isolated",
+          "Class — shared mutable state is the requirement; that's reference semantics",
+          "Struct, with @escaping closures syncing the copies",
+          "Two structs plus a timer that reconciles them each second"
+         ],
+         "correct": 1,
+         "explain": "\"One thing seen from two places\" is b0-14's convergent arrows — a shared class directly, or one class-owned source of truth publishing struct snapshots (the MVVM shape, Block 5)."
+        }
+       ]
+      ]
+     },
+     "transfer": "Sketch your B1 checkpoint (the expense-tracker model layer) on paper: list its types and write STRUCT or CLASS next to each — Expense, Category, Amount, and the store that owns them — with one clause of machinery-based justification each. Keep the sheet; it's the skeleton you'll build from, zero-AI.",
+     "verify": "import ObjectiveC\nstruct PointS      { var x = 0.0; var y = 0.0 }\nfinal class PointC { var x = 0.0; var y = 0.0 }\n\nprint(MemoryLayout<PointS>.size)           // 16 — the data, period\nprint(class_getInstanceSize(PointC.self))  // 32 — 16-byte header + fields\nprint(MemoryLayout<PointS>.stride)         // 16 — data inline in arrays\nprint(MemoryLayout<PointC>.stride)         // 8  — arrays of pointers",
+     "goDeeper": "Apple's article \"Choosing Between Structures and Classes\". WWDC 2016 \"Understanding Swift Performance\" — the struct/class cost model. WWDC 2015 \"Protocol-Oriented Programming in Swift\" — the design philosophy behind struct-first."
+    },
+    {
+     "id": "b1-10",
+     "title": "Method dispatch: which function actually runs",
+     "concept": {
+      "definition": "Method dispatch is how a call site decides which function body to run. Swift uses three strategies: static dispatch — the exact function is known at compile time (structs, final methods, extension methods); table dispatch — overridable class methods looked up at runtime in the class's vtable; and message dispatch — `@objc dynamic` methods resolved through Objective-C's objc_msgSend. The earlier the decision, the faster the call and the more the optimizer can do with it.",
+      "code": "class Animal {          // vtable: [ speak → Animal.speak ]\n    func speak() -> String { \"...\" }\n}\nclass Dog: Animal {     // vtable: [ speak → Dog.speak ]\n    override func speak() -> String { \"woof\" }\n}\n\nlet pets: [Animal] = [Animal(), Dog()]\nprint(pets[1].speak())  // \"woof\" — decided at RUNTIME:\n                         // read type pointer, index vtable, jump",
+      "underlying": "Static dispatch compiles to a jump to a fixed address — and often to nothing, because a known target can be inlined away. Struct methods are static (no inheritance, no ambiguity); so are final and non-overridden internal methods once whole-module optimization proves them safe.\n\nTable dispatch is what `override` costs: every class's metadata carries a vtable — an array of function pointers — and a subclass's table holds a different pointer at the same index. The call reads the object's type pointer (the first 8 bytes of b1-02's header), fetches the table, jumps through the slot. A few instructions: cheap, but a runtime decision the optimizer can't see through.\n\nMessage dispatch (`@objc dynamic`) goes through objc_msgSend: a cached, hierarchy-walking selector lookup at every call. Slowest — and the point: the target can change at runtime, which is what KVO, method swizzling, and UIKit's responder chain are made of (Block 2 territory).\n\nProtocols split the difference: methods declared as REQUIREMENTS dispatch through a per-conformance witness table, reaching the conforming type's body even through a protocol-typed variable. Methods that exist only in a protocol extension are not requirements — calls through the protocol type bind statically to the extension's default. That asymmetry is the exercise below, and a beloved interview trap.",
+      "whyItMatters": "\"Which function runs, and when was that decided?\" is the interview question hiding inside every question about final, protocol extensions, or performance. In profiles, dispatch is why final and whole-module optimization make hot loops measurably faster."
+     },
+     "exercise": {
+      "prompt": "Predict all four prints. greet() is a protocol requirement; bye() exists only in the extension. The fourth print is the one that catches working iOS developers.",
+      "code": "protocol Greeter {\n    func greet() -> String              // requirement\n}\nextension Greeter {\n    func greet() -> String { \"hi (default)\" }\n    func bye() -> String { \"bye (default)\" }   // NOT a requirement\n}\nstruct English: Greeter {\n    func greet() -> String { \"hello!\" }\n    func bye() -> String { \"goodbye!\" }\n}\n\nlet e = English()\nprint(e.greet())   // 1?\nprint(e.bye())     // 2?\n\nlet g: Greeter = e\nprint(g.greet())   // 3?\nprint(g.bye())     // 4?",
+      "solution": "hello!\ngoodbye!\nhello!\nbye (default)\n\n1, 2: concrete type — static dispatch straight to English's methods.\n3: greet is a REQUIREMENT, so the call goes through English's witness table and finds English.greet — even through the protocol type.\n4: bye is not a requirement, so there is no witness-table slot for it. The compiler statically binds the call to the only bye the declared type Greeter guarantees: the extension's default. English.bye is never consulted.",
+      "explanation": "One method dispatched two ways depending on the variable's declared type — because requirement-ness, not the value, decides the mechanism. The fix, when you're bitten: declare the method in the protocol body so it becomes a requirement."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what are Swift's three dispatch mechanisms, and what determines which one a call uses?",
+      "modelAnswer": "Static dispatch jumps to a function known at compile time — struct methods, final methods, and extension methods — and can be inlined. Table dispatch handles overridable class methods: the call reads the object's type metadata and jumps through a vtable slot at runtime, which is what makes override work. Message dispatch, for @objc dynamic members, resolves selectors through objc_msgSend at call time — slowest, but it powers KVO and UIKit's dynamism. What decides is the declaration: can anything substitute a different body later, and if so, by which mechanism?",
+      "sets": [
+       [
+        {
+         "q": "At runtime, what does `pets[i].speak()` do when speak is overridable?",
+         "options": [
+          "Jumps directly to Animal.speak, wired in at compile time",
+          "Reads the object's type pointer, indexes its vtable, jumps to that slot",
+          "Looks the name \"speak\" up in a global method dictionary",
+          "Runs every version in the hierarchy, most-derived last"
+         ],
+         "correct": 1,
+         "explain": "Table dispatch: the header's type pointer (b1-02's first 8 bytes) leads to the class's function-pointer table. Override just means a different pointer sits at the same index."
+        },
+        {
+         "q": "Struct methods always use static dispatch. What makes that possible?",
+         "options": [
+          "Structs are guaranteed smaller than one cache line",
+          "No inheritance means no override — the exact body is knowable at compile time",
+          "Each struct instance carries copies of its methods inline",
+          "Indirect jumps are forbidden on stack-stored values"
+         ],
+         "correct": 1,
+         "explain": "Dispatch strategy tracks ambiguity. Nothing can ever substitute a different body for a struct method, so the compiler hard-wires the call — and may inline it into nothing."
+        },
+        {
+         "q": "What does marking a class method `final` actually buy?",
+         "options": [
+          "Documentation of intent; the generated code is identical",
+          "Devirtualization: a direct call, possibly inlined, instead of a table lookup",
+          "The method migrates into the Objective-C message system",
+          "The class's vtable shrinks to half its former size"
+         ],
+         "correct": 1,
+         "explain": "final removes the possibility of override, which removes the need for the table. Whole-module optimization proves the same automatically for many internal methods."
+        }
+       ],
+       [
+        {
+         "q": "objc_msgSend is the slowest mechanism, yet UIKit is built on it. Why?",
+         "options": [
+          "Apple never finished migrating the frameworks to Swift",
+          "Its runtime lookup enables KVO, swizzling, and the responder chain",
+          "On Apple Silicon it actually outruns vtable dispatch",
+          "View hierarchies cannot be expressed without selectors"
+         ],
+         "correct": 1,
+         "explain": "Message dispatch resolves \"who handles this?\" at the last possible moment — the dynamism UIKit's architecture assumes (Block 2). The cost is real but cached, and rarely the bottleneck."
+        },
+        {
+         "q": "A protocol-extension method that is NOT a requirement is called through a protocol-typed variable. Which body runs?",
+         "options": [
+          "The conforming type's version, located via its witness table",
+          "The extension's default — the call was bound statically to the declared type",
+          "Neither: the compiler rejects the call as ambiguous",
+          "Whichever of the two bodies was compiled more recently"
+         ],
+         "correct": 1,
+         "explain": "No requirement, no witness-table slot. The compiler binds to the only body the declared type guarantees — the extension's. Requirements, by contrast, dispatch through to the conformer."
+        },
+        {
+         "q": "A profiler shows dispatch overhead on a non-final method of a class nothing subclasses. The cheapest honest fix?",
+         "options": [
+          "Convert the class to an actor so the compiler gets hints",
+          "Mark the method or class final, restoring direct dispatch and inlining",
+          "Add @inline(__always) annotations at every call site",
+          "Relocate the method into a protocol extension"
+         ],
+         "correct": 1,
+         "explain": "If nothing overrides it, say so — final is devirtualization permission. Inline hints can't help while the target is still fetched from a table at runtime."
+        }
+       ]
+      ]
+     },
+     "transfer": "Pick one class in your project that nothing subclasses and mark it final, then rebuild. Zero errors = a free dispatch win and a documented design decision. If the build DID break, better still: you just rediscovered an inheritance relationship you'd forgotten existed.",
+     "verify": "class Animal { func speak() -> String { \"...\" } }\nclass Dog: Animal { override func speak() -> String { \"woof\" } }\nlet pets: [Animal] = [Animal(), Dog()]\nprint(pets[0].speak(), pets[1].speak())  // ... woof — vtable, at runtime\n\nprotocol Greeter { func greet() -> String }\nextension Greeter {\n    func greet() -> String { \"hi (default)\" }\n    func bye() -> String { \"bye (default)\" }   // not a requirement\n}\nstruct English: Greeter {\n    func greet() -> String { \"hello!\" }\n    func bye() -> String { \"goodbye!\" }\n}\nlet g: Greeter = English()\nprint(g.greet())   // hello! — requirement → witness table → conformer\nprint(g.bye())     // bye (default) — static on the declared type",
+     "goDeeper": "WWDC 2016 \"Understanding Swift Performance\" — the dispatch section. Apple Swift blog: \"Increasing Performance by Reducing Dynamic Dispatch\". Brian King's article \"Method Dispatch in Swift\" — the reference chart."
+    },
+    {
+     "id": "b1-11",
+     "title": "Generics: one source, many compiled shapes",
+     "concept": {
+      "definition": "A generic function is one source the compiler resolves per call site: the placeholder T becomes a concrete type during type checking, so type information is never lost — `larger(3, 7)` returns Int, not a mystery box. The optimizer then usually SPECIALIZES: it stamps out a dedicated copy of the body per concrete type, as fast as hand-written code, or inlines the call away entirely. Where it can't see the call site, one shared implementation handles any T indirectly through type metadata.",
+      "code": "func larger<T: Comparable>(_ a: T, _ b: T) -> T {\n    a > b ? a : b            // ONE source…\n}\nprint(larger(3, 7))          // 7   — Int shape\nprint(larger(\"a\", \"z\"))      // z   — String shape\nprint(larger(1.5, 0.2))      // 1.5 — Double shape\n// -O build: per-type copies stamped out (or inlined to nothing)",
+      "underlying": "At each call site the compiler infers T and checks the constraint: `T: Comparable` means \"T arrives with a witness table for Comparable\" (b1-10's machinery), and the body may use exactly what the protocol promises — `>` and nothing more.\n\nThen the optimizer chooses a shape. Specialization (also called monomorphization) clones the body with T = Int: `>` collapses to an integer compare, the clone optimizes like hand-written code, and often the call inlines away completely — on this Mac, an -O build of the code above leaves no generic call at all. Specialization needs the body visible at the call site: same module (whole-module optimization) or `@inlinable` across modules, which is why the stdlib marks so much @inlinable.\n\nWhen the body isn't visible, the fallback is one compiled generic entry that manipulates T indirectly — reading size, copy, and destroy operations from the type's value-witness metadata, dispatching constraint calls through witness tables. Correct for every T, slower per call, smaller code.\n\nContrast with Any, which is not polymorphism but erasure: the value keeps its dynamic type, yet the compiler forgets it — every use afterwards needs an `as?` recovery. Generics never forget: that is the whole point. You've been using the proof all along: Optional<Wrapped> (b1-01) and Array<Element> are generics that compile down to tag bytes and contiguous buffers.",
+      "whyItMatters": "The standard library IS generics — Array, Dictionary, Optional — so \"are generics slow?\" (no: specialized or inlined away) and \"generics vs Any?\" (compile-time knowledge vs erasure) are interview questions about the code you use every day."
+     },
+     "exercise": {
+      "prompt": "Both functions receive the Int 21. Predict prints 1 and 2, give a compiles-or-not verdict for 3 and 4 — and explain what the COMPILER knows about a versus g.",
+      "code": "func viaAny(_ x: Any) -> Any { x }\nfunc viaGeneric<T>(_ x: T) -> T { x }\n\nlet a = viaAny(21)\nlet g = viaGeneric(21)\n\nprint(type(of: a))   // 1?\nprint(type(of: g))   // 2?\n\nprint(a * 2)         // 3: compiles?\nprint(g * 2)         // 4: compiles?",
+      "solution": "1: Int — type(of:) reports the DYNAMIC type, which survived inside the Any.\n2: Int — same runtime answer.\n3: DOES NOT COMPILE — \"binary operator '*' cannot be applied to operands of type 'Any' and 'Int'\". a's static type is Any, whose interface offers nothing.\n4: compiles, prints 42 — T was resolved to Int at the call site, so g IS an Int to the compiler.\n\nSame bytes at runtime; the difference is entirely in what the compiler still knows.",
+      "explanation": "Any erases knowledge the moment the value passes through — recoverable only by runtime casting. The generic preserved it for free, at compile time. When you reach for Any, you're usually one <T> away from not needing it."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: when is a generic's T decided, what does the optimizer do with generic functions, and how do generics differ from Any?",
+      "modelAnswer": "T is resolved at compile time, per call site, by inference — so a generic's return type is concrete and no casting is needed. The optimizer usually specializes: it stamps out a per-type copy of the body with direct, inlinable calls, falling back to one shared implementation that works through type metadata when the body isn't visible. Any is the opposite of a generic: the value keeps its dynamic type but the compiler forgets it, so every later use needs a runtime cast.",
+      "sets": [
+       [
+        {
+         "q": "`func larger<T: Comparable>(_ a: T, _ b: T) -> T` — when is T decided?",
+         "options": [
+          "At runtime, by inspecting the arguments' dynamic types",
+          "At compile time, per call site, inferred from the arguments",
+          "At app launch, when the function is loaded into memory",
+          "Never — T remains an open placeholder for any future type"
+         ],
+         "correct": 1,
+         "explain": "Generic parameters resolve during type checking: larger(3, 7) IS larger<Int> to the compiler. That's why the result is a concrete Int and no cast is ever needed."
+        },
+        {
+         "q": "What does the optimizer's \"specialization\" do to a generic function?",
+         "options": [
+          "Caches the function's results, keyed by input type",
+          "Stamps out a per-type copy of the body with direct, inlinable calls",
+          "Rewrites it to accept Any and insert casts internally",
+          "Marks it final so vtable lookups can be skipped"
+         ],
+         "correct": 1,
+         "explain": "T = Int substituted, `>` becomes an integer compare, and the copy optimizes like hand-written code — often disappearing into the caller entirely. One source, many fast shapes."
+        },
+        {
+         "q": "The constraint `T: Comparable` gives the generic body…",
+         "options": [
+          "permission to call any method that any conformer defines",
+          "Comparable's requirements, reached through T's witness table",
+          "a guarantee that T is a value type, not a class",
+          "nothing at runtime — constraints exist only as documentation"
+         ],
+         "correct": 1,
+         "explain": "Constraints are capabilities: the body may use exactly what the protocol promises, wired through the conformance's witness table (b1-10) — or devirtualized to direct calls when specialized."
+        }
+       ],
+       [
+        {
+         "q": "`viaAny(21)` and `viaGeneric(21)` both hold an Int at runtime. What did the Any version lose?",
+         "options": [
+          "Eight bytes of storage for the box's header",
+          "The compiler's knowledge — arithmetic no longer compiles without a cast",
+          "The value itself; Any keeps only a type description",
+          "Copy-on-write behavior for the wrapped value"
+         ],
+         "correct": 1,
+         "explain": "type(of:) prints Int for both — the dynamic type survived. What died is static knowledge: Any's interface is empty, so every use needs as? recovery. Generics never forget."
+        },
+        {
+         "q": "Why is Optional<Wrapped> from b1-01 evidence that generics can cost nothing?",
+         "options": [
+          "Optionals compile through a special-case path unavailable to user code",
+          "A generic enum wraps every Swift type, yet Int? costs one tag byte",
+          "The runtime quietly replaces Optional with raw pointers",
+          "Optional is implemented in C inside the standard library"
+         ],
+         "correct": 1,
+         "explain": "The most-used generic in the language compiles to tagged bytes and niche tricks — no boxes, no lookups. Specialized generics are exactly this: abstraction that vanishes at compile time."
+        },
+        {
+         "q": "A library author marks a generic function @inlinable. What are they enabling?",
+         "options": [
+          "Automatic parallelization of loops inside the function",
+          "Specialization across the module boundary, in client builds",
+          "Calls to the function from Objective-C source files",
+          "Suspension of ARC inside the function's body"
+         ],
+         "correct": 1,
+         "explain": "Specialization needs the body visible at the call site. Inside a module, whole-module optimization provides that; across modules, @inlinable ships the body — the stdlib does this pervasively."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find a function in your project that takes or returns Any, or does as? casting to be 'flexible.' Sketch its generic signature on paper: what is T, and which capabilities does the body need from it (Comparable? Codable?) — those become constraints. If the casts disappear in the sketch, generics were the right tool all along.",
+     "verify": "@inline(never)\nfunc larger<T: Comparable>(_ a: T, _ b: T) -> T { a > b ? a : b }\nprint(larger(3, 7), larger(\"a\", \"z\"))   // 7 z\n\n// Proof of specialization — run in Terminal:\n//   swiftc -O -emit-sil gen.swift | grep \"specialized larger\"\n// You'll see per-type clones, e.g. …Si_Tg5 (Int) and …SS_Tg5 (String).\n// Remove @inline(never) and grep again: the calls vanish entirely —\n// full inlining, the abstraction compiled away to nothing.",
+     "goDeeper": "WWDC 2016 \"Understanding Swift Performance\" — generics, witness tables, specialization. The Swift book: \"Generics\". Swift repository: docs/OptimizationTips.rst, the sections on generics and @inlinable."
+    },
+    {
+     "id": "b1-12",
+     "title": "Existential containers: what `any Shape` really is",
+     "concept": {
+      "definition": "An existential — `any Shape` — is a uniform, fixed-size container that can hold a value of ANY conforming type: a 3-word inline buffer for the value plus pointers to the concrete type's metadata and its witness table, 40 bytes in total. Values up to 24 bytes live inline in the buffer; bigger ones are allocated on the heap and the buffer holds a pointer. The uniform box is what makes heterogeneous storage possible — and what makes existentials cost more than generics.",
+      "code": "protocol Shape { func area() -> Double }\nstruct Tiny: Shape { var r = 1.0 /* 8 bytes */ }\nstruct Big:  Shape { var a = 0.0, b = 0.0, c = 0.0, d = 0.0 /* 32 */ }\n\nprint(MemoryLayout<Tiny>.size)       // 8\nprint(MemoryLayout<Big>.size)        // 32\nprint(MemoryLayout<any Shape>.size)  // 40 — same box for BOTH:\n// [ 24-byte value buffer ][ type metadata ][ witness table ]",
+      "underlying": "Why a box at all: `[any Shape]` needs uniform element size (b0-11's contiguity), yet conformers differ. The existential container solves it with five words: a 24-byte buffer, which type is inside (metadata pointer), and how it conforms (witness table pointer). Tiny's 8 bytes ride inline; Big's 32 don't fit, so Big is heap-allocated and the buffer stores the address — meaning big payloads pay allocation on boxing and possibly retains on copy. On this Mac: Tiny 8, Big 32, and `any Shape` is 40 either way. Class-bound protocols (`protocol Ref: AnyObject`) skip the buffer — the value is already a reference — so their existential is 16 bytes.\n\nEvery method call through the box rides the witness table (b1-10): the concrete type is only known at runtime, so b1-11's specialization is impossible. That's the structural difference from generics — `func f<T: Shape>(_: T)` receives the value unboxed with T known at compile time; `func f(_ x: any Shape)` receives a box and looks everything up.\n\n`some Shape` is the third option: ONE concrete type, hidden from the caller but fully known to the compiler — no box (a returned Tiny measures 8 bytes, not 40), static dispatch, specializable. Swift 5.7 made you write `any` precisely so this cost is visible: reach for `some` or generics by default; pay for `any` when you genuinely need a mixed bag or runtime swapping.",
+      "whyItMatters": "\"Why did Swift make us write `any`?\" and \"protocol types vs generics?\" are current-era interview questions, and both answers are this box. It's also why SwiftUI is built on `some View` — a View existential in every body would box the entire interface."
+     },
+     "exercise": {
+      "prompt": "Predict the three sizes, then answer both parts of 4: is the mixed array legal, and what exactly sits in each of its two element slots?",
+      "code": "protocol Drawable { func draw() -> String }\nstruct Dot: Drawable {\n    var x = 0.0                              // 8 bytes\n    func draw() -> String { \"·\" }\n}\nstruct Poly: Drawable {\n    var a = 0.0, b = 0.0, c = 0.0, d = 0.0   // 32 bytes\n    func draw() -> String { \"⬠\" }\n}\n\nprint(MemoryLayout<Dot>.size)           // 1?\nprint(MemoryLayout<Poly>.size)          // 2?\nprint(MemoryLayout<any Drawable>.size)  // 3?\n\nlet art: [any Drawable] = [Dot(), Poly()]   // 4: legal? slot contents?",
+      "solution": "1: 8\n2: 32\n3: 40 — the box is the same size no matter what's inside.\n4: Legal — heterogeneity is exactly what existentials buy. The array's buffer holds two 40-byte boxes: Dot's 8 bytes sit INLINE in its box's value buffer; Poly, at 32 bytes, exceeds the 24-byte buffer, so its box holds a pointer to a heap allocation containing the Poly.",
+      "explanation": "One array, two storage strategies, invisible at the call site — the 24-byte threshold decides per value. This is also the quiet reason hot loops over [any P] can allocate: every oversized element crossed the heap on its way in."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is an existential container physically, and when should you prefer some/generics over any?",
+      "modelAnswer": "An existential is a fixed-size box — a 3-word value buffer plus type-metadata and witness-table pointers, 40 bytes — that holds any conforming value, inline if it fits in 24 bytes and via a heap allocation otherwise. All calls through it dispatch via the witness table at runtime, so it can't be specialized. I default to some or a generic parameter, which keep the concrete type visible to the compiler — unboxed, statically dispatched, specializable — and reach for any only when I need genuinely heterogeneous storage or runtime swapping.",
+      "sets": [
+       [
+        {
+         "q": "What are the parts of the 40-byte `any Shape` container?",
+         "options": [
+          "Five copies of the value, kept for alignment safety",
+          "A 3-word value buffer plus type-metadata and witness-table pointers",
+          "The value's bytes plus a 32-byte reference-count header",
+          "Two vtable pointers, a selector cache, and a flag word"
+         ],
+         "correct": 1,
+         "explain": "24 bytes of inline storage + which type is inside + how it conforms. Every value of that existential type has this exact shape — the uniformity is the point."
+        },
+        {
+         "q": "A conforming struct is 32 bytes — larger than the buffer. Where does its data go?",
+         "options": [
+          "The box grows to 48 bytes to accommodate it",
+          "Onto the heap; the box's buffer holds a pointer to it",
+          "Nowhere — the compiler rejects conformers over 24 bytes",
+          "The overflow spills into the neighboring array slot"
+         ],
+         "correct": 1,
+         "explain": "The box must stay uniform, so oversized values pay a heap allocation (and copies may pay retains). Small values ride inline free — the small-buffer optimization."
+        },
+        {
+         "q": "How are method calls through `any Shape` dispatched?",
+         "options": [
+          "Statically — the compiler remembers which type went in",
+          "Through the witness table stored in the box, at runtime",
+          "Via objc_msgSend, like every protocol method in Swift",
+          "By switching over all known conformers in order"
+         ],
+         "correct": 1,
+         "explain": "The concrete type is only knowable at runtime, so every call rides the witness table (b1-10) — and b1-11's specialization is off the table entirely."
+        }
+       ],
+       [
+        {
+         "q": "`[any Drawable]` holds an 8-byte Dot and a 32-byte Poly. What does the array's buffer physically store?",
+         "options": [
+          "8 bytes then 32 bytes, packed back to back",
+          "Two 40-byte boxes; Dot inline, Poly's buffer pointing to the heap",
+          "Two 8-byte pointers to heap copies of both values",
+          "One 40-byte box that holds both values together"
+         ],
+         "correct": 1,
+         "explain": "b0-11 demands uniform elements; the box provides it. Inline versus heap is decided per value by the 24-byte threshold."
+        },
+        {
+         "q": "SwiftUI returns `some View`, not `any View`. What does `some` buy?",
+         "options": [
+          "The ability to return different view types on each call",
+          "One concrete type the compiler still knows — no box, specializable",
+          "Automatic Equatable conformance for the returned view",
+          "A smaller existential: 16 bytes instead of 40"
+         ],
+         "correct": 1,
+         "explain": "Opaque types hide the type from YOU, not from the compiler: concrete layout, static dispatch, specializable generics underneath. `any` hides it from the compiler too — that's the boxed tool."
+        },
+        {
+         "q": "Hot loop: `render<T: Drawable>(_ x: T)` vs `render(_ x: any Drawable)`. Why does the generic usually win?",
+         "options": [
+          "Generic parameters are exempt from ARC traffic",
+          "It receives the value unboxed and specializes; any must box and look up",
+          "The existential version is barred from manual inlining",
+          "It doesn't — the compiler emits identical code for both"
+         ],
+         "correct": 1,
+         "explain": "Same protocol, two mechanisms: <T: Drawable> is compile-time polymorphism (b1-11); any Drawable is a runtime box. The explicit `any` keyword exists to make that cost visible."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one protocol-as-type in your project — a `let delegate: SomeProtocol?`, an array of protocol values, a returned protocol. Answer in a sentence: does this spot genuinely need runtime heterogeneity (any earns its box), or is it always one concrete type per use (some or a generic would be free)?",
+     "verify": "protocol Shape { func area() -> Double }\nstruct Tiny: Shape { var r = 1.0; func area() -> Double { r } }\nstruct Big: Shape {\n    var a = 0.0, b = 0.0, c = 0.0, d = 0.0\n    func area() -> Double { a }\n}\nprint(MemoryLayout<Tiny>.size)        // 8\nprint(MemoryLayout<Big>.size)         // 32\nprint(MemoryLayout<any Shape>.size)   // 40 — the box, regardless of payload\n\nprotocol Ref: AnyObject {}\nclass C: Ref {}\nprint(MemoryLayout<any Ref>.size)     // 16 — class-bound skips the buffer\n\nfunc makeOpaque() -> some Shape { Tiny() }\nprint(MemoryLayout.size(ofValue: makeOpaque()))  // 8 — some: no box at all",
+     "goDeeper": "WWDC 2016 \"Understanding Swift Performance\" — the protocol-types section (the box, drawn). WWDC 2022 \"Embrace Swift generics\" — some vs any, the modern guidance. Swift Evolution SE-0335 (why `any` became explicit)."
+    },
+    {
+     "id": "b1-13",
+     "title": "throws under the hood: a second return path",
+     "concept": {
+      "definition": "Swift's `throws` is not exception unwinding: a throwing function simply has a second way to return — either its value, or an error handed back to the caller (in a dedicated register on ARM64). `try` marks the exact points where that alternate return is checked, and do/catch is an ordinary branch on the result. Errors are values — usually enum cases, b1-01's tagged unions — not runtime events that unwind the stack.",
+      "code": "enum NetError: Error { case timeout }\n\nfunc fetch() throws -> Int {      // compiles to: return Int\n    throw NetError.timeout        //           OR hand back an error\n}\n\ndo {\n    let n = try fetch()   // try = \"check the error path HERE\"\n    print(n)              // skipped on throw\n} catch {\n    print(\"caught\", error)  // an ordinary branch, not a longjmp\n}",
+      "underlying": "The compiled shape: a throws function returns normally, but the caller checks a designated error slot after the call — on ARM64 a reserved register — and branches to the catch block if it's set. The happy path costs a test-and-branch, near zero; there is no unwinding machinery, no setup cost for do blocks, nothing like C++ exceptions or Java stack traces. Swift chose b0-10's philosophy again: failure moved into the visible, checkable domain — `throws` in the signature, `try` at every call that can fail.\n\nThe thrown value itself rides in `any Error` — a special one-word existential (8 bytes, unlike b1-12's 40) that boxes the error in a reference-counted allocation, which is also what makes NSError interop work. A payload-free enum error is about as cheap as an error can be.\n\n`defer` completes the picture: the compiler stitches deferred code into EVERY exit path — normal return and throw alike — which is exactly why it's the resource-cleanup idiom. And the sugar all reduces to b1-01: `try?` maps the alternate return into an Optional (error → .none), `try!` is force-unwrap's wager on the error path, and `Result<Success, Failure>` is the whole mechanism reified as a two-case generic enum — `Result<Int, NetError>` measures 9 bytes, payload plus tag, the same arithmetic as Int?.",
+      "whyItMatters": "\"How does Swift error handling differ from exceptions?\" is an interview question most candidates answer wrong — 'it IS exceptions' loses points; 'a checked second return path' wins them. It's also why throws-heavy APIs cost nothing on the happy path."
+     },
+     "exercise": {
+      "prompt": "Predict the complete output, in order. Three traps: how many times does \"cleanup\" print, where does it land relative to \"got 42\", and does the second \"got\" ever print?",
+      "code": "enum NetError: Error { case timeout }\n\nfunc fetch(_ fail: Bool) throws -> Int {\n    defer { print(\"cleanup\") }\n    if fail { throw NetError.timeout }\n    return 42\n}\n\nprint(\"start\")\ndo {\n    let a = try fetch(false)\n    print(\"got\", a)\n    let b = try fetch(true)\n    print(\"got\", b)\n} catch {\n    print(\"caught\", error)\n}\nprint(\"end\")",
+      "solution": "start\ncleanup\ngot 42\ncleanup\ncaught timeout\nend\n\n- \"cleanup\" prints TWICE: defer runs on every exit — the return path and the throw path.\n- It lands BEFORE \"got 42\": defer executes inside fetch, as the function exits, before the value reaches the caller.\n- \"got b\" never prints: the second try's check found the error path taken and branched straight to catch.",
+      "explanation": "Reading order for try code: each try is a checkpoint where control may branch to catch; each defer belongs to its function's exits, not to the caller's. If you predicted one \"cleanup\" or placed it after \"got 42\", re-run the frame mechanics of b0-07 with the error path drawn in."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what does a throwing function compile to, what does the happy path cost, and how is this different from C++/Java exceptions?",
+      "modelAnswer": "A throwing function compiles to an ordinary function with a second return path: it either returns its value or hands back an error — in a dedicated register on ARM64 — and each try compiles to a check-and-branch at the call site. The success path costs essentially one register test, and a do block has no setup cost. Unlike C++ or Java exceptions there is no stack unwinding and nothing propagates invisibly: throws appears in the signature and try marks every call that can fail, the same visibility philosophy as optionals.",
+      "sets": [
+       [
+        {
+         "q": "What does a throwing function compile to?",
+         "options": [
+          "A function wrapped in setjmp/longjmp checkpoints",
+          "A function with a second return path: value or error, checked at try",
+          "A function registered with a global exception-handler table",
+          "Two functions — a safe and an unsafe one — chosen at runtime"
+         ],
+         "correct": 1,
+         "explain": "The error travels back like a return value (a reserved register on ARM64); each try compiles to check-and-branch. There is no unwinding machinery to invoke."
+        },
+        {
+         "q": "What does calling a throwing function cost when it succeeds?",
+         "options": [
+          "A heap allocation reserved for the potential error",
+          "Near zero — essentially a register check after the call",
+          "A stack snapshot in case unwinding becomes necessary",
+          "Roughly double a normal call, one cost per path"
+         ],
+         "correct": 1,
+         "explain": "The happy path pays a test-and-branch. That's why throws-heavy APIs cost approximately nothing — unlike languages where try blocks carry setup cost."
+        },
+        {
+         "q": "`defer { close() }` sits in a function that can throw. When does close() run?",
+         "options": [
+          "Only on the successful return path",
+          "On every exit — normal return and throw alike",
+          "Only when an error is actually thrown",
+          "When ARC reclaims the function's frame later"
+         ],
+         "correct": 1,
+         "explain": "The compiler stitches deferred code into every exit path. That guarantee is the entire reason defer is the resource-cleanup idiom."
+        }
+       ],
+       [
+        {
+         "q": "Why did Swift choose checked returns over C++-style exception unwinding?",
+         "options": [
+          "Stack unwinding is patented and required licensing",
+          "Visible failure: throws in signatures, try at call sites",
+          "Swift's calling convention makes unwinding impossible",
+          "Primarily to keep binaries smaller on watchOS"
+         ],
+         "correct": 1,
+         "explain": "b0-10's philosophy again — move failure into the visible, checkable domain. You can read a function's failure behavior off its signature and its try marks."
+        },
+        {
+         "q": "How does `Result<Int, NetError>` relate to throws?",
+         "options": [
+          "Legacy from before throws existed, kept for compatibility",
+          "It reifies the alternate return as a value: a two-case generic enum",
+          "A faster variant that bypasses the error register",
+          "The required form for errors crossing thread boundaries"
+         ],
+         "correct": 1,
+         "explain": "b1-01's tagged union plus b1-11's generics: failure as storable, passable data — 9 bytes for Result<Int, NetError>, payload plus tag. Result(catching:) and .get() convert mechanically."
+        },
+        {
+         "q": "`let x = try? risky()` — in b1-01 terms, what did this compile to?",
+         "options": [
+          "A do/catch block that traps on any error",
+          "The error path mapped into an Optional: .none on error, .some on success",
+          "A silent retry loop that runs until the call succeeds",
+          "A Result whose failure case the compiler deletes"
+         ],
+         "correct": 1,
+         "explain": "try? funnels both outcomes into one tagged union — the error's identity is dropped, absence remains. And try! is force-unwrap's exact wager: trap if the alternate path fires."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one function in your project that signals failure with a sentinel — nil, -1, an empty string. Sketch its throws version on paper: what enum cases would the error have? If callers need to know WHY it failed, throws carries that for free; if they only ever need \"absent,\" the optional was already honest. Write down which this one deserves.",
+     "verify": "enum LoadError: Error { case missing }\n\nfunc load(_ ok: Bool) throws -> String {\n    defer { print(\"defer ran\") }\n    guard ok else { throw LoadError.missing }\n    return \"data\"\n}\n\ndo {\n    print(try load(true))     // defer ran, then data\n    print(try load(false))    // defer ran, then jumps to catch\n    print(\"never\")            // skipped\n} catch { print(\"caught:\", error) }\n\nprint(MemoryLayout<any Error>.size)               // 8 — one-word boxed existential\nprint(MemoryLayout<Result<Int, LoadError>>.size)  // 9 — payload + tag, like Int?",
+     "goDeeper": "Swift repo: docs/ErrorHandlingRationale.md — the design document, genuinely readable. The Swift book: \"Error Handling\". Swift Evolution SE-0413 — typed throws (`throws(NetError)`), the Swift 6 refinement."
+    },
+    {
+     "id": "b1-14",
+     "title": "Protocols vs inheritance: sharing behavior",
+     "concept": {
+      "definition": "Inheritance shares behavior by chaining classes: one base per class, reference semantics required, and coupling to superclass code you must not break. Protocols share behavior by describing capability: any type — struct, enum, or class, even one you don't own — can conform, to as many protocols as needed, with protocol extensions supplying default implementations. Swift's guidance: model capabilities with protocols and data with structs; reserve inheritance for genuine is-a with shared stored state, like UIKit's view classes.",
+      "code": "protocol Exportable { func export() -> String }\nextension Exportable {\n    func export() -> String { \"generic export\" }  // shared behavior,\n}                                                  // no base class\n\nstruct Receipt: Exportable {}       // structs conform — value semantics kept\nextension Int: Exportable {}        // retroactive: a type we don't own\n// class Invoice: Exportable, Archivable — stack as many as needed",
+      "underlying": "Every cost here is machinery you already know. A class hierarchy pays b1-09's per-instance price (header, heap, counting) and b1-10's vtable dispatch — a runtime decision that can't be devirtualized without final. A protocol requirement dispatches through a witness table (b1-10); used as `any`, it adds b1-12's box; used as a generic constraint, b1-11's specialization can erase the abstraction entirely. So protocol + struct + generic is frequently CHEAPER than the class hierarchy it replaces — the design Apple calls protocol-oriented programming.\n\nWhat protocols can do that inheritance can't: conform value types (keeping b1-09's wins, including cycle-immunity), stack multiple capabilities on one type, and conform retroactively — `extension Date: Exportable` teaches a Foundation type your capability. What inheritance does that protocols can't: inherit STORED state. Protocol extensions provide code but can hold no storage; when genuine shared stored state rides an is-a relationship — UIView's frame, alpha, and friends — subclassing is the honest tool, which is why UIKit mandates it.\n\nThe coupling difference is the deep one: a subclass depends on base-class CODE it didn't write (the fragile-base-class problem — edits to the base ripple into every descendant), while a conformer depends only on a CONTRACT. And remember b1-10's rule while designing: defaults for non-requirements bind statically — declare in the protocol body anything conformers should be able to customize.",
+      "whyItMatters": "\"Why does Swift favor protocols over inheritance?\" is a standard interview probe, and the WWDC 2015 talk that coined protocol-oriented programming is still assigned viewing. Practically: your checkpoint's model layer will face exactly this choice."
+     },
+     "exercise": {
+      "prompt": "Find the design bug: this hierarchy met day-1 needs. Day 30 brings three requirements it cannot meet. Name each wall it hits, then sketch the protocol-based fix in three lines.",
+      "code": "class Exportable {\n    func export() -> String { \"???\" }\n}\nclass Invoice: Exportable {\n    override func export() -> String { \"invoice-csv\" }\n}\nclass Receipt: Exportable {\n    override func export() -> String { \"receipt-csv\" }\n}\n\n// Day-30 requirements:\n// 1. Date (a Foundation struct) must become exportable\n// 2. Invoice must ALSO adopt Archivable (currently a base class)\n// 3. Receipt should be a value type (b1-09 reasons)",
+      "solution": "Wall 1: Date is a struct — structs cannot inherit from a class, and you don't own Date anyway.\nWall 2: single inheritance — Invoice's one base slot is already spent on Exportable.\nWall 3: subclassing forces Receipt to be a class — reference semantics it doesn't want.\n\nFix:\nprotocol Exportable { func export() -> String }\nextension Date: Exportable { func export() -> String { \"date-csv\" } }\nstruct Receipt: Exportable { func export() -> String { \"receipt-csv\" } }\n\n(Invoice conforms to Exportable AND Archivable-as-protocol — capabilities stack freely.)",
+      "explanation": "The day-1 design modeled a CAPABILITY as a base class, spending each type's only inheritance slot and locking everyone into reference semantics. Capabilities are what protocols are for; the walls all fall at once."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: when do you reach for a protocol and when for inheritance in Swift, and what does each cost?",
+      "modelAnswer": "I model capabilities as protocols — any type can conform, including structs and types from other modules, and protocol extensions share default behavior without a base class. I use inheritance only for genuine is-a relationships that share stored state, like UIKit's view classes, since protocol extensions can provide code but never storage. Cost-wise, requirements dispatch through witness tables and can specialize to direct calls under generics, while a class hierarchy pays per-instance heap and counting costs plus vtable dispatch.",
+      "sets": [
+       [
+        {
+         "q": "What can a protocol do that a base class cannot?",
+         "options": [
+          "Store shared state that all conformers inherit",
+          "Be adopted by structs, enums, and types you don't own",
+          "Guarantee its methods can never be overridden",
+          "Skip dispatch entirely for all of its requirements"
+         ],
+         "correct": 1,
+         "explain": "Conformance is open: value types keep b1-09's wins, and retroactive conformance (extension Date: Exportable) reaches into other modules. A base class offers none of that."
+        },
+        {
+         "q": "What does inheritance provide that protocols cannot?",
+         "options": [
+          "Faster dispatch than any protocol-based call",
+          "Inherited STORED properties — real shared state in instances",
+          "Adoption of several parent types at once",
+          "Compile-time specialization of shared methods"
+         ],
+         "correct": 1,
+         "explain": "Protocols require but never store — extensions can hold no stored properties. When shared state genuinely rides an is-a (UIView's frame, alpha), subclassing is the honest tool."
+        },
+        {
+         "q": "Where does a protocol's shared default behavior live?",
+         "options": [
+          "In a hidden base class the compiler synthesizes",
+          "In protocol extensions — code without stored state",
+          "Duplicated into every conformer's own source",
+          "In the Objective-C runtime's method lists"
+         ],
+         "correct": 1,
+         "explain": "Extensions supply behavior conformers may replace. Mind b1-10: defaults for NON-requirements bind statically through protocol-typed variables — put customization points in the protocol body."
+        }
+       ],
+       [
+        {
+         "q": "Invoice already subclasses Exportable; day 30 demands it also be Archivable (a class). The wall?",
+         "options": [
+          "Swift caps inheritance chains at three levels",
+          "Single inheritance — the one base slot is already spent",
+          "Archivable would need to be marked open first",
+          "Only structs may adopt a second parent type"
+         ],
+         "correct": 1,
+         "explain": "Every capability-as-base-class spends THE one inheritance slot. Modeled as protocols, capabilities stack freely on one type."
+        },
+        {
+         "q": "Why is `render<T: Drawable>(_ x: T)` often cheaper than a hierarchy with a virtual draw()?",
+         "options": [
+          "Protocol methods skip ARC on their arguments",
+          "It can specialize to direct calls; the hierarchy always vtables",
+          "Class hierarchies allocate one vtable per instance",
+          "It isn't — the two compile to identical dispatch"
+         ],
+         "correct": 1,
+         "explain": "Protocol + generic keeps the concrete type visible, so b1-11's machinery can erase the abstraction. Subclass dispatch is a runtime decision by design (b1-10) unless final intervenes."
+        },
+        {
+         "q": "The \"fragile base class\" problem that protocols sidestep:",
+         "options": [
+          "Base classes crash when subclasses outlive them",
+          "Changes to the base ripple into every subclass's behavior",
+          "Base classes cannot ever be safely marked final",
+          "Each inheritance level doubles instance memory"
+         ],
+         "correct": 1,
+         "explain": "Inherited implementation is coupling to code you didn't write. A protocol couples types to a promise — each conformer owns its implementation outright."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one class-to-class inheritance you created in your project (not UIKit-mandated). Ask: is it real is-a with shared stored state, or capability-sharing in disguise? If the latter, write the one-line protocol version as a comment above it — `protocol X { … }` — and notice whether the subclass's stored properties would even be missed.",
+     "verify": "import Foundation\n\nprotocol Exportable { func export() -> String }\nextension Exportable { func export() -> String { \"generic export\" } }\n\nstruct Receipt: Exportable {}     // a struct conforms — no class required\nextension Int: Exportable {}      // retroactive — a type we don't own\nextension Date: Exportable { func export() -> String { \"date-csv\" } }\n\nprint(Receipt().export())         // generic export — the free default\nprint(7.export())                 // generic export\nprint(Date().export())            // date-csv — own impl wins (requirement!)\n\nlet items: [any Exportable] = [Receipt(), 7, Date()]\nprint(items.map { $0.export() })  // heterogeneous, dispatch intact (b1-12)",
+     "goDeeper": "WWDC 2015 \"Protocol-Oriented Programming in Swift\" — the famous 'Crusty' talk, still the canonical argument. WWDC 2022 \"Embrace Swift generics\". Apple's \"Choosing Between Structures and Classes\"."
+    },
+    {
+     "id": "b1-15",
+     "title": "Capstone: reading Swift like the compiler",
+     "concept": {
+      "definition": "Every concept in this block collapses into one practice: read Swift the way the compiler sees it — every optional a tagged box, every class instance a counted header, every closure a context with classified captures, every collection a handle to a possibly-shared buffer, every call a dispatch decision. Predicting behavior AND cost from that machinery, before running anything, is the exit skill.",
+      "code": "// The Block 1 checklist for any snippet:\n// 1. Optionals/enums: payload + tag. nil = the tag saying empty.\n// 2. Class instances: header + count. Who retains? What takes it to zero?\n// 3. Closures: code ptr + context. Each capture — shared box, [snapshot],\n//    or [weak]? Does anything the closure LIVES ON point back? (ring test)\n// 4. Array/String/Dict: handle + buffer. Who mutates first while shared?\n//    That exact line pays the copy.\n// 5. Calls: static, vtable, witness table, or message — decided when?",
+      "underlying": "The block, in one pass: b1-01 gave you tags and payloads; b1-02..04 the counting machinery, its one blind spot, and the arrow that doesn't count; b1-05..07 closures as data, capture classification, and the ring test; b1-08 the deferred copy; b1-09 the data-vs-entity decision; b1-10..12 the three dispatches, specialization, and the existential box; b1-13 the second return path; b1-14 capability vs is-a. Nothing here is new — this loop is fluency.\n\nThe exercise below deliberately collides the big four (counting, captures, COW, the ring) in a dozen lines, because that collision is where production bugs actually live: a capture list quietly pinning a buffer, an append paying a copy nobody ordered, one object deiniting on schedule while its sibling silently leaks. If you can narrate every line's memory consequences, Block 1's job is done — and the expense-tracker checkpoint (zero AI, remember) is where you prove it.",
+      "whyItMatters": "This is how senior engineers read code: not line by line for syntax, but allocation by allocation for consequence. It's also the exact fluency the checkpoint project and every Block 2 UIKit loop will assume."
+     },
+     "exercise": {
+      "prompt": "The final exam. Predict the COMPLETE output of this program — including which deinits print, in what order, and which never do. Then name the line where the array's buffer is physically copied, and explain why exactly one Session leaks.",
+      "code": "class Session {\n    let id: Int\n    var onEnd: (() -> Void)?\n    init(_ i: Int) { id = i }\n    deinit { print(\"deinit \\(id)\") }\n}\n\nfunc run() {\n    let s1 = Session(1)\n    let s2 = Session(2)\n\n    var items = [10, 20]\n    let frozen = items\n\n    s1.onEnd = { [items] in\n        print(\"s1 saw \\(items.count)\")\n    }\n    s2.onEnd = { print(\"s2 ends \\(s2.id)\") }\n\n    items.append(30)\n\n    s1.onEnd?()\n    print(items.count, frozen.count)\n}\nrun()\nprint(\"after run\")",
+      "solution": "s1 saw 2\n3 2\ndeinit 1\nafter run\n\n- The buffer copy happens at `items.append(30)`: the buffer was shared three ways (items, frozen, and the handle copied into s1's closure context at creation), so the first mutation paid b1-08's bill. The context's copy still sees [10, 20] — hence \"s1 saw 2\".\n- s1 deinits at run()'s end: its closure captures only the array, so no path leads from s1 back to s1. No ring.\n- s2 NEVER deinits: s2 stores a closure whose context strongly captures s2 — b1-07's ring, two arrows, closed. The leak is silent: no crash, no message, just a deinit that isn't there.\n- \"after run\" confirms the program moved on, leak and all.",
+      "explanation": "Every trap was a boundary from a different loop: capture-at-creation (b1-06), COW's deferred copy (b1-08), the ring test (b1-07), deterministic deinit (b1-02). If all four predictions came off your mental diagram, Block 1 is installed — go build the expense tracker."
+     },
+     "assess": {
+      "explainPrompt": "Final articulation, interviewer-ready, 3-4 sentences: a class instance stores a closure that captures a local array via capture list, and the array is mutated afterwards. Walk through what happens in memory. Use the words context, retain, buffer, and copy.",
+      "modelAnswer": "Creating the closure allocates a heap context, and the capture list copies the array's handle into it at that moment, retaining the shared buffer. The instance retains the closure through its stored property, but since the context captures only the array — not the instance — no cycle forms. When the original variable is later mutated, it finds the buffer still shared with the context, so it pays copy-on-write: a new buffer is allocated, elements are copied, and only then does the write land. The closure keeps reading the original elements through the old buffer it retained.",
+      "sets": [
+       [
+        {
+         "q": "`obj.handler = { [data] in … }` where data is a local Array. What was copied into the context at creation?",
+         "options": [
+          "Every element of the array, duplicated immediately",
+          "The array's handle, retaining the shared buffer",
+          "A weak reference to the array's heap buffer",
+          "Nothing — the copy is deferred to the first call"
+         ],
+         "correct": 1,
+         "explain": "Capture lists copy at creation (b1-06); for an Array the value IS a small handle (b1-08). Elements only get duplicated when someone later mutates the shared buffer."
+        },
+        {
+         "q": "Which single question decides whether a stored closure leaks its owner?",
+         "options": [
+          "Is the closure declared with @escaping?",
+          "Does a strong path run from owner through context back to owner?",
+          "Is the closure longer than a single statement?",
+          "Was the closure created inside one of the owner's methods?"
+         ],
+         "correct": 1,
+         "explain": "b1-07's ring test. @escaping only says the closure MAY outlive the call — a cycle needs the back-path through the captures."
+        },
+        {
+         "q": "Two objects exit scope together; one deinit prints, the other stays silent. First hypothesis?",
+         "options": [
+          "The runtime batches deinits and will flush later",
+          "Something still strongly holds the silent one — check for a ring",
+          "Only one deinit is permitted per scope exit",
+          "The optimizer stripped the second print statement"
+         ],
+         "correct": 1,
+         "explain": "Deinit is deterministic (b1-02): silence means the count never reached zero. After this block, the usual suspect is a stored closure capturing its owner."
+        }
+       ],
+       [
+        {
+         "q": "`var a = big; store { [a] in … }; a.append(x)` — the append pays O(n). Why?",
+         "options": [
+          "Capture lists force arrays to copy eagerly on append",
+          "The context still retains the old buffer, so the append found it shared",
+          "Appends inside closure-bearing scopes are always O(n)",
+          "ARC write-locks the buffer while the closure exists"
+         ],
+         "correct": 1,
+         "explain": "Two handles pointed at one buffer — a's and the context's copy. First mutation while shared pays b1-08's deferred bill; the closure keeps the original elements."
+        },
+        {
+         "q": "Interviewer: \"Swift has no garbage collector — how do abandoned objects die, and what's the failure mode?\" Best compressed answer:",
+         "options": [
+          "The OS reclaims them whenever the app is backgrounded",
+          "Counting frees at zero, deterministically; strong rings never reach zero",
+          "A background thread sweeps unreachable objects periodically",
+          "Objects die when their creating scope's braces close"
+         ],
+         "correct": 1,
+         "explain": "b1-02 and b1-03 in one breath. Follow with the fix (one non-counting arrow, b1-04) and the tool (Memory Graph Debugger), and the question is fully answered."
+        },
+        {
+         "q": "Block 1's exit skill, in one sentence:",
+         "options": [
+          "Writing Swift that avoids classes and closures entirely",
+          "Predicting behavior and cost from tags, counts, captures, and buffers",
+          "Memorizing the standard library's public signatures",
+          "Defaulting to structs and [weak self] everywhere, to be safe"
+         ],
+         "correct": 1,
+         "explain": "Machinery, not rules. \"Always weak\" and \"never classes\" are the cargo cult this block replaces with reading skill — which the zero-AI checkpoint now gets to prove."
+        }
+       ]
+      ]
+     },
+     "transfer": "Before opening Xcode for the checkpoint: redraw the exercise's final memory state from scratch on paper — stack, heap nodes with counts, both closure contexts, the two buffers, and the closed ring around Session 2. When the drawing matches the output you predicted, delete it and start the expense tracker. Zero AI. You're ready.",
+     "verify": "class Session {\n    let id: Int\n    var onEnd: (() -> Void)?\n    init(_ i: Int) { id = i }\n    deinit { print(\"deinit \\(id)\") }\n}\nfunc run() {\n    let s1 = Session(1)\n    let s2 = Session(2)\n    var items = [10, 20]\n    let frozen = items\n    s1.onEnd = { [items] in print(\"s1 saw \\(items.count)\") }\n    s2.onEnd = { print(\"s2 ends \\(s2.id)\") }\n    items.append(30)\n    s1.onEnd?()\n    print(items.count, frozen.count)\n}\nrun()\nprint(\"after run\")   // s1 saw 2 / 3 2 / deinit 1 / after run — and no deinit 2",
+     "goDeeper": "You've earned the primary sources now: re-watch WWDC 2016 \"Understanding Swift Performance\" end to end — it will feel like review. Read docs/ErrorHandlingRationale.md in the Swift repo as practice. Then: the zero-AI expense-tracker checkpoint, and Block 2 awaits."
+    },
+    {
+     "id": "b1-16",
+     "title": "Enums with payloads: modeling states that can't lie",
+     "concept": {
+      "definition": "An enum case can carry associated values — `case failed(code: Int, retryable: Bool)` — making the enum a full tagged union (b1-01's machinery, beyond Optional): storage for the LARGEST payload plus a tag saying which case is live. The compiler then enforces honesty twice: you can only read a payload by matching its case, and `switch` must handle every case — forget one and the build fails, naming the missing case.",
+      "code": "enum NetState {\n    case idle\n    case loading(progress: Double)\n    case failed(code: Int, retryable: Bool)\n}\nMemoryLayout<NetState>.size   // 9 — largest payload (8+1) + shared tag\n\nswitch state {                 // omit one case:\ncase .idle: …                  // error: switch must be exhaustive\ncase .loading(let p): …        // note: add missing case: '.failed'\n}",
+      "underlying": "The layout is b1-01 generalized, executed here: NetState measures 9 bytes — the failed payload (Int 8 + Bool 1) is the largest, idle needs none, and all cases SHARE the same storage because only one is ever live; the tag rides in spare bits. This overlap is the tagged union's whole economy: a state machine of N cases costs max-payload, not sum.\n\nThe modeling power is what the type FORBIDS: `loading` has a progress but no error code; `failed` has a code but no progress. Compare the struct-of-optionals alternative — `var progress: Double?; var errorCode: Int?` — which happily represents nonsense like both-set or neither-set. The enum makes illegal states unrepresentable, and the exhaustive switch (error text verified verbatim) means adding a case tomorrow breaks every switch that hasn't considered it — the compiler walking your codebase for you.\n\nExtraction is matching: `switch` with `case .failed(let code, _)` binds payloads positionally; `if case` / `guard case` are one-case switches for when you only care about one shape. And recursion needs one keyword: a payload containing its own enum type would make the size infinite (b0-03's arithmetic), so `indirect` boxes the payload on the heap — executed: an indirect Tree measures 8 bytes, a pointer.",
+      "whyItMatters": "\"Make illegal states unrepresentable\" is the design maxim interviewers love hearing applied — and enums-with-payloads are how. Your expense tracker's every status field (syncing/synced/failed-with-reason) wants this shape, not booleans-plus-optionals."
+     },
+     "exercise": {
+      "prompt": "A design-and-predict double. (1) Predict the two printed sizes and explain the 9. (2) The Download struct below can represent at least three NONSENSE states the enum cannot — name two of them.",
+      "code": "enum NetState {\n    case idle\n    case loading(progress: Double)\n    case failed(code: Int, retryable: Bool)\n}\nprint(MemoryLayout<NetState>.size)          // 1?\n\nindirect enum Tree { case leaf(Int); case node(Tree, Tree) }\nprint(MemoryLayout<Tree>.size)              // 2?\n\n// the struct-of-optionals 'equivalent':\nstruct Download {\n    var isLoading = false\n    var progress: Double?\n    var errorCode: Int?\n}",
+      "solution": "1: 9 — cases overlay the same storage; the largest payload is failed's Int (8) + Bool (1) = 9, and the tag hides in spare bit patterns (b1-01's niche trick). Not 8+8+9: max, not sum.\n2: 8 — `indirect` boxes payloads on the heap, so the enum holds a pointer; without it the type would contain itself and the size equation would have no answer.\n\nNonsense states Download allows: isLoading == true WITH an errorCode set (loading AND failed?); progress set while isLoading == false (progress of what?); errorCode AND progress both set; all-nil-but-loading. The enum has exactly three inhabitants-shapes; the struct has 2 × (≈2⁶⁴) × (≈2⁶⁴) — almost all of them lies.",
+      "explanation": "Counting representable states is the design skill: every state your type can express is a state your code must handle or a bug waiting to be constructed. The enum's 9 bytes buy you a state machine the compiler audits."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: how are enums with associated values laid out in memory, and what does 'making illegal states unrepresentable' mean in practice?",
+      "modelAnswer": "An enum with payloads is a tagged union: storage for the largest case's payload, shared by all cases since only one is live, plus a tag — often hidden in spare bits — recording which. Payloads are only readable by matching their case, and switches must be exhaustive, so adding a case surfaces every unhandled site at compile time. Illegal states become unrepresentable because each case carries exactly its own data — no struct-of-optionals combinations like 'loading with an error code' can even be constructed.",
+      "sets": [
+       [
+        {
+         "q": "An enum has cases with payloads of 8, 1, and 0 bytes. Its size is roughly…",
+         "options": [
+          "17 — the payloads summed, plus a tag",
+          "9 — the largest payload plus tag; cases share storage",
+          "8 — the compiler drops the smaller payloads",
+          "24 — one word per case, regardless of payload"
+         ],
+         "correct": 1,
+         "explain": "Only one case is ever live, so they overlay: max, not sum. Executed: NetState = 9. b1-01's Optional was this exact layout with two cases."
+        },
+        {
+         "q": "You add a case to an enum. Every non-exhaustive switch over it now…",
+         "options": [
+          "falls through to its first case silently",
+          "fails to compile, naming the missing case",
+          "traps at runtime when the new case arrives",
+          "keeps working via an implicit default"
+         ],
+         "correct": 1,
+         "explain": "Verified verbatim: \"switch must be exhaustive… add missing case: '.failed'\". The compiler walks your codebase for you — unless a `default:` swallowed the guarantee."
+        },
+        {
+         "q": "Why does a recursive enum require the `indirect` keyword?",
+         "options": [
+          "Recursion needs runtime type metadata",
+          "A self-containing type has no finite size; indirect boxes it",
+          "The tag can't describe recursive cases",
+          "Swift limits enums to two levels of nesting"
+         ],
+         "correct": 1,
+         "explain": "b0-03's size arithmetic would never terminate. The box breaks the equation: the enum stores an 8-byte pointer — executed: Tree is 8 bytes."
+        }
+       ],
+       [
+        {
+         "q": "Compared to `enum State`, the struct `{ var isLoading: Bool; var error: Int? }` is worse because…",
+         "options": [
+          "structs are slower to copy than enums",
+          "it can represent nonsense the enum makes unconstructible",
+          "optionals cost more memory than payloads",
+          "it cannot be stored in an array"
+         ],
+         "correct": 1,
+         "explain": "loading-with-error, error-and-no-loading… every representable lie is a bug someone can construct. The enum's cases are the ONLY inhabitants — that's the design win."
+        },
+        {
+         "q": "You need the error code only when state is .failed, mid-function. The idiomatic extraction?",
+         "options": [
+          "reading state.errorCode with a force-unwrap",
+          "`guard case .failed(let code, _) = state else { return }`",
+          "casting state to a Failed subclass and reading it",
+          "String(describing: state), then parsing the text"
+         ],
+         "correct": 1,
+         "explain": "if case / guard case are one-case switches: match the shape, bind the payload, bail otherwise. Payloads are only reachable through matching — that's the honesty guarantee."
+        },
+        {
+         "q": "Code review: a switch over a 3-case enum ends with `default: break` \"for safety.\" The hidden cost?",
+         "options": [
+          "default cases add a measurable runtime branch penalty",
+          "Future cases get silently swallowed — the audit is disabled",
+          "break statements quietly leak the enum's payload",
+          "None at all; default is required on payload enums"
+         ],
+         "correct": 1,
+         "explain": "The compile error on new cases was the feature. A default trades tomorrow's guided refactor for today's convenience — usually a bad trade inside your own module."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one struct in your project with a Bool + Optional combination that encodes a state machine (isLoading + error, isLoggedIn + user…). Rewrite it as an enum with payloads on paper. Count the nonsense states you just made unconstructible — that number is the bug surface you removed.",
+     "verify": "Executed on this Mac: MemoryLayout<NetState>.size == 9 (max payload + tag), indirect Tree == 8 (a pointer), if case extracted 500 from .failed, and the non-exhaustive switch errored verbatim: \"switch must be exhaustive / add missing case: '.failed'\". Reproduce, then add a case and watch the compiler enumerate your call sites.",
+     "goDeeper": "The Swift book: \"Enumerations\" — associated values and indirect. WWDC 2015 Protocol-Oriented Programming's companion idea: \"make illegal states unrepresentable\" (the phrase traces to Yaron Minsky). b1-01 for Optional as the two-case special case."
+    },
+    {
+     "id": "b1-17",
+     "title": "Property wrappers: what the @ actually does",
+     "concept": {
+      "definition": "A property wrapper is a type that owns a property's STORAGE and gates its access: `@Clamped var health: Int` makes the compiler synthesize a hidden stored property `_health: Clamped` and turn `health` itself into a computed property forwarding to `_health.wrappedValue`. Executed proof: a struct whose only property is `@Clamped var health` is exactly the size of Clamped — the wrapper IS the storage.",
+      "code": "@propertyWrapper\nstruct Clamped {\n    private var value = 0\n    var wrappedValue: Int {\n        get { value }\n        set { value = min(100, max(0, newValue)) }\n    }\n    var projectedValue: Bool { value == 100 }   // exposed as $health\n}\n\nstruct Player { @Clamped var health: Int }\n// compiler writes:  private var _health = Clamped()\n//                   var health: Int { get/set → _health.wrappedValue }\np.health = 150   // executed: reads back 100.  p.$health == true",
+      "underlying": "The desugaring is the entire concept — everything else is library design on top. `@Clamped var health` becomes three declarations: the hidden stored instance `_health` (the wrapper, holding the real bytes — verified: Player's size equals Clamped's 8), a computed `health` that forwards get/set through `wrappedValue` (b1-10: static dispatch, inlinable — wrappers cost nothing at runtime beyond what their accessors do), and optionally `$health` forwarding to `projectedValue` — a second, differently-typed window onto the same storage.\n\nRead `@` as \"this property's storage has behavior.\" Clamping, UserDefaults-backing (@AppStorage), change publishing (@Published), thread confinement — all the same shape: intercept reads and writes, do policy, delegate to real storage. When you meet an unfamiliar wrapper, the three questions are always: what does wrappedValue's getter/setter actually DO, what storage hides in the wrapper instance, and what does $-projection expose?\n\nOne sharp edge worth knowing early: because `health` is computed, property wrappers on LOCAL variables work (Swift 5.5+), but the wrapper instance in a struct makes the SETTER mutating — so a `let player` can't set health (b0-01's rule surfacing through the sugar). And @Published, the wrapper you'll meet most, projects a Combine publisher from $-syntax — same machinery, fancier projection; it gets its own treatment in Block 5's observation loop.",
+      "whyItMatters": "@State, @Published, @AppStorage, @Environment — modern iOS is written in wrappers, and most developers use them as incantations. \"What does the compiler synthesize for @Published?\" is an interview question that separates users from readers. You now read the @."
+     },
+     "exercise": {
+      "prompt": "Predict all four prints. Then answer the desugaring question: write out (in words or code) the two declarations the compiler synthesizes for `@Logged var name`.",
+      "code": "@propertyWrapper\nstruct Logged {\n    private var value = \"\"\n    var wrappedValue: String {\n        get { value }\n        set { print(\"  set to '\\(newValue)'\"); value = newValue }\n    }\n    var projectedValue: Int { value.count }\n}\n\nstruct Form { @Logged var name: String }\nvar f = Form()\nprint(\"created\")            // does anything log before this?\nf.name = \"Riya\"             // 1?\nprint(f.name)               // 2?\nprint(f.$name)              // 3?\nprint(MemoryLayout<Form>.size == MemoryLayout<Logged>.size)  // 4?",
+      "solution": "created            — nothing logs first: init stored \"\" directly, and no set ran.\n1:   set to 'Riya'  — the write routed through wrappedValue's setter.\n2: Riya             — the read routed through the getter.\n3: 4                — $name is projectedValue: the count, a differently-typed window.\n4: true             — Form's only storage is the synthesized _name: Logged instance.\n\nThe synthesized pair: `private var _name = Logged()` (stored — the real bytes), and `var name: String { get { _name.wrappedValue } set { _name.wrappedValue = newValue } }` (computed — the gate). $name adds `var $name: Int { _name.projectedValue }`.",
+      "explanation": "Print 4 is the loop's proof in one expression: there is no separate String stored anywhere — the wrapper instance IS the property's storage, and everything you access goes through its accessors. Once you can write the desugaring by hand, every @ in SwiftUI stops being magic."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what does the compiler synthesize for `@Wrapper var x: T`, and what are wrappedValue and projectedValue?",
+      "modelAnswer": "The compiler synthesizes a hidden stored property `_x` of type Wrapper — the wrapper instance holds the property's actual storage — and turns `x` into a computed property whose get and set forward to `_x.wrappedValue`. wrappedValue is the wrapper's required accessor pair where the policy lives: clamp, log, publish, persist. If the wrapper declares projectedValue, the compiler also synthesizes `$x` forwarding to it — a second, often differently-typed view of the same storage, like @Published's publisher.",
+      "sets": [
+       [
+        {
+         "q": "`@Clamped var health: Int` — where do the property's actual bytes live?",
+         "options": [
+          "In a hidden Int the compiler stores beside the wrapper",
+          "Inside the synthesized `_health: Clamped` instance",
+          "In a runtime dictionary keyed by property name",
+          "Nowhere — health becomes purely computed"
+         ],
+         "correct": 1,
+         "explain": "Executed proof: the containing struct's size equals the wrapper's size. The wrapper IS the storage; `health` is just the computed gate in front of it."
+        },
+        {
+         "q": "What is wrappedValue?",
+         "options": [
+          "A protocol requirement inherited from the Codable family",
+          "The wrapper's accessor pair; every read and write routes through it",
+          "The property's default value, stored exactly once at init",
+          "An alias the debugger uses for display purposes only"
+         ],
+         "correct": 1,
+         "explain": "The policy point: clamp in the setter, log, publish, hit UserDefaults. The synthesized computed property forwards both directions through it."
+        },
+        {
+         "q": "`$health` compiles to…",
+         "options": [
+          "a string containing the wrapped property's name",
+          "the wrapper's projectedValue — a second window on the storage",
+          "a raw pointer aimed at the property's backing memory",
+          "the whole wrapper instance itself, in every case"
+         ],
+         "correct": 1,
+         "explain": "Projection is opt-in and its type is the wrapper's choice — a Bool here, a Publisher for @Published, a Binding for @State. Same bytes, different lens."
+        }
+       ],
+       [
+        {
+         "q": "Why can't you set a wrapped property on a `let` struct instance?",
+         "options": [
+          "Wrappers require classes to function",
+          "The setter mutates the stored wrapper — b0-01's let rule applies",
+          "Projections lock the property after first read",
+          "You can — wrappers bypass let"
+         ],
+         "correct": 1,
+         "explain": "The sugar changes syntax, not semantics: writing health writes _health's bytes, and let froze the box. The @ never suspends the rules you already know."
+        },
+        {
+         "q": "The three questions to ask when you meet an unfamiliar @Wrapper:",
+         "options": [
+          "Who wrote it, when, and whether it is deprecated",
+          "What its accessors DO, what storage hides, what $ projects",
+          "Whether it is a struct, an enum, or actually a macro",
+          "Whether it compiles, links, and passes code review"
+         ],
+         "correct": 1,
+         "explain": "Every wrapper — @Published, @AppStorage, @State — answers those three. Reading them off the wrapper's source takes a minute and replaces incantation with knowledge."
+        },
+        {
+         "q": "@Published fits this machinery how?",
+         "options": [
+          "It's compiler magic unrelated to property wrappers",
+          "Same synthesis; the setter emits and $ projects the publisher",
+          "It stores values in the Combine framework's heap",
+          "It only works on @MainActor classes"
+         ],
+         "correct": 1,
+         "explain": "wrappedValue's setter announces the change; projectedValue is the Publisher you subscribe to. Block 5's observation loop builds the full pipeline on this exact synthesis."
+        }
+       ]
+      ]
+     },
+     "transfer": "Pick one @ you use without thinking (@AppStorage, @Published, @State — anything). Find or reason out its wrapper type and answer the three questions in writing: what do its accessors do, what storage hides inside the wrapper instance, what does $ project. One paragraph total.",
+     "verify": "Executed on this Mac: the Clamped setter turned 150 into 100; $health projected true at max; and MemoryLayout<Player>.size == MemoryLayout<Clamped>.size == 8 — the synthesized _health wrapper instance is the struct's entire storage. Write the Logged wrapper from the exercise and watch the set-logging fire only on writes.",
+     "goDeeper": "SE-0258 (property wrappers) — the design document's 'sugar for a stored subobject' framing is exactly this loop. The Swift book: \"Properties > Property Wrappers\". Block 5's observation loop for @Published/@Observable in anger."
+    },
+    {
+     "id": "b1-18",
+     "title": "Laziness: pay only when read",
+     "concept": {
+      "definition": "Swift has two distinct lazinesses. `lazy var` defers a stored property's initialization until first ACCESS — executed here: the builder closure printed nothing at init, ran once at first read, and never again. Lazy SEQUENCES (`array.lazy.map…`) defer element computation until consumption — and unlike lazy var, they cache nothing: executed, a lazy map ran its transform 0 times before consumption, 3 times for prefix(3)… and again on every later pass.",
+      "code": "struct Report {\n    lazy var summary: String = {\n        print(\"building NOW\")      // executed: prints at FIRST READ,\n        return expensive()          // not at init — and only once\n    }()\n}\n\nlet nums = Array(1...1000)\nnums.map(double).prefix(3)          // executed: 1000 transform calls\nnums.lazy.map(double).prefix(3)     // executed: 3 calls — but ZERO\n                                    // caching: each pass recomputes",
+      "underlying": "lazy var is compiler-managed deferred storage: an Optional-shaped slot (b1-01) that starts empty; first access runs the initializer, stores the result, and every later access returns it. Costs and constraints follow: it must be `var` (the slot gets written — even reads can mutate, which is why reading a lazy var on a let struct fails to compile), the initializer can use `self` (unlike normal stored properties — a main reason the idiom exists), and the check-then-fill is NOT thread-safe: two threads racing first access can run the initializer twice (b3-03's shape — synchronize or don't share).\n\nLazy sequences are a different machine entirely: `.lazy` wraps the collection in a view (LazyMapSequence and friends) that stores the CLOSURE, not results — b1-05's pair, held for later. Work happens per element, per consumption: executed, prefix(3) on a lazy map of 1000 cost exactly 3 transform calls (versus 1000 eager — and eager also allocated a full intermediate array, b0-11). The no-caching corollary was executed too: two passes of prefix(2) cost 4 calls. Iterate a lazy chain twice and you pay twice; if you'll reuse results, materialize once with Array( ).\n\nThe decision table: lazy var for expensive one-time setup that might never be needed; lazy sequences for long chains consumed once or partially; eager for anything reused. Laziness moves cost from creation-time to use-time — profile which side of that trade your hot path is on (b2-01's budget being the usual judge).",
+      "whyItMatters": "\"When would you use lazy?\" is a common interview probe with a two-part answer most candidates only half know. The no-caching surprise on lazy sequences — recompute per pass — ships real double-work bugs, and the thread-unsafety of lazy var is a known crash pattern."
+     },
+     "exercise": {
+      "prompt": "Predict the exact output — every 'built' line, in position. Then the sharp question: how many times does the transform run in total in part B, and what one-word change makes it run half as often?",
+      "code": "// A\nstruct Config {\n    lazy var token: String = { print(\"built token\"); return \"abc\" }()\n}\nvar c = Config()\nprint(\"config made\")\nprint(c.token)\nprint(c.token)\n\n// B\nvar runs = 0\nlet nums = Array(1...100)\nlet view = nums.lazy.map { runs += 1; return $0 * 2 }\nlet first = Array(view.prefix(5))\nlet again = Array(view.prefix(5))\nprint(runs)",
+      "solution": "A:\nconfig made\nbuilt token\nabc\nabc\n— nothing at init; the builder runs at first read, the slot caches, the second read is a plain load.\n\nB: prints 10 — the lazy view stores the closure, not results: each Array(prefix(5)) walks fresh, 5 calls per pass, no memoization. The one-word change: drop `.lazy` on line one? That would make it 100 calls. The right one-word-ish change is materializing ONCE — `let view = Array(nums.lazy.map…prefix(5))` reused twice — or simply computing `first` and reusing it for `again`. Executed equivalents: 0-until-consumed, 3 for one prefix(3) pass, 4 for two prefix(2) passes.",
+      "explanation": "The two lazinesses have opposite caching stories — var caches forever, sequence caches never — and both exercises hinge on that. If B surprised you, remember what the view IS: a stored closure (b1-05) plus a source, replayed per consumer."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: how does lazy var work mechanically, how do lazy sequences differ, and when is each the right tool?",
+      "modelAnswer": "A lazy var is a compiler-managed empty slot: first access runs the initializer — which may use self — stores the result, and serves it thereafter; it must be var, and the unsynchronized check-then-fill is not thread-safe. Lazy sequences instead store the transformation closures and compute per element, per consumption, caching nothing — so partial consumption is cheap but every pass repays full price. Use lazy var for expensive maybe-never setup, lazy chains for once-consumed or truncated pipelines, and eager evaluation whenever results are reused.",
+      "sets": [
+       [
+        {
+         "q": "When does a lazy var's initializer run?",
+         "options": [
+          "During init, after the other stored properties",
+          "At first access — once; later reads return the stored result",
+          "On every access, like a computed property",
+          "When the containing scope exits"
+         ],
+         "correct": 1,
+         "explain": "Executed: 'building NOW' printed at first read only. It's deferred STORAGE — an empty slot filled once — not computation-per-read."
+        },
+        {
+         "q": "Why must lazy properties be declared var?",
+         "options": [
+          "A style rule enforced by SwiftLint only",
+          "First access WRITES the slot — even a read can mutate",
+          "lazy is incompatible with value types otherwise",
+          "let properties cannot have closures as initializers"
+         ],
+         "correct": 1,
+         "explain": "The fill is a mutation; b0-01's let rule would forbid it. Corollary: you can't read a lazy var through a let struct binding — the read might write."
+        },
+        {
+         "q": "`nums.lazy.map(f).prefix(3)` on 1000 elements calls f how many times when consumed?",
+         "options": [
+          "1000 — laziness batches but doesn't skip",
+          "3 — elements are computed only as consumed",
+          "0 — prefix never evaluates transforms",
+          "6 — once to count, once to produce"
+         ],
+         "correct": 1,
+         "explain": "Executed: 0 before consumption, 3 after. The view pulls elements through the closure on demand — and the eager version paid 1000 plus an intermediate array."
+        }
+       ],
+       [
+        {
+         "q": "The same lazy view is consumed twice with prefix(2). Total transform calls?",
+         "options": [
+          "2 — results are memoized after the first pass",
+          "4 — lazy sequences cache nothing; each pass recomputes",
+          "0 — the second pass reuses the first's buffer",
+          "100 — the second pass forces full evaluation"
+         ],
+         "correct": 1,
+         "explain": "Executed: 4. The view is a stored closure plus a source — every consumer replays it. Reuse means materialize: wrap the chain in Array( ) once."
+        },
+        {
+         "q": "Two threads race the FIRST access of a shared object's lazy var. The hazard?",
+         "options": [
+          "A guaranteed deadlock on the property's internal lock",
+          "The initializer can run twice — the fill isn't synchronized",
+          "A compile error — lazy requires @MainActor isolation",
+          "Nothing; lazy slots have been atomic since Swift 5"
+         ],
+         "correct": 1,
+         "explain": "b3-03's read-modify-write shape on the slot. lazy var buys deferral, not thread safety — synchronize access or keep the owner unshared."
+        },
+        {
+         "q": "A 5000-element pipeline is filtered, mapped, then fully iterated exactly once. Adding .lazy buys…",
+         "options": [
+          "fewer transform calls across all of the elements",
+          "skipped intermediate arrays — same calls, less allocation",
+          "automatic parallelism spread across the CPU cores",
+          "nothing at all; single-pass code cannot benefit"
+         ],
+         "correct": 1,
+         "explain": "Full consumption runs every closure either way; the win is skipping the filtered-array and mapped-array buffers (b0-11 allocations) between stages. Truncated consumption is where call counts also drop."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one expensive property that every instance of some type builds eagerly (a formatter, a parsed resource, a computed collection). Decide: is it read on every instance's lifetime? If not, lazy var it — and write one sentence about who could race its first access.",
+     "verify": "Executed on this Mac: lazy var built at first read only ('building NOW' once, second read silent); eager map paid 1000 calls for prefix(3) vs lazy's 0-then-3; two lazy passes of prefix(2) paid 4 calls — no caching. Reproduce, then add .lazy to a filter+map chain and count both stages' calls.",
+     "goDeeper": "The Swift book: \"Properties > Lazy Stored Properties\" (including the thread-safety warning). Swift stdlib docs: LazySequenceProtocol — the 'no memoization' contract in writing. b1-05 for what the stored closure is."
+    },
+    {
+     "id": "b1-19",
+     "title": "map, filter, reduce: closures as arguments",
+     "concept": {
+      "definition": "Higher-order functions are ordinary functions whose parameters are closures (b1-05's 16-byte values): `map` transforms every element through yours, `filter` keeps elements yours approves, `reduce` folds the sequence into one value. Each eager stage walks the whole input and ALLOCATES a fresh result array — executed here: filter ran 1000 times, then map ran 500 times on filter's freshly-built output.",
+      "code": "let evensDoubled = nums.filter { $0 % 2 == 0 }   // 1000 calls,\n                       .map    { $0 * 2 }        // new array; then\n                                                  // 500 calls, new array\nlet total = nums.reduce(0, +)                     // executed: 500500\n\n// reduce's shape: (accumulator, element) -> accumulator\nlet longest = words.reduce(\"\") { acc, w in w.count > acc.count ? w : acc }",
+      "underlying": "Nothing here is magic — you could write map yourself in four lines: make an array, loop the source, call the closure argument on each element, append. That's the whole point of b1-05's 'closures are values': map is a loop that takes its BODY as a parameter. Dispatch-wise these calls are cheap: the closure parameter is non-escaping by default (b1-05), so no context needs heap-promoting, no [weak self] ceremony applies, and b1-11's specialization typically inlines the closure into the loop — an optimized map costs what the handwritten loop costs.\n\nThe real cost model is allocation, verified by the call counts: each eager stage materializes its full output (b0-11 buffer) before the next begins — filter built a 500-element array that map then walked to build another. For one short chain that's fine; for long chains or hot paths, b1-18's .lazy fuses the stages (no intermediates), and truncating consumers (prefix, first(where:)) make laziness dramatic.\n\nReading reduce is its own small skill: the first argument is the accumulator's starting value; the closure receives (accumulatorSoFar, nextElement) and returns the new accumulator. Sum is reduce(0, +); max-by, longest-word, dictionary-building are all the same fold. When a chain of map/filter starts doing MUTATION or index arithmetic inside its closures, that's the tell to drop back to a plain for-loop — the names are documentation, and a lying map (one whose closure has side effects) is worse than an honest loop.",
+      "whyItMatters": "You've used these daily — the upgrade is knowing what they cost (calls and allocations, verified) and what they promise (non-escaping closures, no capture ceremony). \"Implement map yourself\" and \"what does this reduce do?\" are warm-up interview questions that expose who's only pattern-matched the syntax."
+     },
+     "exercise": {
+      "prompt": "Predict the three counts and the final value. Then the reading question: say in one sentence what the reduce on the last line computes, without running it.",
+      "code": "let nums = Array(1...1000)\nvar fCalls = 0, mCalls = 0\n\nlet result = nums.filter { fCalls += 1; return $0 % 2 == 0 }\n                 .map    { mCalls += 1; return $0 * 2 }\n\nprint(fCalls)          // 1?\nprint(mCalls)          // 2?\nprint(result.count)    // 3?\n\nlet mystery = nums.reduce(0) { acc, n in n % 3 == 0 ? acc + 1 : acc }",
+      "solution": "1: 1000 — filter interrogates every element.\n2: 500 — map runs on filter's OUTPUT: the 500 evens, in a freshly allocated array.\n3: 500 — one doubled value per kept element.\nmystery: counts the multiples of 3 in 1...1000 (the accumulator starts at 0 and gains 1 whenever n % 3 == 0 — so 333).\n\nAll three counts executed as predicted. The invisible fourth fact: TWO result arrays were allocated — filter's and map's — which is the cost .lazy exists to remove (b1-18).",
+      "explanation": "The counts make the pipeline's shape tangible: stages run in full, in order, each on the previous one's materialized output. And reduce reads best as a sentence — 'starting from zero, add one per multiple of three' — if you can't say the sentence, the fold needs a comment or a for-loop."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what are map/filter/reduce mechanically, and what do eager chains cost that lazy ones don't?",
+      "modelAnswer": "They're ordinary functions taking closures as parameters: map is a loop that transforms each element through your closure into a new array, filter keeps approved elements, and reduce folds elements into one accumulator from a seed value. Their closures are non-escaping by default — no capture ceremony — and specialization usually inlines them to handwritten-loop cost per call. What eager chains add is allocation: every stage materializes a full intermediate array before the next runs, which .lazy avoids by fusing stages and computing per element on demand.",
+      "sets": [
+       [
+        {
+         "q": "`filter { … }.map { … }` on 1000 elements (500 pass the filter). The map closure runs…",
+         "options": [
+          "1000 times — chains share the original input",
+          "500 times — on filter's materialized output",
+          "1500 times — both stages see everything",
+          "once, on the array as a whole"
+         ],
+         "correct": 1,
+         "explain": "Executed: 1000 then 500. Eager stages run in full, in order, each consuming the previous stage's freshly allocated result."
+        },
+        {
+         "q": "Why does using self inside an eager map require no [weak self]?",
+         "options": [
+          "map closures cannot capture references at all",
+          "The closure is non-escaping — it dies inside the call",
+          "The compiler inserts weak automatically",
+          "It does require it; omitting is a lint warning"
+         ],
+         "correct": 1,
+         "explain": "b1-05's default: non-escaping closures can't outlive the call, so b1-07's ring geometry can't form. Capture ceremony is for closures that STAY."
+        },
+        {
+         "q": "reduce(0, +) over 1...1000 reads as…",
+         "options": [
+          "\"apply + to every pair of neighbors\"",
+          "\"starting from 0, fold each element in with +\"",
+          "\"multiply the range by its average\"",
+          "\"zip the array with itself and add\""
+         ],
+         "correct": 1,
+         "explain": "Seed, then (accumulator, element) -> accumulator, once per element. Executed: 500500. Every fold — sum, max, counting, grouping — is this one shape."
+        }
+       ],
+       [
+        {
+         "q": "The hidden cost of a four-stage eager chain, beyond the closure calls:",
+         "options": [
+          "Four separate vtable dispatches on every element",
+          "Three intermediate arrays allocated and thrown away",
+          "Extra retain/release traffic on every element",
+          "A fresh heap closure context per stage per element"
+         ],
+         "correct": 1,
+         "explain": "Each stage materializes (b0-11) before the next starts. The calls are usually inlined to nothing (b1-11); the buffers are the real bill, and .lazy's fusion is the discount."
+        },
+        {
+         "q": "\"Implement map yourself\" — the correct four-line shape:",
+         "options": [
+          "Recursion splitting the array in halves",
+          "Make an array, loop the source, append transform(element)",
+          "A while-loop mutating the source in place",
+          "Dispatch each element to a concurrent queue"
+         ],
+         "correct": 1,
+         "explain": "map IS a loop that takes its body as a parameter — b1-05 made that sentence literal. (reserveCapacity(count) before the loop earns bonus points, per b0-11.)"
+        },
+        {
+         "q": "Code review: a map's closure appends to an outside array and returns its input unchanged. Verdict?",
+         "options": [
+          "Fine — map guarantees element order regardless",
+          "A lying map — side effects belong in an honest for-loop",
+          "Fine as long as the outside array stays contiguous",
+          "Wrong only because forEach compiles slightly faster"
+         ],
+         "correct": 1,
+         "explain": "map's name promises transform-and-collect; using it as a loop-with-benefits makes readers miss the mutation. The honest spelling is a for-loop (or forEach) — clarity beats cleverness."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find your longest map/filter chain and answer three questions: how many intermediate arrays does it allocate; is it consumed fully or truncated (lazy candidate?); and do any closures hide side effects (for-loop candidate?). Rewrite the worst offender in its honest form.",
+     "verify": "Executed on this Mac: filter 1000 calls, map 500, result 500 elements; reduce(0, +) = 500500. Write map yourself in four lines and check it matches the stdlib's output on 1...10 — then add reserveCapacity and know why (b0-11).",
+     "goDeeper": "Swift stdlib source: Sequence.map is genuinely readable — loop, closure call, append (with reserveCapacity). b1-18 for the lazy fusion; b1-11 for why the closure calls usually inline away. \"Advanced Swift\" (objc.io) — the collection-protocols chapters."
+    }
+   ]
+  },
+  {
+   "id": "b2",
+   "name": "The Machinery of the Screen",
+   "tagline": "How UIKit turns events into pixels — run loop, views, layout, touches",
+   "loops": [
+    {
+     "id": "b2-01",
+     "title": "The run loop: the engine under the main thread",
+     "concept": {
+      "definition": "The main thread runs an event loop — the run loop: it sleeps until something arrives (a touch, a timer, a redraw), runs your handlers for it, lets UIKit do a layout-and-render pass, then sleeps again. Every touch handler, every timer, every UI update executes inside one turn of this loop. `UIApplicationMain` starts it at launch and it never stops.",
+      "code": "@objc func buttonTapped() {\n    label.text = \"working…\"            // does NOT appear yet\n    Thread.sleep(forTimeInterval: 2)   // the loop can't turn: FROZEN\n    label.text = \"done\"\n}\n// user sees: 2s of frozen UI, then \"done\".\n// \"working…\" NEVER renders — drawing happens after the handler\n// returns, once per turn, with only the final values.",
+      "underlying": "One turn of the loop: dequeue an event → run your handler(s) → run the deferred layout pass → commit drawing to the render server → sleep. Two huge consequences fall out.\n\nFirst, setting `label.text` doesn't draw anything — it records a change. Rendering happens once, after your code returns. Set it five times in one handler and only the last value ever reaches the screen. Second, blocking the main thread doesn't just delay your code — it stops the WORLD: no new touches are dequeued, no rendering is committed, the app is frozen exactly until your handler returns.\n\nTimers ride the same machinery: a Timer is scheduled ON the run loop and fires when the loop next gets to it — after, not at, its deadline if a turn runs long. `DispatchQueue.main.async { }` from the main thread doesn't run immediately either: it enqueues work for a LATER turn, which is why it's the classic \"run this after the current pass finishes\" tool.\n\nThe frame budget: at 60Hz the whole turn — your code, layout, render commit — must fit in ~16ms (~8ms at 120Hz). Miss it and the frame is dropped; miss many and scrolling stutters. Block 0 loop 4's \"heap churn in scrolling\" warning was about exactly this budget.",
+      "whyItMatters": "\"Why doesn't my label update until the end?\" is the most-asked UIKit beginner question, and \"what is the run loop?\" is its interview twin. Every janky-scroll investigation starts with what fits — or doesn't — in one turn."
+     },
+     "exercise": {
+      "prompt": "Predict exactly what the user SEES on screen, and when, from tap to finish. Two traps: does \"step 1\" ever appear, and when does the button visually un-highlight?",
+      "code": "@objc func process() {\n    statusLabel.text = \"step 1\"\n    heavyWork()                    // 3 seconds of CPU on main\n    statusLabel.text = \"step 2\"\n    heavyWork()                    // 3 more seconds\n    statusLabel.text = \"finished\"\n}",
+      "solution": "The user sees: the button stays visually pressed and the whole UI freezes for ~6 seconds — then \"finished\" appears. \"step 1\" and \"step 2\" NEVER render.\n\n- All three text assignments happen inside ONE turn; rendering runs once, after process() returns, with only the final value.\n- The button's un-highlight is also a render-pass job, so it stays stuck pressed for the full 6 seconds.\n- Scrolling, other taps, animations: all dead until the turn ends — events queue up but the loop can't dequeue them.",
+      "explanation": "The fix shape you'll use forever: heavy work goes OFF the main thread, with hops back onto it for each UI update — then every intermediate state renders, because each hop is its own turn. (That machinery is Block 3's subject.)"
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is the main run loop, and why does blocking the main thread freeze the whole UI?",
+      "modelAnswer": "The main run loop is an event loop: it sleeps until events arrive, runs your handlers, lets UIKit perform layout and commit rendering, then sleeps again — every piece of UI work happens inside one of its turns. UI changes made in a handler don't draw immediately; they're committed once, after the handler returns. So blocking the main thread stops the loop from turning: no events are processed and nothing renders until your code finishes.",
+      "sets": [
+       [
+        {
+         "q": "What happens the moment your code executes `label.text = \"hi\"`?",
+         "options": [
+          "The screen updates before the next line runs",
+          "The change is recorded; drawing happens after your handler returns",
+          "A background thread redraws the label in parallel",
+          "The label redraws at the next timer tick"
+         ],
+         "correct": 1,
+         "explain": "Property changes mark state; rendering is a separate phase at the end of the turn. One draw per turn, final values only."
+        },
+        {
+         "q": "Why does 3 seconds of CPU work on the main thread freeze the entire app?",
+         "options": [
+          "The CPU can only run one app at a time",
+          "The loop can't turn — no events, no rendering, until it returns",
+          "UIKit suspends every view while the CPU stays saturated",
+          "Touch hardware powers down under heavy load"
+         ],
+         "correct": 1,
+         "explain": "Freezing isn't a crash or a policy — it's arithmetic: everything happens in turns, and your handler IS the current turn."
+        },
+        {
+         "q": "A Timer scheduled for 1.0s fires while a handler runs for 3s. When does its code run?",
+         "options": [
+          "At exactly 1.0s, interrupting the handler",
+          "When the loop next turns — about 3s in, after the handler returns",
+          "Never — blocked timers are cancelled",
+          "On a background thread at 1.0s, to stay accurate"
+         ],
+         "correct": 1,
+         "explain": "Timers are scheduled ON the run loop, so they fire when the loop gets to them — after their deadline, never before, and late whenever a turn runs long."
+        }
+       ],
+       [
+        {
+         "q": "From the main thread you call `DispatchQueue.main.async { doX() }`. When does doX run?",
+         "options": [
+          "Immediately, inline — it's already the main queue",
+          "In a later turn of the loop, after the current pass completes",
+          "On a helper thread that mirrors the main queue",
+          "At app idle, when no events have arrived for a while"
+         ],
+         "correct": 1,
+         "explain": "async enqueues even from the same queue. That's why it's the idiom for \"after the current layout/render pass\" — the code runs in a fresh turn."
+        },
+        {
+         "q": "The frame budget at 60Hz is ~16ms. What exactly must fit inside it?",
+         "options": [
+          "Only your own handler code; UIKit's work is free",
+          "The whole turn: handlers, layout pass, and render commit",
+          "Just the GPU's drawing time for visible pixels",
+          "Network calls made during the frame"
+         ],
+         "correct": 1,
+         "explain": "The turn is indivisible: handler + layout + commit. Blow the budget anywhere and the frame drops — the deep reason heap churn in scroll paths (b0-04) shows up as stutter."
+        },
+        {
+         "q": "Code review: a colleague updates a progress label inside a long loop on main, and sees no updates. The correct explanation?",
+         "options": [
+          "Labels cache their text and need setNeedsDisplay called",
+          "All the assignments share one turn; only the value present at return renders",
+          "String assignment is too fast for the screen to notice",
+          "The label must be redrawn from a background thread"
+         ],
+         "correct": 1,
+         "explain": "One render per turn. Progress UI requires the work to yield the main thread between updates — chunked async work, each chunk its own turn."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find (or imagine) the slowest synchronous thing your app does on the main thread — a big JSON decode, an image resize, a database query. Estimate its duration against the 16ms budget. Write one sentence: what would the user's finger feel during it?",
+     "verify": "In an Xcode project: add a button and a label; in the tap handler set `label.text = \"working…\"`, then `Thread.sleep(forTimeInterval: 2)`, then `label.text = \"done\"`. Run it: the button stays pressed, \"working…\" never appears, \"done\" pops in after 2s. You have now SEEN one turn of the loop.",
+     "goDeeper": "WWDC 2018 \"iOS Memory Deep Dive\" and WWDC 2021 \"Discover Metal debugging\" touch the render loop; the classic is objc.io's \"Advanced iOS Application Architecture\" run-loop chapter. Apple docs: RunLoop and CFRunLoop."
+    },
+    {
+     "id": "b2-02",
+     "title": "A view is a layer plus a responder",
+     "concept": {
+      "definition": "A UIView is two inherited jobs stapled together: it OWNS a CALayer, which holds the actual visual state (bounds, background, corner radius) and is what gets rendered; and it IS a UIResponder, which lets it receive touches and participate in the responder chain. The layer draws; the view manages layout and events on top of it.",
+      "code": "let v = UIView()\nv.layer.cornerRadius = 12      // visual state lives on the LAYER\nv.backgroundColor = .red       // view property… forwarding to layer\n\n// view tree            layer tree (mirrored automatically)\n//   parentView    →      parentLayer\n//     childView   →        childLayer\n// The render server draws the LAYER tree.",
+      "underlying": "Every view creates its backing layer at init and keeps their trees mirrored: addSubview also parents the layers. Many view properties are thin forwards — `view.backgroundColor` writes `layer.backgroundColor`; `view.frame` is derived from layer geometry. Properties with no view-level wrapper (cornerRadius, shadowPath, masksToBounds) you set on `view.layer` directly — that's why the syntax splits.\n\nThe layer tree is what actually renders — and not even in your process. Core Animation commits the tree to a render server (a separate system process), which composites and animates it on the GPU. This explains a famous behavior: a committed animation (`UIView.animate`) keeps playing even while your main thread is blocked, because the render server doesn't need your process again until the animation ends. The run loop (b2-01) freezes YOUR code and NEW commits — not what's already committed.\n\nThe other inheritance matters just as much: UIView extends UIResponder, so every view can receive touches, participate in hit-testing, and pass unhandled events up the responder chain — b2-09's subject. And per b1-09: views are classes, deliberately — a view on screen is one entity with identity, shared by reference throughout UIKit.",
+      "whyItMatters": "\"What's the difference between a view and a layer?\" is a standard interview question. Practically: knowing what lives where explains the API split, why shadows/corners are layer work, and why animations survive main-thread stalls."
+     },
+     "exercise": {
+      "prompt": "A reasoning exercise. For each item, answer LAYER or VIEW (as in: which object truly owns this job?), with one clause of justification: (1) cornerRadius; (2) receiving a tap; (3) an in-flight fade animation's rendering; (4) addSubview bookkeeping; (5) shadowPath.",
+      "code": "// 1. cornerRadius\n// 2. receiving a tap\n// 3. rendering an in-flight fade animation while main thread is busy\n// 4. addSubview bookkeeping (who is whose child)\n// 5. shadowPath",
+      "solution": "1. LAYER — visual state; the view has no cornerRadius property at all.\n2. VIEW — touches are UIResponder business; layers know nothing about events.\n3. LAYER (tree, on the render server) — committed animations play out of process, untouched by your blocked main thread.\n4. VIEW — the view tree is the API you manage; it mirrors itself into the layer tree automatically.\n5. LAYER — shadows are compositing work, pure Core Animation.",
+      "explanation": "The split is one sentence: pixels and their animation belong to the layer (and the render server); events and layout belong to the view. When an API seems to be \"missing\" from UIView, look on the layer."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 2-3 sentences: what is the relationship between UIView and CALayer, and who actually renders what you see?",
+      "modelAnswer": "Every UIView owns a backing CALayer that holds the visual state — geometry, background, corners, shadows — and the view adds event handling (it's a UIResponder) and layout management on top. The view tree is mirrored into a layer tree, and that layer tree is what gets rendered: Core Animation commits it to a render server process that composites and animates on the GPU. That's why committed animations keep playing even if the main thread blocks.",
+      "sets": [
+       [
+        {
+         "q": "Where does `cornerRadius` live, and why there?",
+         "options": [
+          "On UIView — it affects layout calculations",
+          "On CALayer — it's visual state, and the layer owns the pixels",
+          "On UIScreen — corners are a display property",
+          "On the view controller that owns the view"
+         ],
+         "correct": 1,
+         "explain": "Visual state is layer business. UIView never grew a wrapper for it, which is why the idiom is `view.layer.cornerRadius`."
+        },
+        {
+         "q": "What does UIView inherit from UIResponder?",
+         "options": [
+          "Its entire drawing and layer-compositing machinery",
+          "Receiving touches and passing unhandled events up a chain",
+          "Automatic conformance to the Auto Layout engine",
+          "Reference counting for its subviews"
+         ],
+         "correct": 1,
+         "explain": "Responder-ness is the event half of a view's job. The chain it participates in is b2-09's whole subject."
+        },
+        {
+         "q": "You call addSubview. What happens to the layers?",
+         "options": [
+          "Nothing — layers are managed entirely separately",
+          "The child's layer is parented into yours — trees stay mirrored",
+          "Both layers merge into a single composite layer",
+          "The child view loses its layer until it's on screen"
+         ],
+         "correct": 1,
+         "explain": "One API call, two trees updated. You manage views; UIKit keeps the render-side tree in sync."
+        }
+       ],
+       [
+        {
+         "q": "A 2-second fade is running when your main thread blocks for 2 seconds. What does the user see?",
+         "options": [
+          "The fade freezes mid-way until the thread frees",
+          "The fade completes smoothly — it was committed to the render server",
+          "The view disappears, then fades when the thread returns",
+          "The fade restarts from the beginning afterwards"
+         ],
+         "correct": 1,
+         "explain": "Committed animations play in a separate process. b2-01's freeze stops your code and NEW commits — not what's already handed over."
+        },
+        {
+         "q": "Why are views classes rather than structs, in b1-09's terms?",
+         "options": [
+          "Structs can't hold references to their subviews",
+          "A view on screen is an entity — identity is the point",
+          "Value types can't conform to protocols UIKit needs",
+          "Historical accident from Objective-C, nothing more"
+         ],
+         "correct": 1,
+         "explain": "THE view, not A view: many owners hold the same instance and see each other's changes — b0-14's convergent arrows are UIKit's architecture."
+        },
+        {
+         "q": "Where does the compositing of your app's layers actually happen?",
+         "options": [
+          "In your process, on the main thread's render phase",
+          "In a separate render server process, on the GPU",
+          "Inside UIViewController's rendering callbacks",
+          "In the touch-handling subsystem between events"
+         ],
+         "correct": 1,
+         "explain": "Core Animation commits your layer tree out of process. Your turn (b2-01) ends at the commit; the drawing itself is someone else's job."
+        }
+       ]
+      ]
+     },
+     "transfer": "In your project (or any sample), find one place that sets `view.layer.something`. Say in one sentence why that property has no UIView wrapper — then find one animation and answer: after commit, could your main thread block without the user noticing?",
+     "verify": "In Xcode: start a 3-second `UIView.animate` fade, and one second in, call `Thread.sleep(forTimeInterval: 2)` on main. The fade keeps animating through the freeze — proof the render server has it, not you. (API surface compile-checked; the observable behavior is yours to watch.)",
+     "goDeeper": "WWDC 2014 \"Advanced Graphics and Animations for iOS Apps\" — still the canonical render-server explanation. objc.io issue #12, \"Animations Explained\". Apple docs: CALayer."
+    },
+    {
+     "id": "b2-03",
+     "title": "The view controller lifecycle",
+     "concept": {
+      "definition": "A view controller's view is created LAZILY: the first access to `.view` triggers `loadView` and then `viewDidLoad` — once, ever. Around each appearance, `viewWillAppear` and `viewDidAppear` fire every time, with the layout callbacks between them. One-time setup belongs in viewDidLoad; per-appearance work in viewWillAppear; anything needing real sizes waits for viewDidLayoutSubviews.",
+      "code": "let vc = DetailVC()          // init — NO view yet\nvc.isViewLoaded              // false\n_ = vc.view                  // first access triggers, in order:\n// loadView                  — create the view\n// viewDidLoad               — view exists… bounds: (0,0,0,0)!\n// then, on presentation, every time:\n// viewWillAppear → layout pass → viewDidLayoutSubviews → viewDidAppear",
+      "underlying": "The laziness is real and observable: on this Mac, `VC()` leaves `isViewLoaded == false`, and the first `.view` read prints loadView, then viewDidLoad — with `view.bounds` equal to (0, 0, 0, 0). That zero is the loop's key lesson: in viewDidLoad the view exists but has never been laid out — it isn't in a window, and its frame is whatever loadView happened to set, not its on-screen size. Any math against bounds there is wrong on some device.\n\nThe appearance sequence each time the VC comes on screen: viewWillAppear (about to be added — cheap per-visit updates go here), then the layout pass sizes the hierarchy (viewWillLayoutSubviews / viewDidLayoutSubviews — the FIRST place real geometry exists), then viewDidAppear (on screen, transition finished — start animations, begin expensive work). Disappearance mirrors it: viewWillDisappear / viewDidDisappear.\n\nTwo classic bugs live here: measuring in viewDidLoad (zero or storyboard-default bounds), and doing per-visit work in viewDidLoad (runs once, so returning to the screen shows stale state). And remember the lazy trigger cuts both ways: innocently touching `vc.view` before presenting — say, to configure a subview — fires the whole load sequence early.",
+      "whyItMatters": "Lifecycle ordering is a guaranteed interview question, usually as \"where would you put X?\". The bounds-are-zero-in-viewDidLoad trap ships real bugs weekly somewhere."
+     },
+     "exercise": {
+      "prompt": "Predict the exact print order — including which lines print at all and both bounds values. The VC is created, a property is set, then it's presented on screen.",
+      "code": "final class ProfileVC: UIViewController {\n    var userID: Int = 0\n    override func loadView() { print(\"loadView\"); view = UIView() }\n    override func viewDidLoad() {\n        super.viewDidLoad(); print(\"didLoad, bounds:\", view.bounds.size)\n    }\n    override func viewWillAppear(_ a: Bool) {\n        super.viewWillAppear(a); print(\"willAppear\")\n    }\n    override func viewDidLayoutSubviews() {\n        super.viewDidLayoutSubviews(); print(\"didLayout, bounds:\", view.bounds.size)\n    }\n    override func viewDidAppear(_ a: Bool) {\n        super.viewDidAppear(a); print(\"didAppear\")\n    }\n}\n\nlet vc = ProfileVC()      // 1: does anything print?\nvc.userID = 42            // 2: does anything print?\npresent(vc, animated: true)   // 3: what prints, in order?",
+      "solution": "1: nothing — init does not load the view.\n2: nothing — userID is a plain property; only touching .view triggers loading.\n3: loadView → didLoad, bounds: (0.0, 0.0) → willAppear → didLayout, bounds: (390.0, 844.0)  [the real device size] → didAppear.\n\nThe two bounds prints are the whole lesson: zero at didLoad (never laid out), real at didLayout (the first callback with trustworthy geometry).",
+      "explanation": "If you predicted printing at step 1 or 2, you imagined eager loading — it's lazy, and that's observable. If you put real bounds at didLoad, you've met the bug this loop exists to prevent: measure in viewDidLayoutSubviews, never earlier."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: walk through the view controller lifecycle from init to on-screen, and say where one-time setup, per-appearance work, and size-dependent code each belong.",
+      "modelAnswer": "The view is lazy: first access to .view runs loadView then viewDidLoad, exactly once — that's where one-time setup goes, but the view has no real geometry yet. Each time the controller comes on screen, viewWillAppear fires (per-appearance refresh), then the layout pass runs and viewDidLayoutSubviews is the first place bounds are real — size-dependent code belongs there. viewDidAppear means the transition finished: start animations or expensive work; the disappear callbacks mirror the sequence on the way out.",
+      "sets": [
+       [
+        {
+         "q": "When does viewDidLoad run?",
+         "options": [
+          "Immediately when the view controller is initialized",
+          "Once, when .view is first accessed and the view gets created",
+          "Every time the controller's view comes on screen",
+          "After the first layout pass completes"
+         ],
+         "correct": 1,
+         "explain": "The view is lazy — init leaves isViewLoaded false. First .view access triggers loadView then viewDidLoad, once ever."
+        },
+        {
+         "q": "In viewDidLoad, `view.bounds` is…",
+         "options": [
+          "the final on-screen size, ready for layout math",
+          "not trustworthy — zero or a placeholder; layout hasn't run",
+          "always the full screen size of the device",
+          "inaccessible; reading it crashes before layout"
+         ],
+         "correct": 1,
+         "explain": "Observed directly: (0,0,0,0) with a programmatic loadView. The first callback with real geometry is viewDidLayoutSubviews."
+        },
+        {
+         "q": "Work that must happen EVERY time the screen is shown belongs in…",
+         "options": [
+          "viewDidLoad, the standard setup point",
+          "viewWillAppear — it fires per appearance",
+          "loadView, before anything else",
+          "the initializer, to be safe"
+         ],
+         "correct": 1,
+         "explain": "didLoad runs once; a second visit to the screen skips it entirely — the classic stale-data-on-return bug. Per-visit refresh is willAppear's job."
+        }
+       ],
+       [
+        {
+         "q": "You configure `vc.view.backgroundColor` right after init, before presenting. Side effect?",
+         "options": [
+          "None — colors are free to set anytime",
+          "The load sequence fires early — viewDidLoad just ran",
+          "A crash: the view doesn't exist to configure",
+          "The color is queued and applied at presentation"
+         ],
+         "correct": 1,
+         "explain": "Touching .view IS the trigger. Configuring through it pulls viewDidLoad forward — sometimes harmless, sometimes the source of \"why did this run before my data was ready?\""
+        },
+        {
+         "q": "A subview's corner radius must be half its final height. Where does that line go?",
+         "options": [
+          "viewDidLoad, with the other one-time setup",
+          "viewDidLayoutSubviews — the first place the height is real",
+          "viewWillAppear, before the user can look",
+          "The subview's initializer"
+         ],
+         "correct": 1,
+         "explain": "Size-dependent = post-layout. Note it can run repeatedly (every layout pass), so keep it idempotent."
+        },
+        {
+         "q": "viewDidAppear tells you precisely that…",
+         "options": [
+          "the view has been created and its outlets are connected",
+          "the transition finished and the view is actually on screen",
+          "the first layout pass is about to begin",
+          "the controller entered the navigation stack"
+         ],
+         "correct": 1,
+         "explain": "On screen, animation done — the right moment to start animations, videos, or tracking, and the mirror of viewDidDisappear for stopping them."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open a view controller you've written and audit each line of its viewDidLoad against three bins: one-time setup (stays), per-appearance work (move to viewWillAppear), size-dependent math (move to viewDidLayoutSubviews). Count how many lines move.",
+     "verify": "Verified by execution on this Mac (UIKit via Catalyst): after init, isViewLoaded == false; first .view access prints loadView then viewDidLoad, and view.bounds inside viewDidLoad is (0.0, 0.0, 0.0, 0.0). The appearance-order claims (willAppear → layout → didAppear) are Apple-documented; add prints in a real app to watch them.",
+     "goDeeper": "Apple docs: UIViewController — \"Managing the View\" and the lifecycle figure. WWDC 2016 \"Making Apps Adaptive\" for how layout interleaves. objc.io issue #1, \"View Controllers\"."
+    },
+    {
+     "id": "b2-04",
+     "title": "frame, bounds, center: three views of one rectangle",
+     "concept": {
+      "definition": "frame is a view's rectangle in its SUPERVIEW's coordinate space; bounds is its own space — origin normally (0,0), plus its size; center is the frame's midpoint, again in superview coordinates. Same view, two coordinate systems: frame/center answer \"where am I in my parent?\", bounds answers \"what does my own territory look like from inside?\"",
+      "code": "let v = UIView(frame: CGRect(x: 20, y: 40, width: 100, height: 50))\nv.frame    // (20, 40, 100, 50)  — in the parent's coordinates\nv.bounds   // (0, 0, 100, 50)    — its own space starts at zero\nv.center   // (70, 65)           — frame midpoint, parent coords\n\nv.center = CGPoint(x: 200, y: 200)\nv.frame    // (150, 175, 100, 50) — moved; bounds untouched",
+      "underlying": "All numbers on this page were executed, not assumed. Moving `center` to (200,200) rewrites frame's origin to (150,175) — position changed, `bounds` still (0,0,100,50): moving a view around its parent never touches its interior space. Resizing `bounds` to 120×60 grows the view AROUND ITS FIXED CENTER: frame becomes (140,170,120,60) while center stays (200,200) — bounds-resize pins the middle, frame-resize pins the origin. That asymmetry is worth memorizing.\n\nThe deep one is `bounds.origin`. Shifting a parent's bounds.origin by (0,100) changes what its children's coordinates MEAN: a child at frame (10,10) keeps frame (10,10) — the property doesn't change — but it now APPEARS 100 points higher, because the parent's viewport looked down. This is not a curiosity; it is the entire implementation of UIScrollView: scrolling is nothing but animating the scroll view's bounds.origin. contentOffset IS bounds.origin.\n\nLast rule: once a view has a non-identity `transform`, frame becomes undefined-by-documentation — set position via center and size via bounds, never frame, on transformed views.",
+      "whyItMatters": "\"Difference between frame and bounds?\" might be the single most common iOS interview question — and \"a scroll view is just bounds.origin\" is the answer that upgrades you from memorizer to someone who understands the geometry."
+     },
+     "exercise": {
+      "prompt": "Predict every printed value. The last one is the interview classic: what happens to the child's FRAME when the parent's bounds.origin shifts?",
+      "code": "let v = UIView(frame: CGRect(x: 20, y: 40, width: 100, height: 50))\nprint(v.bounds)     // 1?\nprint(v.center)     // 2?\n\nv.bounds.size = CGSize(width: 120, height: 60)\nprint(v.frame)      // 3?\nprint(v.center)     // 4?\n\nlet parent = UIView(frame: CGRect(x: 0, y: 0, width: 300, height: 300))\nlet child  = UIView(frame: CGRect(x: 10, y: 10, width: 50, height: 50))\nparent.addSubview(child)\nparent.bounds.origin = CGPoint(x: 0, y: 100)\nprint(child.frame)  // 5?",
+      "solution": "1: (0.0, 0.0, 100.0, 50.0) — own space, zero origin.\n2: (70.0, 65.0) — frame midpoint in parent coords.\n3: (10.0, 35.0, 120.0, 60.0) — bounds-resize grows around the FIXED center: origin slid up-left to keep (70,65) centered.\n4: (70.0, 65.0) — unchanged, by construction.\n5: (10.0, 10.0, 50.0, 50.0) — UNCHANGED. The child's frame is expressed in the parent's coordinate space, and shifting bounds.origin re-aims the parent's viewport rather than moving children's rectangles. On screen the child now appears 100 points higher — that's a scroll.",
+      "explanation": "If 5 surprised you: the frame property and the pixels moved independently, because a frame is coordinates-in-a-space and the SPACE is what shifted. UIScrollView is this one line, industrialized — contentOffset is literally bounds.origin."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: explain frame vs bounds vs center, and how UIScrollView uses this geometry to scroll.",
+      "modelAnswer": "frame is the view's rectangle in its superview's coordinate space, center is that rectangle's midpoint, and bounds is the view's own space — origin normally zero plus its size. Moving center or frame repositions the view in its parent; resizing bounds grows it around its fixed center. Scrolling is bounds.origin: a scroll view shifts its own bounds origin, which changes where subviews appear without changing any of their frames — contentOffset is just that origin.",
+      "sets": [
+       [
+        {
+         "q": "A view has frame (20, 40, 100, 50). Its bounds is…",
+         "options": [
+          "(20, 40, 100, 50) — the same rectangle",
+          "(0, 0, 100, 50) — own space, same size, zero origin",
+          "(0, 0, 0, 0) until layout runs",
+          "(-20, -40, 100, 50) — the inverse offset"
+         ],
+         "correct": 1,
+         "explain": "Same size, different space: bounds is what the view's interior looks like from inside, and its origin is (0,0) unless someone shifts it."
+        },
+        {
+         "q": "Resizing via bounds (bounds.size = …) differs from resizing via frame how?",
+         "options": [
+          "It doesn't — the two are aliases for one rectangle",
+          "Bounds-resize pins the CENTER; frame-resize pins the origin",
+          "Bounds-resize also scales all the subviews",
+          "Frame-resize is animatable, bounds-resize is not"
+         ],
+         "correct": 1,
+         "explain": "Executed here: growing bounds to 120×60 slid frame's origin from (20,40) to (10,35) so the center could stay put. Two properties, two pinning rules."
+        },
+        {
+         "q": "What is UIScrollView's contentOffset, mechanically?",
+         "options": [
+          "A translation transform applied to each subview",
+          "The scroll view's own bounds.origin",
+          "A cached copy of each child's original frame",
+          "The GPU's viewport clipping rectangle"
+         ],
+         "correct": 1,
+         "explain": "Scrolling is re-aiming the viewport: shift bounds.origin and every subview appears elsewhere while every frame stays constant."
+        }
+       ],
+       [
+        {
+         "q": "Parent's bounds.origin becomes (0, 100). A child with frame (10, 10, 50, 50) now has frame…",
+         "options": [
+          "(10, -90, 50, 50) — shifted up by the scroll",
+          "(10, 10, 50, 50) — unchanged; it just APPEARS 100 points higher",
+          "(10, 110, 50, 50) — shifted down with the origin",
+          "undefined until the next layout pass"
+         ],
+         "correct": 1,
+         "explain": "Executed here: the frame property is coordinates in the parent's space, and the SPACE moved. Pixels shift; numbers don't."
+        },
+        {
+         "q": "A view has a rotation transform applied. How do you position and size it safely?",
+         "options": [
+          "Keep using frame — UIKit compensates for transforms",
+          "Set position via center and size via bounds; frame is undefined under a transform",
+          "Remove the transform, set frame, re-apply the transform each time",
+          "Wrap it in a container view and never touch it again"
+         ],
+         "correct": 1,
+         "explain": "Documented rule: non-identity transform makes frame meaningless. center and bounds remain well-defined — they're what frame was derived from anyway."
+        },
+        {
+         "q": "Converting a point from one view's space to another's is the job of…",
+         "options": [
+          "manual arithmetic on the two frames",
+          "convert(_:to:) / convert(_:from:) on UIView",
+          "the window's global coordinate dictionary",
+          "CGAffineTransform's inverse, applied twice"
+         ],
+         "correct": 1,
+         "explain": "Every view is a coordinate space, and UIKit ships the converters. Hit-testing (b2-10) uses exactly this machinery hop by hop down the tree."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one hard-coded coordinate in your project (a magic x or y). Answer: which coordinate SPACE is it expressed in — whose bounds? If the parent ever scrolls, resizes, or gains a transform, does that number survive? One sentence.",
+     "verify": "Every number in this loop was executed on this Mac (UIKit via Mac Catalyst): bounds (0,0,100,50) for frame (20,40,100,50); center move → frame (150,175,...) with bounds untouched; bounds resize 120×60 → frame (140,170,120,60) around fixed center; parent bounds.origin shift → child frame unchanged at (10,10,50,50). Repeat them in an Xcode playground and watch.",
+     "goDeeper": "Apple docs: \"View Geometry\" in the View Programming Guide. objc.io issue #3, \"Scroll View\" — the bounds.origin revelation, at length. WWDC 2011 \"Understanding UIScrollView\" (old, still gold)."
+    },
+    {
+     "id": "b2-05",
+     "title": "Auto Layout: constraints are equations",
+     "concept": {
+      "definition": "A constraint is a linear equation between two attributes: `item1.attribute = multiplier × item2.attribute + constant`. Activating constraints changes nothing on screen — it hands equations to a solver. Once per layout pass the engine solves the whole system and WRITES the resulting frames. Under Auto Layout, frames are output, not input.",
+      "code": "box.translatesAutoresizingMaskIntoConstraints = false\nNSLayoutConstraint.activate([\n  box.leadingAnchor.constraint(equalTo: parent.leadingAnchor, constant: 20),\n  box.topAnchor.constraint(equalTo: parent.topAnchor, constant: 10),\n  box.widthAnchor.constraint(equalTo: parent.widthAnchor,\n                             multiplier: 0.5, constant: -10),\n  box.heightAnchor.constraint(equalToConstant: 44)\n])\nbox.frame   // still (0,0,0,0)! equations declared, not solved\nparent.layoutIfNeeded()\nbox.frame   // (20, 10, 150, 44) — solved: 320×0.5−10 = 150",
+      "underlying": "Executed on this Mac: after activation the box's frame is still (0,0,0,0); only `layoutIfNeeded()` runs the solver, and the frame becomes exactly (20, 10, 150, 44) — the width equation 320 × 0.5 − 10 computed by the engine. The mental shift is that you stop placing views and start CONSTRAINING them; the engine places them, every layout pass, for every screen size.\n\nThe solver needs the system to be exactly determined per axis: position and size, both derivable. Too few equations → ambiguous layout (the engine picks something, often 0). Contradictory equations → unsatisfiable: at runtime the engine prints the infamous \"Unable to simultaneously satisfy constraints\" and BREAKS one constraint to survive — the console log names which.\n\nThe flag in line one matters: views made in code default to translating their autoresizing mask INTO constraints — auto-generated equations that pin the current frame. Forget to switch it off and your real constraints fight the generated ones: instant unsatisfiable-constraints log. Interface Builder views get this handled automatically; code-created views are on you.",
+      "whyItMatters": "\"Frames are output\" is the sentence that makes Auto Layout finally click, and the translatesAutoresizingMaskIntoConstraints trap bites every iOS developer exactly once per year. Interviewers ask \"what IS a constraint?\" expecting the equation."
+     },
+     "exercise": {
+      "prompt": "The parent is 320×200. Predict box.frame at both marked points, showing the width arithmetic. Then answer: what would happen at runtime if a fifth constraint pinned box.widthAnchor to 200?",
+      "code": "let parent = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))\nlet box = UIView()\nbox.translatesAutoresizingMaskIntoConstraints = false\nparent.addSubview(box)\nNSLayoutConstraint.activate([\n  box.leadingAnchor.constraint(equalTo: parent.leadingAnchor, constant: 20),\n  box.topAnchor.constraint(equalTo: parent.topAnchor, constant: 10),\n  box.widthAnchor.constraint(equalTo: parent.widthAnchor,\n                             multiplier: 0.5, constant: -10),\n  box.heightAnchor.constraint(equalToConstant: 44)\n])\nprint(box.frame)        // 1?\nparent.layoutIfNeeded()\nprint(box.frame)        // 2?",
+      "solution": "1: (0.0, 0.0, 0.0, 0.0) — activation stores equations; nothing is solved or moved.\n2: (20.0, 10.0, 150.0, 44.0) — the solver ran: x from the leading equation, y from top, width = 320 × 0.5 − 10 = 150, height = 44.\n\nFifth constraint pinning width to 200: unsatisfiable — width can't be both 150 and 200. The engine logs \"Unable to simultaneously satisfy constraints\", picks one to break at random-ish, and carries on with a layout you didn't choose.",
+      "explanation": "Both numbers were executed, not guessed. The lesson under the arithmetic: reading `box.frame` is only meaningful AFTER a layout pass — the same reason b2-03 banned measuring in viewDidLoad."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is an Auto Layout constraint really, when do frames get set, and what happens when constraints conflict?",
+      "modelAnswer": "A constraint is a linear equation between two attributes — item1.attribute equals multiplier times item2.attribute plus a constant — and activating it just registers the equation with the layout engine. Once per layout pass the engine solves the full system and writes the resulting frames, so frames are the solver's output, not something you set. If the system is contradictory, the engine logs the unsatisfiable-constraints error and breaks one constraint to produce SOME layout; if it's underdetermined, the layout is ambiguous.",
+      "sets": [
+       [
+        {
+         "q": "What does NSLayoutConstraint.activate(...) actually do?",
+         "options": [
+          "Immediately moves and resizes the affected views",
+          "Registers equations; solving waits for a layout pass",
+          "Schedules an animation to the new positions",
+          "Validates the constraints and crashes on any conflict"
+         ],
+         "correct": 1,
+         "explain": "Executed proof: frame stays (0,0,0,0) after activation. Declaration and solving are separate moments — the solve belongs to the layout pass."
+        },
+        {
+         "q": "Under Auto Layout, a view's frame is best described as…",
+         "options": [
+          "the input you provide for the engine to respect",
+          "the solver's output, rewritten every layout pass",
+          "a deprecated property that no longer changes",
+          "the same equation as a constraint, stored differently"
+         ],
+         "correct": 1,
+         "explain": "You constrain; the engine places. That inversion — frames as output — is the entire paradigm."
+        },
+        {
+         "q": "You forget `translatesAutoresizingMaskIntoConstraints = false` on a code-created view. Result?",
+         "options": [
+          "Nothing — the flag matters only in Interface Builder",
+          "Auto-generated frame-pinning equations fight yours",
+          "The view ignores all constraints silently",
+          "The view is removed from the hierarchy at layout time"
+         ],
+         "correct": 1,
+         "explain": "The mask translates into constraints that pin the current frame — contradicting the ones you wrote. It's the number-one source of the unsatisfiable-constraints log."
+        }
+       ],
+       [
+        {
+         "q": "The engine hits \"Unable to simultaneously satisfy constraints\". What does it do next?",
+         "options": [
+          "Crashes — layout contradictions are fatal",
+          "Breaks one constraint (named in the log) and lays out anyway",
+          "Freezes layout until the next app launch",
+          "Averages the conflicting values as a compromise"
+         ],
+         "correct": 1,
+         "explain": "Survival over correctness: it discards a constraint so SOMETHING renders. The log tells you which one — read it bottom-up and look for the equation that shouldn't exist."
+        },
+        {
+         "q": "A view has width and height constraints but nothing fixing its x position. The layout is…",
+         "options": [
+          "fine — x defaults to the superview's origin officially",
+          "ambiguous — underdetermined; the engine's pick is arbitrary",
+          "unsatisfiable, producing the conflict log",
+          "deferred until the view first appears on screen"
+         ],
+         "correct": 1,
+         "explain": "Each axis needs position AND size derivable. Missing equations don't conflict — they leave multiple valid answers, and you get whichever one the engine happens to pick."
+        },
+        {
+         "q": "Why do the same four constraints produce correct layouts on every iPhone size?",
+         "options": [
+          "UIKit scales the solved frames by the screen ratio",
+          "The equations reference the parent, so each device solves its own numbers",
+          "The engine stores per-device frame tables at build time",
+          "They don't — per-device constraints are still required"
+         ],
+         "correct": 1,
+         "explain": "width = parent × 0.5 − 10 yields 150 on a 320-wide parent and 196.5 on 413 — one system of equations, per-device solutions. That's the point of declaring relationships."
+        }
+       ]
+      ]
+     },
+     "transfer": "Take one screen of your app and write down, for a single view, the four equations that determine it (x, y, width, height — in words is fine). If you can't complete the list, you've found either an intrinsic size doing quiet work (next loops) or a latent ambiguity.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): activation left frame at (0,0,0,0); layoutIfNeeded solved to (20.0, 10.0, 150.0, 44.0) — width exactly 320×0.5−10. Reproduce in a playground, then add a conflicting fifth width constraint and read the console log it produces.",
+     "goDeeper": "Apple's Auto Layout Guide — \"Anatomy of a Constraint\". WWDC 2015 \"Mysteries of Auto Layout\" parts 1–2 (the debugging half ages well). The Cassowary papers, if you want the solver's actual algorithm."
+    },
+    {
+     "id": "b2-06",
+     "title": "The layout pass: mark now, solve later",
+     "concept": {
+      "definition": "Layout is deferred: `setNeedsLayout` only marks a view dirty and returns immediately; the actual work — solving constraints, calling `layoutSubviews` — happens once per run-loop turn, in the layout phase. `layoutIfNeeded` is the escape hatch: it forces a synchronous layout NOW, but only if something is marked dirty.",
+      "code": "view.setNeedsLayout()      // mark dirty. returns instantly.\nview.setNeedsLayout()      // still just one mark — the flag is boolean\nview.setNeedsLayout()\n// …run loop's layout phase → layoutSubviews() runs ONCE\n\nview.layoutIfNeeded()      // synchronous: solve NOW if dirty\n// the animation idiom this enables:\nheightConstraint.constant = 300\nUIView.animate(withDuration: 0.3) { self.view.layoutIfNeeded() }",
+      "underlying": "Executed on this Mac: after `setNeedsLayout()` nothing happens — no layoutSubviews call, no print; the first `layoutIfNeeded()` runs it synchronously, immediately. The dirty flag is why: marking is free and idempotent, and the run loop (b2-01) batches all of a turn's marks into ONE solve in its layout phase. A hundred constraint changes in one handler cost one layout pass, not a hundred.\n\n`layoutSubviews` is the engine's hook — the method that actually positions subviews. Override it for manual layout (call super first: that's where the constraint solutions get applied); never call it directly — mark and let the system schedule, or force with layoutIfNeeded.\n\nThe animation idiom is this machinery used deliberately: changing a constraint's constant just edits an equation and marks dirty. Wrap `layoutIfNeeded()` in a UIView.animate block and the synchronous solve happens INSIDE the animation context, so the frame changes it produces are animated. Change the constant outside any animation block and the view snaps — same equations, different timing of the solve.",
+      "whyItMatters": "setNeedsLayout vs layoutIfNeeded is a classic interview discriminator, and the constraint-animation idiom is daily working knowledge. The deferral also explains mystery bugs: reading a frame right after changing a constraint reads the OLD frame."
+     },
+     "exercise": {
+      "prompt": "Marky prints from layoutSubviews. Predict every print this produces — including exactly how many times \"laid out\" appears, and where.",
+      "code": "final class Marky: UIView {\n    override func layoutSubviews() {\n        super.layoutSubviews()\n        print(\"laid out\")\n    }\n}\n\nlet m = Marky(frame: CGRect(x: 0, y: 0, width: 10, height: 10))\nm.setNeedsLayout()\nm.setNeedsLayout()\nm.setNeedsLayout()\nprint(\"marked three times\")\nm.layoutIfNeeded()\nprint(\"forced once\")\nm.layoutIfNeeded()\nprint(\"forced again\")",
+      "solution": "marked three times\nlaid out\nforced once\nforced again\n\n- Three setNeedsLayout calls print nothing: marking is deferred work — a boolean flag, coalesced.\n- The first layoutIfNeeded finds the flag dirty → layoutSubviews runs ONCE, synchronously, before \"forced once\".\n- The second layoutIfNeeded finds nothing dirty → does nothing. \"laid out\" appears exactly once in total.",
+      "explanation": "Mark-and-batch is the pattern (setNeedsDisplay and setNeedsUpdateConstraints work identically). If you predicted three \"laid out\" lines, you imagined marking as doing; if you predicted one after each force, you missed that a clean flag makes layoutIfNeeded free."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what's the difference between setNeedsLayout and layoutIfNeeded, and how do you animate a constraint change?",
+      "modelAnswer": "setNeedsLayout marks the view dirty and returns — the actual solve and layoutSubviews call happen once per run-loop turn in the layout phase, so many marks coalesce into one pass. layoutIfNeeded forces that pass synchronously, immediately, but only if something is dirty. To animate a constraint change you edit the constant (which marks dirty) and call layoutIfNeeded inside a UIView.animate block, so the solve — and the frame changes it writes — happen within the animation context.",
+      "sets": [
+       [
+        {
+         "q": "What does setNeedsLayout actually do?",
+         "options": [
+          "Runs layoutSubviews before returning",
+          "Sets a dirty flag; the real work happens later in the turn",
+          "Queues one layout pass per call, in order",
+          "Recomputes only the view's own frame, not subviews"
+         ],
+         "correct": 1,
+         "explain": "Executed proof: three calls, zero prints. Marking is free and idempotent; the run loop's layout phase does the one real pass."
+        },
+        {
+         "q": "When does layoutIfNeeded do absolutely nothing?",
+         "options": [
+          "When called off the main thread",
+          "When no view in the affected hierarchy is marked dirty",
+          "When constraints haven't changed since app launch",
+          "Never — it always forces a full solve"
+         ],
+         "correct": 1,
+         "explain": "The 'IfNeeded' is literal: clean flag, no work. That's why calling it defensively is harmless — and why it did nothing the second time in the exercise."
+        },
+        {
+         "q": "The right way to trigger your custom layout code in layoutSubviews is…",
+         "options": [
+          "call layoutSubviews() directly when you need it",
+          "call setNeedsLayout() and let the system schedule the pass",
+          "call it from viewDidLoad, once, manually",
+          "schedule it with a Timer on the main run loop"
+         ],
+         "correct": 1,
+         "explain": "layoutSubviews is the engine's callback, never your entry point. Mark dirty; the turn's layout phase (or an explicit layoutIfNeeded) invokes it with everything properly staged."
+        }
+       ],
+       [
+        {
+         "q": "You change heightConstraint.constant = 300 and read view.frame.height on the next line. You get…",
+         "options": [
+          "300 — constants apply immediately",
+          "the OLD height — the solve hasn't run yet",
+          "0 — changing a constant invalidates the frame",
+          "a crash for reading mid-layout"
+         ],
+         "correct": 1,
+         "explain": "Editing an equation marks dirty; frames update at the next pass. Force with layoutIfNeeded first if you must read the solved value now."
+        },
+        {
+         "q": "Why does `UIView.animate { self.view.layoutIfNeeded() }` animate a constraint change?",
+         "options": [
+          "animate() blocks re-run all constraint math twice",
+          "The solve runs inside the animation context; its frame writes animate",
+          "layoutIfNeeded is special-cased by UIKit to always animate",
+          "The constant property itself is animatable"
+         ],
+         "correct": 1,
+         "explain": "Animation blocks animate property CHANGES made inside them. Forcing the solve inside means the new frames are written there — and thus animated. Outside a block, same solve, instant snap."
+        },
+        {
+         "q": "A handler updates 40 constraints on one screen. How many layout solves does that turn pay?",
+         "options": [
+          "40 — one per constraint change",
+          "One — the marks coalesce into the turn's single layout phase",
+          "Two — one for marks, one for the render phase",
+          "Zero until the user next touches the screen"
+         ],
+         "correct": 1,
+         "explain": "b2-01's batching, applied: marking is free, the pass is once-per-turn. This is why constraint churn inside one handler is fine, and why the deferral exists at all."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find (or write) one animated height/position change in your project. Check the idiom: constant changed OUTSIDE the animate block, layoutIfNeeded INSIDE. If you find a frame assignment being animated instead, note which approach the view's other constraints would prefer.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): three setNeedsLayout calls produced no layoutSubviews run; the first layoutIfNeeded ran it exactly once, synchronously; the second layoutIfNeeded, with a clean flag, did nothing. Reproduce with the Marky class in a playground.",
+     "goDeeper": "WWDC 2015 \"Mysteries of Auto Layout, Part 2\" — the layout-pass pipeline. WWDC 2018 \"High Performance Auto Layout\" — what the engine does between the marks. Apple docs: layoutSubviews, layoutIfNeeded."
+    },
+    {
+     "id": "b2-07",
+     "title": "Intrinsic size and the priority system",
+     "concept": {
+      "definition": "Views with content report an intrinsicContentSize — a label knows how big its text is — and the engine turns it into two negotiable constraints per axis: content hugging resists being stretched BIGGER (default 250), compression resistance resists being squeezed SMALLER (default 750). When space forces a fight, the lower priority loses. That's why labels lay out with zero size constraints, and why one of two labels truncates.",
+      "code": "let label = UILabel()\nlabel.text = \"hello\"\nlabel.intrinsicContentSize        // (38.0, 20.0) — measured, executed\n\nlabel.contentHuggingPriority(for: .horizontal)               // 250\nlabel.contentCompressionResistancePriority(for: .horizontal) // 750\n// hugging 250:      \"I mildly resist being stretched\"\n// compression 750:  \"I strongly resist being squeezed\"\n// required = 1000, your constraints default to 1000",
+      "underlying": "Priorities make Auto Layout a NEGOTIATION rather than a rigid system. Every constraint has a priority up to required (1000); the solver satisfies higher priorities first and lets lower ones break gracefully — no conflict log, just a resolved fight. Intrinsic size arrives as those two soft constraints, which is why a lone label sizes itself perfectly with only position constraints: its intrinsic equations supply width and height.\n\nThe classic two-label row, executed on this Mac: \"Name\" and a long value pinned side by side in a 200-point row — 200 points is too narrow, so SOMEONE must compress. Lower the value label's compression resistance to 250 and the solver squeezes it: the name label keeps its full intrinsic 46.5, the value gets the remaining 153.5 and truncates. Same layout, priorities flipped, and the name would truncate instead.\n\nHugging is the mirror image for EXTRA space: with room to spare, something must stretch, and the lowest hugging priority is the volunteer. Text fields and labels at equal 250 hugging is why Xcode sometimes asks you to raise one. The rule of thumb: hugging decides who grows; compression resistance decides who shrinks; you adjust priorities, not sizes.",
+      "whyItMatters": "\"Why does this label truncate?\" and \"what's content hugging?\" are everyday questions with the same answer, and the two-label fight is a standard interview scenario. Priorities are also how you design layouts that degrade gracefully instead of conflicting."
+     },
+     "exercise": {
+      "prompt": "A 200-point-wide row holds two labels pinned leading-to-trailing: a (\"Name\") and b (a long string). b's horizontal compression resistance is lowered to 250; a keeps the default 750. Predict: who truncates, roughly what widths result (a's intrinsic width is 46.5), and what changes if the priorities were EQUAL at 750.",
+      "code": "// row: 200pt wide\n// [a: \"Name\"][b: \"A very long value that cannot possibly fit here\"]\n// a.leading = row.leading;  b.leading = a.trailing;  b.trailing = row.trailing\nb.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) // 250\nrow.layoutIfNeeded()\n// a.frame.width == ?     b.frame.width == ?     who truncates?",
+      "solution": "b truncates. Executed result: a keeps its full intrinsic width, 46.5; b is squeezed to the remaining 153.5 — its compression resistance (250) lost the fight against a's (750).\n\nEqual priorities at 750: the system is ambiguous — both resist equally and the solver must break the tie arbitrarily. In practice one label truncates and WHICH one can change with unrelated edits — the flaky-layout smell that means two priorities need separating.",
+      "explanation": "Numbers executed, not estimated. The design lesson: never fix a truncation fight by hard-coding widths — declare which label matters more by raising its compression resistance, and let the solver do the arithmetic on every device."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is intrinsic content size, and what do content hugging and compression resistance each control?",
+      "modelAnswer": "Intrinsic content size is the natural size a view reports from its content — a label measures its text — and the engine converts it into two negotiable constraints per axis. Content hugging (default 250) resists the view being stretched larger than that size; compression resistance (default 750) resists it being squeezed smaller. When space runs short or over, the lower-priority side loses — so truncation fights are settled by raising or lowering these priorities, not by hard-coding sizes.",
+      "sets": [
+       [
+        {
+         "q": "A lone label lays out correctly with only position constraints. What supplied its size?",
+         "options": [
+          "UIKit's default 44-point minimum for text views",
+          "Its intrinsic content size, wrapped in soft constraints",
+          "The superview's bounds, inherited automatically",
+          "Nothing — its size is genuinely undefined"
+         ],
+         "correct": 1,
+         "explain": "Content-bearing views measure themselves; the engine wraps the measurement in hugging/compression constraints. Executed here: \"hello\" reports (38, 20)."
+        },
+        {
+         "q": "Content hugging priority controls…",
+         "options": [
+          "how strongly a view resists being made SMALLER than its content",
+          "how strongly a view resists being stretched LARGER than its content",
+          "the order subviews are laid out within a pass",
+          "whether the view participates in Auto Layout at all"
+         ],
+         "correct": 1,
+         "explain": "Hugging hugs the content: extra space goes to whoever hugs least. Its mirror, compression resistance, guards the other direction."
+        },
+        {
+         "q": "The default priorities for a label are…",
+         "options": [
+          "hugging 750, compression resistance 250",
+          "hugging 250, compression resistance 750",
+          "both 1000 — intrinsic size is mandatory",
+          "both 500 — perfectly neutral"
+         ],
+         "correct": 1,
+         "explain": "Verified on this SDK: 250 / 750. The asymmetry is deliberate: stretching text is usually harmless; clipping it usually isn't."
+        }
+       ],
+       [
+        {
+         "q": "Two labels share a row that's too narrow; you want the LEFT one never to truncate. The fix?",
+         "options": [
+          "Give the left label a required width constraint from its current text",
+          "Raise the left label's compression resistance above the right's",
+          "Lower the left label's hugging priority to zero",
+          "Put the pair inside a scroll view"
+         ],
+         "correct": 1,
+         "explain": "Declare the winner of the squeeze fight and let the solver do the rest — on every device and every localization, without a hard-coded width."
+        },
+        {
+         "q": "With EQUAL compression resistance on both squeezed labels, the layout is…",
+         "options": [
+          "split 50/50 between them by definition",
+          "ambiguous — the tie breaks arbitrarily, varying between builds",
+          "resolved alphabetically by accessibility identifier",
+          "a hard conflict that prints the unsatisfiable log"
+         ],
+         "correct": 1,
+         "explain": "Ties don't conflict — they underdetermine. The flaky who-truncates-today behavior is the tell that two priorities need separating."
+        },
+        {
+         "q": "When does HUGGING (not compression) decide a two-label fight?",
+         "options": [
+          "When the row is too narrow and someone must shrink",
+          "When the row has spare width and someone must stretch",
+          "Whenever the labels have different font sizes",
+          "Only inside UIStackView arrangements"
+         ],
+         "correct": 1,
+         "explain": "Shrinking fights are compression; stretching fights are hugging. Same negotiation, opposite direction — the lowest hugging priority volunteers to grow."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one truncating or oddly-stretched label in your app (rotate to landscape or use a long localization to provoke one). Fix it with a single priority change — no width constraints allowed. Write down which priority you moved and why that direction.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): UILabel defaults measured at hugging 250 / compression 750; \"hello\" intrinsic (38.0, 20.0); the two-label squeeze resolved to a=46.5, b=153.5 after lowering b's compression to 250. Reproduce, then flip the priorities and watch the truncation switch labels.",
+     "goDeeper": "Apple's Auto Layout Guide — \"Intrinsic Content Size\" and \"Content-Hugging and Compression-Resistance\". WWDC 2018 \"High Performance Auto Layout\". WWDC 2015 \"Mysteries of Auto Layout, Part 1\" for the stack-view-era priorities walkthrough."
+    },
+    {
+     "id": "b2-08",
+     "title": "The responder chain",
+     "concept": {
+      "definition": "Every UIResponder has a `next` pointer, and together they form the responder chain: a view's next responder is its superview — except a view controller's root view, whose next is the CONTROLLER, which then continues to ITS view's superview, up through the window to the application. Events and actions that a responder doesn't handle climb this chain until someone does, or nobody.",
+      "code": "// hierarchy:  label  inside  contentView  inside  vc.view\nlabel.next        // contentView        (superview)\ncontentView.next  // vc.view            (superview)\nvc.view.next      // vc                 (the CONTROLLER interjects!)\nvc.next           // vc.view.superview… → window → application\n\n// executed on this Mac:\n// child.next === root  → true\n// root.next  === vc    → true",
+      "underlying": "The chain is a linked list threaded through the objects you already have — no registry, no configuration. Its one clever kink is verified above: a root view's next responder is its view controller, which is how controllers get to participate in event handling at all. That's the architectural reason UIViewController is itself a UIResponder.\n\nWhat travels the chain: touches that the hit-tested view (next loop) doesn't handle; motion and remote-control events; and — most usefully — ACTIONS with a nil target. `UIApplication.shared.sendAction(_:to: nil, from:…)` walks the chain from the first responder until some object implements the selector; menu commands and keyboard shortcuts work this way. It's also the machinery behind `becomeFirstResponder`: the first responder is simply the chain's designated starting point for non-touch events like keyboard input.\n\nTwo practical notes. The chain follows the VIEW hierarchy, not your class hierarchy — moving a view re-parents its events. And the chain is a fallback path, not the primary delivery: buttons don't send you their taps through it (that's target-action, two loops on) — it's where UNCLAIMED events go to look for an owner.",
+      "whyItMatters": "\"Explain the responder chain\" is a top-five UIKit interview question, and the vc-interjection detail separates real answers from recited ones. Practically it powers keyboard shortcuts, menu validation, and the first-responder dance around text input."
+     },
+     "exercise": {
+      "prompt": "Draw the chain, then predict the exact sequence of objects visited. A tap lands on `icon`; nothing handles it until the view controller. List every `next` hop in order.",
+      "code": "// hierarchy built like this:\n// vc (a ProfileVC) owns rootView (vc.view)\n// rootView.addSubview(card)\n// card.addSubview(icon)\n//\n// icon is hit-tested as the touch target, but implements nothing.\n// Who sees the event, in what order, until ProfileVC handles it?",
+      "solution": "icon → card → rootView → vc (ProfileVC) — handled, climb stops.\n\nHops: icon.next is card (superview); card.next is rootView (superview); rootView.next is NOT a view — it's the view controller, because a root view's next responder is its controller. Had the VC not handled it, the climb would continue: vc.next (rootView's superview or the window) → UIWindow → UIApplication → dropped.",
+      "explanation": "The vc interjection is the hop everyone forgets — verified here by execution: root.next === vc. Note what the chain did NOT involve: choosing WHICH view got the touch first. That's hit-testing, and it's the next loop."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is the responder chain, what's special about a view controller's place in it, and name one thing that actually travels it.",
+      "modelAnswer": "The responder chain is the linked list of next pointers through the UI: each view's next responder is its superview, up to the window and application. The kink is that a view controller's root view points to the CONTROLLER, which then continues upward — that's how controllers participate in event handling. Unhandled touches, motion events, and nil-targeted actions travel it: an action sent to a nil target walks the chain from the first responder until some object implements the selector.",
+      "sets": [
+       [
+        {
+         "q": "A plain subview's next responder is…",
+         "options": [
+          "its view controller, always",
+          "its superview",
+          "the window, directly",
+          "the first responder"
+         ],
+         "correct": 1,
+         "explain": "The chain threads the view hierarchy. Controllers only interject at their root view — verified: child.next === parent view."
+        },
+        {
+         "q": "What's special about a view controller's ROOT view in the chain?",
+         "options": [
+          "It has no next responder — chains stop at root views",
+          "Its next is the view controller, not a view",
+          "It skips directly to UIApplication",
+          "It duplicates events to all sibling views"
+         ],
+         "correct": 1,
+         "explain": "Executed: root.next === vc. This single kink is how UIViewController — itself a UIResponder — gets a seat in event handling."
+        },
+        {
+         "q": "An action message is sent with target nil. What happens?",
+         "options": [
+          "It's discarded — nil targets are programmer errors",
+          "It walks the chain until someone implements the selector",
+          "UIApplication handles it with a default implementation",
+          "Every responder in the chain receives it once"
+         ],
+         "correct": 1,
+         "explain": "Nil-target actions are the chain's superpower — menu items and keyboard shortcuts find their handler wherever it lives, with zero wiring."
+        }
+       ],
+       [
+        {
+         "q": "You move a working view from one parent to another and its unhandled events now reach a different controller. Why?",
+         "options": [
+          "Reparenting resets the view's event mask",
+          "The chain follows the view hierarchy — new parent, new path",
+          "Controllers cache their responder lists at load",
+          "They don't — chains are fixed at creation"
+         ],
+         "correct": 1,
+         "explain": "next IS superview (mostly), so where a view lives determines where its events escalate. No registry to update — that's the design."
+        },
+        {
+         "q": "becomeFirstResponder() makes a text field receive keystrokes because…",
+         "options": [
+          "it locks the run loop onto that field",
+          "the first responder is where non-touch events start the climb",
+          "it moves the field to the top of the view hierarchy",
+          "the keyboard sends touches directly to it"
+         ],
+         "correct": 1,
+         "explain": "Keyboard input has no screen location to hit-test, so the system needs a designated entry point — the first responder — from which the normal chain climb proceeds."
+        },
+        {
+         "q": "Which of these does the responder chain NOT do?",
+         "options": [
+          "Route unhandled touches upward through parents",
+          "Decide which view a touch lands on in the first place",
+          "Carry nil-targeted actions to whoever implements them",
+          "Give view controllers a role in event handling"
+         ],
+         "correct": 1,
+         "explain": "Initial delivery is hit-testing's job (next loop): a downward SEARCH through the tree. The chain is the upward ESCALATION path afterwards."
+        }
+       ]
+      ]
+     },
+     "transfer": "In your app, pick one deeply nested view and write out its full responder chain by hand — every hop to UIApplication, including each controller interjection. Then verify your list in the debugger: `po view.next` repeatedly, or a while-loop printing `responder.next`.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): child.next === its superview → true; a root view's next === its view controller → true. Walk your own hierarchy: `var r: UIResponder? = someView; while let x = r { print(type(of: x)); r = x.next }`.",
+     "goDeeper": "Apple docs: \"Using Responders and the Responder Chain to Handle Events\" — includes the canonical diagram. WWDC 2019 \"Modernizing Your UI for iOS 13\" touches first-responder routing; objc.io issue #5 covers the chain's history."
+    },
+    {
+     "id": "b2-09",
+     "title": "Hit-testing: how a touch finds its view",
+     "concept": {
+      "definition": "Before any event handling, UIKit must decide WHICH view a touch belongs to. That's hit-testing: starting at the window, `hitTest(_:with:)` asks `point(inside:with:)` — is the point in my bounds? — then recurses into subviews front-to-back, returning the DEEPEST, frontmost view that contains the point. Hidden views, views with alpha under 0.01, and views with user interaction disabled are skipped — along with their entire subtrees.",
+      "code": "// executed on this Mac:\nlet root  = UIView(frame: CGRect(x: 0, y: 0, width: 200, height: 200))\nlet inner = UIView(frame: CGRect(x: 50, y: 50, width: 100, height: 100))\nroot.addSubview(inner)\n\nroot.hitTest(CGPoint(x: 60, y: 60), with: nil)   // inner — deepest hit\nroot.hitTest(CGPoint(x: 10, y: 10), with: nil)   // root — misses inner\n\ninner.isUserInteractionEnabled = false\nroot.hitTest(CGPoint(x: 60, y: 60), with: nil)   // root — inner skipped",
+      "underlying": "The algorithm is a depth-first, front-to-back search DOWN the tree — the mirror image of the responder chain's climb UP. Each view first gates on itself (interaction enabled? visible? alpha ≥ 0.01? point inside bounds?), then asks its subviews from topmost to bottommost, and returns the first deep answer; if no child claims the point, the view claims it itself.\n\nThe bounds gate produces the classic trap, executed here: a subview positioned OUTSIDE its parent's bounds is unreachable — hit-testing on its location returned nil, because the parent's `point(inside:)` said no before the child was ever consulted. The button that draws fine but ignores taps because it pokes out of a too-small container is this exact mechanic, and clipsToBounds=false makes it crueler by keeping the button visible.\n\nOverriding is a legitimate tool on both methods: enlarge a too-small tap target by overriding `point(inside:)` to accept a bigger rect; or override `hitTest` to redirect touches (pass-through overlays return nil for themselves). Note what hit-testing decides and what it doesn't: it picks the touch's OWNER; whether that owner or its chain HANDLES the event is b2-08's business, and it runs before gesture recognizers get involved.",
+      "whyItMatters": "\"Why doesn't my button respond?\" has four canonical answers, and all four ARE this loop's skip-list: outside parent bounds, interaction disabled, hidden, alpha ~0. Interviewers pair \"explain hitTest\" with the responder chain as a set."
+     },
+     "exercise": {
+      "prompt": "Predict what each of the four hit-tests returns. All views are visible with interaction enabled unless stated. The last one is the button-that-ignores-taps classic.",
+      "code": "let root = UIView(frame: CGRect(x: 0, y: 0, width: 200, height: 200))\nlet card = UIView(frame: CGRect(x: 20, y: 20, width: 100, height: 100))\nlet badge = UIView(frame: CGRect(x: 90, y: -10, width: 40, height: 40))\n// badge pokes out of card's TOP edge (negative y)\nroot.addSubview(card)\ncard.addSubview(badge)\n\nroot.hitTest(CGPoint(x: 50, y: 50), with: nil)     // 1?\nroot.hitTest(CGPoint(x: 5, y: 5), with: nil)       // 2?\ncard.isUserInteractionEnabled = false\nroot.hitTest(CGPoint(x: 50, y: 50), with: nil)     // 3?\ncard.isUserInteractionEnabled = true\nroot.hitTest(CGPoint(x: 115, y: 15), with: nil)    // 4? (badge territory,\n                                                    //     above card's top)",
+      "solution": "1: card — the point is inside card, and badge doesn't cover (50,50) in card's space.\n2: root — outside card entirely; root claims its own point.\n3: root — disabling card's interaction removes card AND its whole subtree from the search.\n4: root — the trap. (115,15) in root's space sits over the visible badge, but it's OUTSIDE card's bounds; card's point(inside:) says no, so badge is never asked. A visible, enabled view that can never be touched.",
+      "explanation": "Verdict 4 is the mechanic behind every mystery-dead button: the search is gated at each ancestor, so a child outside its parent's bounds is invisible to touches even when visible to eyes. Fixes: grow the parent, or override the parent's point(inside:)/hitTest to include the child."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: how does UIKit decide which view receives a touch, and what makes a visible view untouchable?",
+      "modelAnswer": "UIKit hit-tests from the window down: each view checks point(inside:) against its own bounds, then asks its subviews front-to-back, and the deepest view containing the point wins. Views that are hidden, have alpha below 0.01, or have user interaction disabled are skipped along with their entire subtrees. A visible view becomes untouchable when it lies outside an ancestor's bounds — the ancestor's point(inside:) fails before the view is ever consulted, which is the classic dead-button bug.",
+      "sets": [
+       [
+        {
+         "q": "In what direction and order does hit-testing search?",
+         "options": [
+          "Up from the touched view through its superviews",
+          "Down the tree, subviews front-to-back, deepest hit wins",
+          "Across all windows in z-order simultaneously",
+          "From the first responder outward in both directions"
+         ],
+         "correct": 1,
+         "explain": "A downward depth-first search — the mirror of b2-08's upward climb. Delivery finds the owner going down; escalation of unhandled events goes back up."
+        },
+        {
+         "q": "Which of these does NOT remove a view from hit-testing?",
+         "options": [
+          "isHidden = true",
+          "alpha = 0.5",
+          "isUserInteractionEnabled = false",
+          "alpha = 0.005"
+         ],
+         "correct": 1,
+         "explain": "The alpha cutoff is 0.01 — half-transparent views are fully touchable. The other three all skip the view and its whole subtree."
+        },
+        {
+         "q": "Disabling user interaction on a container does what to its subviews?",
+         "options": [
+          "Nothing — each subview keeps its own setting",
+          "Removes the entire subtree from the search",
+          "Lets touches fall through to views behind them",
+          "Queues their touches until re-enabled"
+         ],
+         "correct": 1,
+         "explain": "Executed: with the parent disabled, a tap on the child's location returned the grandparent. The gate is checked before descending — subtree gone."
+        }
+       ],
+       [
+        {
+         "q": "A badge poking outside its parent's bounds is visible but ignores taps. Why?",
+         "options": [
+          "Views drawn outside bounds render at half priority",
+          "The parent's point(inside:) fails first; the badge is never asked",
+          "clipsToBounds silently disables its interaction",
+          "Negative coordinates are stripped from touch events"
+         ],
+         "correct": 1,
+         "explain": "Executed: hit-testing the out-of-bounds child's location returned nil at the parent level. The search is gated at every ancestor — pixels and touchability diverge."
+        },
+        {
+         "q": "You want a 24-point icon to have a 44-point tap target. The idiomatic fix?",
+         "options": [
+          "Set the icon's alpha slightly above the 0.01 cutoff",
+          "Override point(inside:) to accept the larger rect",
+          "Add a transparent 44-point sibling that forwards touches",
+          "Increase the icon's contentScaleFactor"
+         ],
+         "correct": 1,
+         "explain": "point(inside:) IS the containment question — answer it generously and hit-testing does the rest. (An inset-expanded bounds check is the standard four-line override.)"
+        },
+        {
+         "q": "An overlay view should let all touches pass through to content behind it. Its hitTest should…",
+         "options": [
+          "call super and then also notify the views behind",
+          "return nil when the result would be the overlay itself",
+          "return the deepest view of the BACKGROUND hierarchy",
+          "set isUserInteractionEnabled = false on each touch"
+         ],
+         "correct": 1,
+         "explain": "Returning nil says \"not mine\" — the search continues to whatever is behind. Children of the overlay can still claim their own touches by returning normally."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find the smallest tappable element in your app. Check its real tap target: is any part of it outside an ancestor's bounds, and is the target at least 44×44? If not, write the point(inside:) override that fixes it — three lines.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): deepest-hit wins at (60,60) → inner; miss returns the parent; a subview outside parent bounds returns NIL at its own location; a hidden overlay is skipped; isUserInteractionEnabled=false removes the subtree. Reproduce with two nested views in a playground — no app needed, hitTest is directly callable.",
+     "goDeeper": "Apple docs: hitTest(_:with:) and point(inside:with:). WWDC 2019 \"Advances in UI Data Sources\" isn't this — the classic reference is objc.io issue #5's event-delivery walkthrough, and Apple's \"Using Responders...\" article pairs it with b2-08."
+    },
+    {
+     "id": "b2-10",
+     "title": "Target-action and delegation: UIKit's two callbacks",
+     "concept": {
+      "definition": "UIKit talks back to your code through two patterns. Target-action: a control stores (object, selector) pairs — `addTarget(_:action:for:)` — and when the event fires, UIKit sends that selector to that target; no protocol, many listeners, but no payload beyond the sender. Delegation: an object holds ONE `weak var delegate` conforming to a protocol and consults it for callbacks AND decisions — rich payloads, required and optional methods, a single listener.",
+      "code": "// target-action: N listeners, event-shaped\nbutton.addTarget(self, action: #selector(save), for: .touchUpInside)\n\n// delegation: 1 listener, conversation-shaped\nclass ListVC: UIViewController, UITableViewDelegate {\n    override func viewDidLoad() {\n        super.viewDidLoad()\n        tableView.delegate = self        // weak var delegate — b1-04!\n    }\n    func tableView(_ t: UITableView, didSelectRowAt i: IndexPath) { … }\n}",
+      "underlying": "Target-action is stored dispatch: the control keeps a list of (target, action-selector, event) triples, and firing an event walks the list. The dispatch is b1-10's message send — a selector resolved at runtime, which is why the `@objc` marker is required and typos once compiled (modern #selector syntax checks them). One verified subtlety from this Mac: the control doesn't invoke targets directly — `sendActions` routes through `UIApplication.shared.sendAction`, so in a headless process with no application object, a wired-up button fires nothing. The app object is the dispatcher; a nil target (b2-08) makes it walk the responder chain instead.\n\nDelegation is b1-14's protocol thinking plus b1-04's weak arrow, institutionalized: the table view OWNS the scroll mechanics but out-sources decisions (\"may this row be selected? what height?\") and announcements (\"it WAS selected\") to one delegate through a protocol. The delegate property is weak because the delegate — typically the view controller — usually owns the control: a strong back-arrow would be b1-03's ring verbatim. That's the entire reason `weak var delegate` is muscle memory.\n\nChoosing between them: target-action for fire-and-forget events with no return values (buttons, sliders); delegation when the component needs ANSWERS or a stream of structured callbacks. (Closures are the third modern option — b1-07 told you their capture price.)",
+      "whyItMatters": "\"Why is delegate weak?\" may be the single most-asked iOS interview question — and now it's a one-liner from b1-03/04. Knowing that action dispatch rides objc_msgSend through UIApplication explains both its flexibility and its @objc requirement."
+     },
+     "exercise": {
+      "prompt": "Find the two bugs, one per pattern. Bug A leaks an entire screen; bug B compiles and runs but the handler never fires. Name each mechanism precisely.",
+      "code": "final class ChatVC: UIViewController, ComposerDelegate {\n    let composer = Composer()\n    override func viewDidLoad() {\n        super.viewDidLoad()\n        composer.delegate = self          // Composer declares:\n                                          // var delegate: ComposerDelegate?\n        sendButton.addTarget(self,\n            action: #selector(send),\n            for: .touchDown)              // fires on touch DOWN\n    }\n    @objc func send() { … }              // expected: fire on tap release\n}",
+      "solution": "Bug A: Composer's delegate property is declared STRONG (`var delegate: ComposerDelegate?` — no `weak`). ChatVC owns composer; composer now strongly holds ChatVC back: b1-03's two-arrow ring, and the whole screen leaks on dismissal. Fix: `weak var delegate: ComposerDelegate?` (and the protocol must be class-bound, `: AnyObject`, for weak to be legal).\n\nBug B: the control event is `.touchDown` — the action fires the instant the finger lands, not on release. A tap that slides off the button before lifting still triggered; the conventional \"tap\" is `.touchUpInside`. The handler DOES fire — just at the wrong moment; if the spec was release-to-send, release never sends.",
+      "explanation": "Bug A is why `weak var delegate` must be reflex, not memory. Bug B teaches that target-action's event parameter is real semantics: down, up-inside, up-outside, value-changed are different contracts with the finger."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: compare target-action and delegation — how does each work mechanically, and why is a delegate property weak?",
+      "modelAnswer": "Target-action stores (target, selector) pairs on a control; when the event fires, the selector is dispatched to each target through the Objective-C message system via the application object — many listeners, no payload beyond the sender. Delegation gives a component one weak, protocol-typed delegate that it consults for decisions and notifies of events — a single listener with rich, typed callbacks. The delegate is weak because the delegate usually owns the component; a strong back-reference would close a retain cycle and leak both objects.",
+      "sets": [
+       [
+        {
+         "q": "What does addTarget(_:action:for:) store, mechanically?",
+         "options": [
+          "A compiled function pointer straight to the handler's body",
+          "A (target, selector, event) triple, message-sent when the event fires",
+          "A closure that captures the target object strongly",
+          "A protocol conformance for the control to query"
+         ],
+         "correct": 1,
+         "explain": "Runtime-resolved selectors — b1-10's message dispatch. That's why @objc is required on the handler and why the wiring survives with no compile-time link."
+        },
+        {
+         "q": "Why is `weak var delegate` the universal idiom?",
+         "options": [
+          "Weak lookups are faster for frequent callbacks",
+          "The delegate usually owns the component — strong closes a ring",
+          "Protocols cannot be stored strongly in Swift",
+          "UIKit requires it for Objective-C compatibility"
+         ],
+         "correct": 1,
+         "explain": "b1-03's ring and b1-04's arrow, in their natural habitat: VC owns table, table must not own VC back. One keyword prevents the leak."
+        },
+        {
+         "q": "A component needs to ASK its listener questions (row height, can-select). Which pattern fits?",
+         "options": [
+          "Target-action with a custom event mask",
+          "Delegation — protocol methods can return answers",
+          "NotificationCenter with a reply notification",
+          "Key-value observing on the listener"
+         ],
+         "correct": 1,
+         "explain": "Target-action carries no return channel — it's fire-and-forget. Decisions need a protocol conversation: exactly what UITableViewDelegate is."
+        }
+       ],
+       [
+        {
+         "q": "Verified here: a wired button's sendActions does nothing in a headless process. What does that reveal?",
+         "options": [
+          "Buttons require a visible window to store targets",
+          "Action dispatch routes through the application object",
+          "sendActions is a no-op outside unit tests",
+          "The selector table is built lazily on first tap"
+         ],
+         "correct": 1,
+         "explain": "UIApplication.shared.sendAction is the dispatcher — no app object, no delivery. It's also what makes nil-target actions walk b2-08's chain: the dispatcher owns the routing."
+        },
+        {
+         "q": "Your delegate protocol needs `weak` delegates. What must the protocol declare?",
+         "options": [
+          "@objc annotations on every one of its methods",
+          "Conformance restricted to classes — `: AnyObject`",
+          "A required initializer for every conformer",
+          "At least one optional method"
+         ],
+         "correct": 1,
+         "explain": "Weak references need reference semantics (b1-04's side table has nothing to track on a struct). Class-bound protocols are the price of the weak arrow."
+        },
+        {
+         "q": "One button must notify three separate objects on tap. Cheapest correct wiring?",
+         "options": [
+          "A delegate array the button iterates manually",
+          "Three addTarget calls — controls hold multiple targets natively",
+          "Chained delegates, each forwarding to the next",
+          "Subclassing the button once per listener"
+         ],
+         "correct": 1,
+         "explain": "Executed here: two targets both fired from one event. The triple-list is a list — that's target-action's structural advantage over one-delegate patterns."
+        }
+       ]
+      ]
+     },
+     "transfer": "Grep your project for `var delegate` (or any delegate-ish property you declared). Verify each is weak and its protocol is AnyObject-bound. Then find one addTarget call and say out loud which control EVENT it listens for, and whether that's the semantic you meant.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): a button with two targets delivers to both on sendActions when an app object exists — and delivers to NEITHER in a headless process, proving dispatch routes through UIApplication. In your app: wire one button to two targets and print from both.",
+     "goDeeper": "Apple docs: UIControl — \"Accessing the Sent Actions\", and \"Using Delegates to Customize Object Behavior\". b1-14 for the protocol design theory; WWDC 2015's Crusty talk for why delegation is protocol-oriented thinking."
+    },
+    {
+     "id": "b2-11",
+     "title": "Cell reuse: the pattern that makes lists scroll",
+     "concept": {
+      "definition": "A table with ten thousand rows creates only about a screenful of cells. Cells that scroll off the top go into a reuse pool; `dequeueReusableCell` hands them back — recycled, not reallocated — for rows entering from the bottom. Your `cellForRowAt` runs for every row APPEARANCE, receives a possibly-used cell, and must fully reconfigure it: the cell remembers its previous row's state unless you overwrite it.",
+      "code": "func tableView(_ t: UITableView,\n               cellForRowAt indexPath: IndexPath) -> UITableViewCell {\n    let cell = t.dequeueReusableCell(withIdentifier: \"msg\",\n                                     for: indexPath) as! MessageCell\n    // this cell may have just been row 3. Configure EVERYTHING:\n    cell.nameLabel.text = messages[indexPath.row].author\n    cell.badge.isHidden = !messages[indexPath.row].isUnread   // ← both paths!\n    return cell\n}",
+      "underlying": "The arithmetic is b0-04's: allocating a cell view tree per row means heap allocations inside the scroll path — the exact place b2-01's 16ms budget lives. Reuse caps the population at visible-count-plus-a-few and turns scrolling into reconfiguration, which is cheap. Executed on this Mac: dequeueing against a registered identifier returns a fresh instance on a pool miss, and an UNregistered identifier returns nil — registration is what teaches the table how to mint cells when the pool is dry (the `for: indexPath` variant crashes instead of nil-ing, which is why it's preferred: it fails loudly at the typo).\n\nThe pattern's famous bug is stale state: a cell configured for row 3 (badge visible) gets reused for row 40 (no badge) — and if your configuration only SETS the badge when unread and never HIDES it otherwise, row 40 shows row 3's badge. Every conditional in cellForRowAt must write BOTH branches; `prepareForReuse()` on the cell is the belt-and-suspenders hook for resetting transient state (selection, animations) — but Apple's guidance is to do data configuration in cellForRowAt, not there.\n\nThe async variant is nastier: a cell kicks off an image download, scrolls away, gets reused for another row, and the OLD download completes — onto the WRONG row. The fix is a guard: capture the index path (or an ID) at request time and compare at completion; b1-06's capture semantics decide what the closure sees.",
+      "whyItMatters": "\"Why do table cells show the wrong data when scrolling fast?\" is THE classic iOS bug interview question — stale reuse state, and its async-image cousin, appear in production apps weekly. Reuse is also the standard example of allocation-conscious design."
+     },
+     "exercise": {
+      "prompt": "Find the bug. Rows with an avatar URL load an image; rows without show a placeholder. Users report that while scrolling fast, avatars appear on the WRONG rows and sometimes flicker between two images. Name both defects.",
+      "code": "func tableView(_ t: UITableView, cellForRowAt ip: IndexPath) -> UITableViewCell {\n    let cell = t.dequeueReusableCell(withIdentifier: \"person\", for: ip) as! PersonCell\n    let person = people[ip.row]\n    cell.nameLabel.text = person.name\n    if let url = person.avatarURL {\n        download(url) { image in\n            cell.avatarView.image = image      // ← completion, later\n        }\n    }\n    return cell\n}",
+      "solution": "Defect 1 — no else branch: rows WITHOUT an avatar never reset avatarView, so a reused cell keeps the previous row's image. Fix: `else { cell.avatarView.image = placeholder }` — every conditional writes both paths (or reset in prepareForReuse).\n\nDefect 2 — the async race: the completion captures the CELL (b1-06: a reference), and by the time the download lands, that cell may represent a different row. Two downloads racing on one reused cell is the flicker. Fix: capture `ip` (or the person's ID) and guard at completion — `if tableView.indexPath(for: cell) == ip` — or cancel the pending download in prepareForReuse.",
+      "explanation": "Both defects are reuse plus time: the cell is a stage, not the actor, and anything that arrives LATER must re-check which play is running. The capture list you'd add here is b1-06 earning rent in production code."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: how does cell reuse work, and why can a cell show another row's data if you're careless?",
+      "modelAnswer": "The table keeps only about a screenful of cells: ones scrolling out enter a reuse pool, and dequeueReusableCell returns them for incoming rows — allocation happens only when the pool is empty. cellForRowAt therefore receives a cell that may still carry a previous row's state, so configuration must set every visible property on every path, not just the branches that apply. Anything asynchronous — like image loads — must additionally verify at completion that the cell still represents the row that started the request.",
+      "sets": [
+       [
+        {
+         "q": "A 10,000-row table typically has how many live cell instances?",
+         "options": [
+          "10,000 — one per row, created up front",
+          "Roughly a screenful plus a few in the reuse pool",
+          "Exactly one, redrawn for each visible row",
+          "One per section, shared by its rows"
+         ],
+         "correct": 1,
+         "explain": "Rows are data; cells are stages. The population is bounded by what's visible — that's the entire memory-and-allocation win."
+        },
+        {
+         "q": "Why does reuse matter for SCROLL performance specifically?",
+         "options": [
+          "Reused cells render at a lower resolution",
+          "It keeps heap allocation out of the per-frame scroll path",
+          "The pool is stored in CPU cache lines",
+          "It reduces the number of layout constraints"
+         ],
+         "correct": 1,
+         "explain": "b0-04 meets b2-01: allocating view trees inside the 16ms frame budget is how scrolls stutter. Reconfiguring an existing cell is cheap; minting one is not."
+        },
+        {
+         "q": "dequeueReusableCell(withIdentifier:) with an identifier you never registered returns…",
+         "options": [
+          "a plain UITableViewCell instance as a fallback",
+          "nil — registration is what teaches the table to mint cells",
+          "a guaranteed crash on the very first call",
+          "the most recently pooled cell of any type"
+         ],
+         "correct": 1,
+         "explain": "Executed here: nil for the unknown identifier, a fresh registered-class instance on a pool miss. (The `for: indexPath` variant crashes loudly instead — usually what you want at a typo.)"
+        }
+       ],
+       [
+        {
+         "q": "A checkmark set on row 3 mysteriously appears on row 40 while scrolling. The mechanism?",
+         "options": [
+          "Index paths above 39 overflow the pool's indexing",
+          "Row 40 got row 3's recycled cell; the no-checkmark branch never ran",
+          "The table cached row 3's snapshot for speed",
+          "Auto Layout copied state between sibling cells"
+         ],
+         "correct": 1,
+         "explain": "Stale reuse state: the cell remembered; the configuration only wrote one branch. Every conditional in cellForRowAt sets both paths — or prepareForReuse resets."
+        },
+        {
+         "q": "An async image completion should guard before setting the image. Guard against what, exactly?",
+         "options": [
+          "The image dimensions exceeding the cell bounds",
+          "The cell now representing a DIFFERENT row than the requester",
+          "The table having been deallocated mid-download",
+          "Duplicate downloads of the same URL"
+         ],
+         "correct": 1,
+         "explain": "The cell is a stage; the play may have changed. Compare the captured index path (or item ID) against the cell's current one — or cancel in prepareForReuse."
+        },
+        {
+         "q": "What belongs in prepareForReuse()?",
+         "options": [
+          "Full data configuration for the incoming row",
+          "Resetting transient state — cancel loads, clear selection",
+          "Heavy view construction, done once per reuse",
+          "Nothing — overriding it is discouraged"
+         ],
+         "correct": 1,
+         "explain": "Apple's split: transient cleanup in prepareForReuse, data configuration in cellForRowAt (which has the row context). Cancelling the in-flight download here kills the race at the root."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open any cellForRowAt (or collection view equivalent) you've written. Audit every `if` in it: does each branch have an else that writes the same properties? Then check any async work: is there a staleness guard at completion? Fix one gap.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): registered dequeue returns a fresh MyCell on pool miss; distinct instances while the pool is empty; unregistered identifier returns nil. The recycling itself needs real scrolling: in your app, add `print(\"cell:\", ObjectIdentifier(cell))` in cellForRowAt and scroll — watch the same few identifiers cycle forever.",
+     "goDeeper": "Apple docs: \"Filling a Table with Data\" and prepareForReuse. WWDC 2018 \"A Tour of UICollectionView\" — the reuse economics apply verbatim. b1-06 for what your completion closures actually captured."
+    },
+    {
+     "id": "b2-12",
+     "title": "The main thread rule",
+     "concept": {
+      "definition": "UIKit is not thread-safe: every view, view controller, and layer touch must happen on the main thread — the one running b2-01's loop. The rule exists because making UIKit lockable would cost every call synchronization overhead and invite deadlocks; instead Apple declared one thread the owner. Background work is fine — its UI RESULTS must hop home: `DispatchQueue.main.async { … }`.",
+      "code": "URLSession.shared.dataTask(with: url) { data, _, _ in\n    // this closure runs on a BACKGROUND thread\n    let user = parse(data)          // fine: not UIKit\n    DispatchQueue.main.async {      // the hop home\n        self.nameLabel.text = user.name   // UIKit: main only\n    }\n}.resume()\n// Thread.isMainThread — the question, askable anywhere",
+      "underlying": "Why not just add locks? Three reasons worth saying in an interview. Cost: UI calls are constant and fine-grained — per-call locking would tax every frame. Deadlock geometry: layout and drawing re-enter UIKit deeply; two threads locking view hierarchies in different orders would deadlock routinely. And ordering: the render pipeline (b2-01's turn) assumes a single serialized stream of mutations — interleaved writers would tear half-applied states into frames.\n\nViolations are nastier than crashes: off-main UI writes often WORK in testing — then ship as intermittent missing updates, corrupted layouts, or crashes deep inside UIKit with your code nowhere in the stack. That heisenbug quality is why Xcode's Main Thread Checker exists (on by default when debugging): it flags the call site the moment a UIKit API runs off-main, turning a shipping mystery into a purple runtime warning.\n\nThe discipline that follows: completion handlers of networking and background APIs arrive on arbitrary threads unless documented otherwise — assume off-main. Do the heavy part there (parsing, image decoding: b2-01's budget thanks you), then hop with exactly the UI mutation inside the async block. `Thread.isMainThread` answers the question in a debugger or an assert.",
+      "whyItMatters": "\"Why must UI updates happen on the main thread?\" is a top-three iOS interview question — and 'because it crashes otherwise' is the answer that fails it. The real answers: lock cost, deadlock geometry, render-order guarantees."
+     },
+     "exercise": {
+      "prompt": "Find the bug and predict the symptom class. This code passed QA for two weeks, then users reported the avatar 'sometimes' not appearing. Explain why it usually works, and give the two-line fix.",
+      "code": "func loadAvatar() {\n    URLSession.shared.dataTask(with: avatarURL) { data, _, _ in\n        guard let data, let image = UIImage(data: data) else { return }\n        self.avatarView.image = image        // ← here\n        self.spinner.stopAnimating()         // ← and here\n    }.resume()\n}",
+      "solution": "Both UIKit mutations run on URLSession's background delegate queue — off-main. It \"usually works\" because unsynchronized writes often land harmlessly; but with no ordering guarantee, sometimes the write is lost, the layer state tears, or UIKit crashes far from this code. Intermittent-by-design.\n\nFix:\nDispatchQueue.main.async {\n    self.avatarView.image = image\n    self.spinner.stopAnimating()\n}\n(Decoding the UIImage from data before the hop is fine and even preferable — the heavy part stays off-main.)",
+      "explanation": "The two-week QA pass is the signature: thread bugs are probabilistic, not logical. Run with the Main Thread Checker and this exact line turns purple on the first execution — the tool exists because eyes can't catch what only sometimes happens."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: why is UIKit main-thread-only, and what's the correct pattern for background work that ends in a UI update?",
+      "modelAnswer": "UIKit chose single-thread ownership over locks: per-call locking would tax constant fine-grained UI calls, deeply re-entrant layout would invite deadlocks, and the render pipeline needs one serialized stream of mutations per frame. So all UIKit access happens on the main thread, and violations produce intermittent lost updates or crashes rather than clean errors. The pattern: do the heavy work on a background queue — parsing, decoding — then DispatchQueue.main.async exactly the UI mutation back onto the main thread.",
+      "sets": [
+       [
+        {
+         "q": "Why didn't Apple just make UIKit thread-safe with internal locks?",
+         "options": [
+          "Locks were patented when UIKit was written",
+          "Lock cost, deadlock-prone re-entrancy, and render ordering",
+          "Objective-C could not express synchronization",
+          "They did — the rule is only a style convention"
+         ],
+         "correct": 1,
+         "explain": "Three real engineering answers. Single-thread ownership makes every UIKit call lock-free and gives the frame pipeline one serialized mutation stream."
+        },
+        {
+         "q": "A URLSession completion handler runs on…",
+         "options": [
+          "the main thread, since UI usually follows",
+          "a background queue — assume off-main unless configured",
+          "the thread that called resume()",
+          "a new thread created per response"
+         ],
+         "correct": 1,
+         "explain": "Delegate/completion queues default to background. The burden is on you to hop home for the UI part — and only the UI part."
+        },
+        {
+         "q": "What tool flags off-main UIKit calls at the exact call site?",
+         "options": [
+          "The Address Sanitizer, enabled in the scheme",
+          "The Main Thread Checker, on by default while debugging",
+          "SwiftLint's concurrency ruleset, if installed",
+          "The Memory Graph Debugger"
+         ],
+         "correct": 1,
+         "explain": "It interposes UIKit entry points and fires a purple runtime issue the first time one runs off-main — converting a shipping heisenbug into a development-time pointer."
+        }
+       ],
+       [
+        {
+         "q": "Off-main UI writes 'worked fine' for weeks, then users hit missing updates. Why the delay?",
+         "options": [
+          "iOS versions before 17 tolerated off-main writes",
+          "Unsynchronized writes are probabilistic — they often land",
+          "The App Store build strips thread checks",
+          "UIKit batches background writes weekly"
+         ],
+         "correct": 1,
+         "explain": "No lock means no guarantee — including no guarantee of failure. Timing, device speed, and load move the dice; that's why the class of bug ships so easily."
+        },
+        {
+         "q": "Where should a large image be DECODED, given the result must appear in an image view?",
+         "options": [
+          "On main — decoding and display must share a thread",
+          "Off-main; only the image assignment hops home",
+          "Neither — UIImage(data:) is banned off-main",
+          "Inside viewDidLayoutSubviews, post-layout"
+         ],
+         "correct": 1,
+         "explain": "Decoding is CPU work with no UIKit contact — exactly what b2-01's 16ms budget wants OFF main. The assignment is the only line that needs the hop."
+        },
+        {
+         "q": "You suspect some code path runs off-main. The one-line check?",
+         "options": [
+          "print(DispatchQueue.current.label)",
+          "assert(Thread.isMainThread) at the suspect line",
+          "checking whether self is a UIView subclass",
+          "measuring the call's duration against 16ms"
+         ],
+         "correct": 1,
+         "explain": "Thread.isMainThread answers directly; an assert makes the answer loud in debug builds. (Reading 'the current queue' isn't API — threads and queues aren't 1:1, a Block 3 subject.)"
+        }
+       ]
+      ]
+     },
+     "transfer": "Turn on the Main Thread Checker (Scheme → Diagnostics — likely already on), then exercise your app's networking screens. If it stays quiet, find every completion handler that touches UIKit and confirm each hop to main is present and MINIMAL — heavy work before the hop, one mutation inside.",
+     "verify": "Documented + tool-verified in your Xcode rather than headless (a CLI process has no main UIKit loop to violate): run any app with the Main Thread Checker on, move one label update into a URLSession completion without the hop, and watch the purple runtime issue name the exact line. Thread.isMainThread prints true/false anywhere.",
+     "goDeeper": "Apple docs: \"Main Thread Checker\" and UIKit's threading note ('use UIKit classes only from your app's main thread'). WWDC 2018 \"iOS Memory Deep Dive\" for decode-off-main; Block 3 formalizes queues vs threads."
+    },
+    {
+     "id": "b2-13",
+     "title": "App lifecycle: five states and their transitions",
+     "concept": {
+      "definition": "An iOS app occupies one of five states: not running, inactive (foreground but not receiving events — mid-transition or interrupted), active (normal use), background (briefly executing off-screen), and suspended (in memory, zero CPU, killable without notice). UIKit announces transitions — didBecomeActive, willResignActive, didEnterBackground, willEnterForeground — and your job is saving state EARLY, because death from suspension is silent.",
+      "code": "// SceneDelegate (scene-based lifecycle):\nfunc sceneDidBecomeActive(_ s: UIScene)   { /* resume, start timers   */ }\nfunc sceneWillResignActive(_ s: UIScene)  { /* pause games, hide sensitive UI */ }\nfunc sceneDidEnterBackground(_ s: UIScene){ /* SAVE STATE — last reliable call */ }\nfunc sceneWillEnterForeground(_ s: UIScene){ /* refresh stale content  */ }\n// suspended → killed: NO callback. didEnterBackground was your warning.",
+      "underlying": "The state machine's teeth are at the bottom: backgrounded apps get a few seconds of grace, then suspend — frozen in RAM, zero CPU. Under memory pressure the system evicts suspended apps WITHOUT waking them: no delegate call, no notification, nothing runs. The user \"returns\" to your app and gets a cold launch. This is why `sceneDidEnterBackground` is the canonical save point — it is the last code you are GUARANTEED to run, and it has a time budget, not a promise of return.\n\ninactive is the underrated state: system alerts, the app switcher, an incoming call — foreground but not receiving events. `willResignActive` fires on the way in, which is why games pause there and banking apps hide balances there (the app-switcher snapshot is taken around these transitions — what's on screen is what's in the switcher).\n\nTwo modern footnotes. Scene-based apps (iOS 13+) get these callbacks per-SCENE (window), with UIApplicationDelegate retaining process-level duties — launch, background fetch registration. And \"background execution\" is opt-in and bounded: audio, location, and finite tasks via beginBackgroundTask — not a general right to run. The mental model: foreground is rented, background is borrowed, suspended is owed.",
+      "whyItMatters": "\"When do you save state?\" and \"what happens to a suspended app under memory pressure?\" are interview staples, and the silent-kill rule explains a whole genre of lost-user-data bugs. The willResignActive snapshot detail is a privacy checklist item in every fintech app."
+     },
+     "exercise": {
+      "prompt": "A reasoning exercise. The user is mid-form in your app. For each event, name the callbacks that fire (in order) and state whether unsaved form data survives: (1) a phone call banner appears, then is dismissed; (2) user swipes to Home, returns 10 seconds later; (3) user swipes to Home, plays a heavy game for an hour, returns.",
+      "code": "// (1) call banner appears, then dismissed\n// (2) Home, back after 10 seconds\n// (3) Home, heavy game for an hour, back\n// For each: which scene callbacks, and does unsaved in-memory data survive?",
+      "solution": "1: willResignActive → (banner dismissed) → didBecomeActive. App stayed foreground-inactive; memory untouched — data survives. (Sensitive UI should've been hidden at willResignActive.)\n2: willResignActive → didEnterBackground → (10s later) willEnterForeground → didBecomeActive. Likely suspended in between, still in RAM — data survives, but only because the system didn't need the memory.\n3: same transitions out — then the game's memory pressure evicts your suspended app, SILENTLY. Return is a cold launch: didFinishLaunching again, and the form data is gone unless didEnterBackground saved it.\n\nThe lesson is the difference between 2 and 3: identical user behavior from your code's perspective at background time — which is exactly why saving at didEnterBackground is unconditional.",
+      "explanation": "You cannot detect case 3 from inside — no callback distinguishes 'about to be killed' from 'suspended peacefully'. Code that saves only on didEnterBackground when 'something changed' is the correct shape; code that waits for a better signal waits forever."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: walk through the app states from active to killed-while-suspended, and say where and why you save user state.",
+      "modelAnswer": "From active, an interruption makes the app inactive (foreground, no events), and leaving makes it background — a few seconds of execution — then suspended: frozen in memory with zero CPU. Under memory pressure the system kills suspended apps silently, with no callback, and the next open is a cold launch. So state is saved in sceneDidEnterBackground — the last guaranteed execution — never deferred waiting for a termination signal that will not come.",
+      "sets": [
+       [
+        {
+         "q": "A suspended app is evicted under memory pressure. What runs in your process?",
+         "options": [
+          "applicationWillTerminate runs, briefly, as documented",
+          "Nothing — the kill is silent; didEnterBackground was your last run",
+          "sceneDidDisconnect fires with a five-second budget",
+          "One final background task, if one was registered earlier"
+         ],
+         "correct": 1,
+         "explain": "Suspended means zero CPU — including for death notifications. didEnterBackground was the goodbye; treat it that way."
+        },
+        {
+         "q": "The 'inactive' state means…",
+         "options": [
+          "the app is in the background but still executing",
+          "foreground but not receiving events — interrupted",
+          "the app has been suspended in memory",
+          "the main run loop has been paused by the system"
+         ],
+         "correct": 1,
+         "explain": "A call banner, the app switcher, a system alert: visible-ish but not interactive. willResignActive is its doorbell — pause and hide-sensitive live there."
+        },
+        {
+         "q": "The canonical place to persist unsaved user data is…",
+         "options": [
+          "applicationWillTerminate — the official exit point",
+          "sceneDidEnterBackground — the last guaranteed execution",
+          "viewDidDisappear of the current screen",
+          "a repeating timer, every 30 seconds"
+         ],
+         "correct": 1,
+         "explain": "willTerminate rarely runs (suspended apps die silently); screens outlive their visibility. Backgrounding is the reliable checkpoint with a time budget attached."
+        }
+       ],
+       [
+        {
+         "q": "Why do banking apps blank their UI in willResignActive?",
+         "options": [
+          "To reduce memory before possible suspension",
+          "The app-switcher snapshot is taken around that transition",
+          "Regulations require logout on any interruption",
+          "To stop Auto Layout passes while inactive"
+         ],
+         "correct": 1,
+         "explain": "The switcher shows a screenshot the system took as you left — hide the balance BEFORE the shutter clicks. A privacy checklist line item born from this state machine."
+        },
+        {
+         "q": "User leaves your app and returns an hour later to a splash screen and lost scroll position. Diagnosis?",
+         "options": [
+          "iOS logs users out of apps after an hour",
+          "The suspended app was evicted; the return was a cold launch",
+          "The scene was disconnected but the process survived",
+          "A background task expired and reset the UI"
+         ],
+         "correct": 1,
+         "explain": "Silent eviction. If scroll position mattered, it needed saving at didEnterBackground and restoring at launch — state restoration is opt-in work, not a default."
+        },
+        {
+         "q": "How does 'background execution' actually work for a normal app?",
+         "options": [
+          "Apps keep running at reduced priority indefinitely",
+          "A few seconds of grace, extendable by opt-in APIs, then suspension",
+          "Full execution while charging, nothing at all on battery",
+          "A single background thread is allowed to persist forever"
+         ],
+         "correct": 1,
+         "explain": "beginBackgroundTask buys bounded time; audio/location/VoIP modes are contracts, not loopholes. Everything else suspends — the battery is the reason."
+        }
+       ]
+      ]
+     },
+     "transfer": "Trace your app's answer to case 3: put a print in sceneDidEnterBackground, background the app, then in Xcode use Debug → Simulate Memory Warning (or just launch several heavy apps), return, and see whether you cold-launch. Does anything the user typed survive? Fix the biggest loss.",
+     "verify": "State-machine behavior is system-controlled — verify in Xcode, not headless: add prints to all five scene callbacks, run through cases 1–3 from the exercise on a device or simulator, and match the sequences. The silent-kill has no callback to print — its evidence is the cold launch.",
+     "goDeeper": "Apple docs: \"Managing your app's life cycle\" and \"Preparing your UI to run in the background\". WWDC 2019 \"Introducing Multiple Windows on iPad\" — the scene-lifecycle rationale. UIScene docs for the per-window state machines."
+    },
+    {
+     "id": "b2-14",
+     "title": "Capstone: tracing a tap from glass to pixels",
+     "concept": {
+      "definition": "Every UIKit mechanism in this block is one segment of a single journey: a finger touches glass → the event enters the main run loop → hit-testing walks DOWN the tree to find the owner → target-action or the responder chain routes it to your code → your handler mutates views and constraints → the layout pass solves equations → the render commit hands layers to the render server → pixels change. Being able to narrate this pipeline — and name where each bug class lives on it — is the block's exit skill.",
+      "code": "// THE PIPELINE (one turn of the loop):\n// glass → event queue → run loop dequeues            (b2-01)\n//   → hitTest walks DOWN the tree                    (b2-09)\n//   → target-action fires / responder chain climbs   (b2-10, b2-08)\n//   → your handler runs: views + constraint edits    (b2-05)\n//   → layout phase: solve equations, layoutSubviews  (b2-06, b2-07)\n//   → commit to render server                        (b2-02)\n// → pixels. Total budget: ~16ms                      (b2-01)",
+      "underlying": "Read the pipeline as a debugging map. Touch never arrives? That's the DELIVERY half: hit-testing's skip list (hidden, alpha, interaction, outside-parent-bounds) or a wrong target/event wiring. Arrives but the app stutters? The TURN half: your handler, the layout solve, or the commit blew the 16ms budget — profile which. UI updates missing or torn? Either the one-render-per-turn rule (you expected mid-handler paint) or an off-main write (b2-12). Wrong sizes? You read frames before the solve (b2-06) or measured in viewDidLoad (b2-03).\n\nNotice how much of the block was verified by direct execution on this Mac — lazy view loading, zero bounds in viewDidLoad, constraint solving to exact frames, deferred layout, responder chain pointers, hit-test gating, dequeue behavior — and how the remaining claims (render server, state machine) are architectural facts you can observe from their consequences. That split — execute what you can, know the provenance of what you can't — is the habit that outlasts any framework.\n\nUIKit will not be the last UI framework you learn. But event loop → ownership search → handler → deferred layout → commit is how EVERY UI system works — SwiftUI included, under different names. You now know the machine, not the brand.",
+      "whyItMatters": "\"Walk me through what happens when a user taps a button\" is a real senior-interview question — this loop IS the answer. And the pipeline-as-debugging-map turns 'UI is haunted' bugs into a five-question checklist."
+     },
+     "exercise": {
+      "prompt": "The final exam. A tap on `saveButton` (inside formCard, inside vc.view) should disable the button, grow errorBanner's height constraint from 0 to 40, and show text in it. Narrate everything from glass to pixels — then predict what the user actually SEES, given the handler below.",
+      "code": "@objc func saveTapped() {\n    saveButton.isEnabled = false\n    bannerHeight.constant = 40\n    errorBanner.text = \"Saving…\"\n    let result = validateAndSave()     // 500ms, synchronous, on main\n    errorBanner.text = result.message\n    print(errorBanner.frame.height)    // ?\n}",
+      "solution": "Pipeline: touch → run loop dequeues → hitTest: vc.view → formCard → saveButton (deepest hit) → target-action fires saveTapped via the application object.\n\nWhat the user sees: the screen FREEZES for 500ms — button still enabled-looking, no banner — then everything appears at once: disabled button, 40-point banner, result.message. \"Saving…\" NEVER renders (one render per turn, final values only — b2-01). \n\nThe print: 0.0 (or the old height) — the constant edit only marked layout dirty; the solve runs in the layout phase AFTER the handler, so the frame still holds its pre-tap value (b2-06).\n\nThe fixes, mapped: validateAndSave belongs off-main with a hop back (b2-12); if the frame were needed now, layoutIfNeeded would force the solve (b2-06); and the banner growth would animate via the constant + animate{layoutIfNeeded} idiom.",
+      "explanation": "Every prediction came from a previous loop's verified fact — nothing new. If you narrated hit-testing downward, action dispatch through UIApplication, the frozen turn, the deferred solve, and the single render: the block is installed. Next stop: the habit tracker checkpoint, programmatic UIKit, zero AI."
+     },
+     "assess": {
+      "explainPrompt": "Final articulation, interviewer-ready, 4 sentences max: what happens between a finger touching a button and pixels changing on screen?",
+      "modelAnswer": "The touch enters the main run loop's event queue; when the loop turns, UIKit hit-tests from the window down — front-to-back, deepest view containing the point wins — and that view's target-action wiring dispatches the handler through the application object. The handler mutates views and constraint constants, which only marks state and layout dirty. After the handler returns, the turn's layout phase solves the constraint equations and calls layoutSubviews, then the resulting layer tree is committed to the render server, which composites the new pixels. The whole turn shares a ~16ms frame budget, and rendering happens once per turn — with the final values only.",
+      "sets": [
+       [
+        {
+         "q": "Order the pipeline correctly:",
+         "options": [
+          "hit-test → run loop → layout → handler → commit",
+          "run loop → hit-test → handler → layout → commit",
+          "handler → hit-test → run loop → commit → layout",
+          "layout → run loop → hit-test → handler → commit"
+         ],
+         "correct": 1,
+         "explain": "Dequeue, find the owner, run the code, solve the equations, hand off the layers. One turn, in that order, every frame that has work."
+        },
+        {
+         "q": "In the exercise, why does the frame print 0.0 right after setting the constant to 40?",
+         "options": [
+          "Constants only apply to future constraint activations",
+          "The edit marked layout dirty; the solve runs after the handler",
+          "errorBanner was outside its parent's bounds",
+          "Printing frames forces them to reset"
+         ],
+         "correct": 1,
+         "explain": "b2-06's deferral, live: equations edited now, solved later. layoutIfNeeded is the tool when you genuinely need the solved value mid-handler."
+        },
+        {
+         "q": "\"Saving…\" never appears on screen because…",
+         "options": [
+          "text assignments need setNeedsDisplay to render",
+          "rendering runs once per turn, after the handler — final values only",
+          "the banner's height was still zero at that moment",
+          "string changes are coalesced by the label"
+         ],
+         "correct": 1,
+         "explain": "b2-01's core fact. Intermediate UI states inside one synchronous handler are invisible by construction — progress UI requires yielding the thread."
+        }
+       ],
+       [
+        {
+         "q": "A tap does NOTHING — handler never runs. Which half of the pipeline do you check first?",
+         "options": [
+          "The layout phase — constraints may be ambiguous",
+          "Delivery: hit-testing's skip list and the target-action wiring",
+          "The render server connection",
+          "The app lifecycle state machine"
+         ],
+         "correct": 1,
+         "explain": "No handler means the event never found your code: hidden/alpha/interaction/outside-bounds (b2-09) or wrong target/event (b2-10). Layout can't eat a touch."
+        },
+        {
+         "q": "The app is 'janky' during scrolling. In pipeline terms, the diagnosis space is…",
+         "options": [
+          "the hit-testing search taking too long per touch",
+          "some turns exceed the frame budget — handler, solve, or commit",
+          "the responder chain being too deep",
+          "too many views registered for target-action"
+         ],
+         "correct": 1,
+         "explain": "Jank = dropped frames = turns over budget. Profile WHICH phase: allocation churn in cells (b2-11), expensive layout (b2-06), or oversized commits."
+        },
+        {
+         "q": "Block 2's exit skill, in one sentence:",
+         "options": [
+          "Memorizing every UIViewController callback signature",
+          "Narrating the event-to-pixels pipeline and placing bugs on it",
+          "Building layouts without Interface Builder",
+          "Avoiding UIKit entirely in favor of SwiftUI"
+         ],
+         "correct": 1,
+         "explain": "The pipeline is the map; every UIKit mystery is a wrong turn on it. That map — loop, search, handler, solve, commit — transfers to every UI framework you'll ever touch."
+        }
+       ]
+      ]
+     },
+     "transfer": "Before the checkpoint: narrate the full pipeline OUT LOUD, from glass to pixels, without notes — then once more naming a bug class at each stage. Then start the habit-tracker checkpoint: programmatic UIKit, real constraints, real lifecycle. Zero AI. Everything in it is now something you can predict.",
+     "verify": "This loop synthesizes verified facts from b2-01..13 — each verify field names what was executed on this Mac vs observed in Xcode. Rerun any one of them; then, in your checkpoint app, set a breakpoint in a button handler and read the pipeline off the stack trace: sendAction, hitTest's aftermath, and the run loop at the bottom.",
+     "goDeeper": "Re-watch WWDC 2018 \"High Performance Auto Layout\" and WWDC 2014 \"Advanced Graphics and Animations\" — both are pipeline tours you can now follow at speed. Then the checkpoint. Block 3 (concurrency) picks up exactly where b2-12's 'hop home' left off."
+    },
+    {
+     "id": "b2-15",
+     "title": "Navigation: the stack you're standing on",
+     "concept": {
+      "definition": "A UINavigationController manages a STACK of view controllers: push appends to `viewControllers` and shows the new top, pop removes and returns it, and the back button is just pop with chrome. Executed here: init with a root gives a 1-deep stack, push makes it 2 with `topViewController` tracking, pop returns the exact controller pushed. Presentation (`present`) is the other axis entirely — modal layering ABOVE a whole hierarchy, not stacking within one.",
+      "code": "let nav = UINavigationController(rootViewController: listVC)\nnav.viewControllers.count        // 1 — executed\nnav.pushViewController(detailVC, animated: true)\nnav.viewControllers.count        // 2; topViewController === detailVC\nnav.popViewController(animated: true)   // returns detailVC — executed\n\n// the other axis — modal, ABOVE the whole stack:\npresent(settingsVC, animated: true)      // not a push!\ndetailVC.navigationController    // === nav — executed; how children find it",
+      "underlying": "The stack is real state you can read and even assign: `viewControllers` is an array, and setting it wholesale (deep-linking straight to a 3-deep stack, or `popToRootViewController`) is legitimate API — navigation is data, animated transitions are presentation of its changes. Every contained controller gets `navigationController` pointing home (executed: `detail.navigationController === nav`), which is how a screen deep in the stack pushes the next one without holding references upward.\n\nPush vs present is the design distinction interviews probe: push says \"a deeper step in THIS flow\" — shared nav bar, back button, one stack; present says \"a separate task interrupting the flow\" — its own layer over everything, often its OWN navigation controller inside, dismissed rather than popped. Mixing them up produces the classic smells: a presented screen with a mysterious missing back button, or a pushed modal that can't be dismissed from its natural place.\n\nLifecycle ties in exactly as b2-03 taught: pushing detailVC drives its full appearance sequence AND the list's disappearance callbacks (viewWillDisappear — the list is still in the stack, just covered); popping reverses both. Data flows the same two directions as always: forward by configuring the pushed VC before the push, backward by delegation or closures (b2-10 / b1-07's weak rules apply verbatim — the detail must not strongly retain the list it reports back to).",
+      "whyItMatters": "\"Push vs present?\" is a guaranteed junior-iOS interview question, and stack-as-assignable-data is the insight behind deep linking and state restoration. Your habit-tracker checkpoint's every screen transition is one of these two verbs."
+     },
+     "exercise": {
+      "prompt": "Predict the stack contents (in order) and what the user SEES after each step. Then the design question: step 4 has a smell — name it and the fix.",
+      "code": "// 1. nav = UINavigationController(rootViewController: A)\n// 2. nav.pushViewController(B)\n// 3. nav.pushViewController(C)\n// 4. C presents D (a full-screen form) with present(D)\n// 5. user completes the form; D is dismissed\n// 6. nav.popToRootViewController()\n\n// stack + screen after each step?",
+      "solution": "1. [A] — user sees A.\n2. [A,B] — sees B, back button to A.\n3. [A,B,C] — sees C.\n4. stack STILL [A,B,C] — D is presented ABOVE the nav stack, not on it; user sees D with no back button (modal layer).\n5. stack [A,B,C] — D dismissed, C visible again; the stack never knew D existed.\n6. [A] — B and C pop together (their disappearance callbacks fire); user sees A.\n\nThe step-4 smell: nothing inherently — IF D is a separate task (a form interrupting the flow), present is right. The smell would be D being the flow's NEXT STEP dressed as a modal: then the user loses the back button and the stack lies about where they are. Fix in that case: push D. The test: 'is this deeper in the same journey, or a different errand?'",
+      "explanation": "The two axes never mix state: presenting doesn't grow the stack, popping can't dismiss a modal. Executed mechanics underneath: push/pop literally edit the viewControllers array, and each transition drives both controllers' b2-03 callbacks."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: how does a navigation controller work mechanically, and when do you push versus present?",
+      "modelAnswer": "A navigation controller owns a stack — the viewControllers array — where push appends and shows the new top, pop removes and returns it, and the back button is pop with chrome; the array is assignable data, which is how deep linking builds a stack directly. Contained controllers reach it through their navigationController property. Push means a deeper step in the same flow — shared bar, back button; present means a separate task layered above the whole hierarchy, dismissed rather than popped, and often wrapping its own navigation controller.",
+      "sets": [
+       [
+        {
+         "q": "What does pushViewController physically do?",
+         "options": [
+          "Creates a new window for the incoming controller",
+          "Appends to the viewControllers array and transitions to the new top",
+          "Presents the controller modally with a slide animation",
+          "Swaps the root controller and archives the old one"
+         ],
+         "correct": 1,
+         "explain": "Executed: count 1 → 2, topViewController tracking each change. Navigation is array edits; the animation is just how the edit is shown."
+        },
+        {
+         "q": "A controller 3 levels deep needs to push a 4th. How does it reach the navigation controller?",
+         "options": [
+          "Through a global reference set at app launch",
+          "Its navigationController property — containment wires it",
+          "By walking presentingViewController upward",
+          "It can't; only the root may push"
+         ],
+         "correct": 1,
+         "explain": "Executed: detail.navigationController === nav right after the push. Containment wires the pointer — no manual passing, no globals."
+        },
+        {
+         "q": "While a modal is presented over a 3-deep stack, the stack contains…",
+         "options": [
+          "4 controllers — the modal joined the top",
+          "the same 3 — presentation layers above the stack",
+          "1 — presentation collapses the stack",
+          "0 — the stack is suspended during modals"
+         ],
+         "correct": 1,
+         "explain": "Two independent axes: viewControllers never changed (executed in the exercise). Dismiss and pop are different verbs for different structures."
+        }
+       ],
+       [
+        {
+         "q": "Deep-linking straight to Settings > Account > Privacy on cold launch is best done by…",
+         "options": [
+          "three animated pushes queued with delays",
+          "assigning the full stack to viewControllers directly",
+          "presenting each screen over the last",
+          "a special deep-link navigation subclass"
+         ],
+         "correct": 1,
+         "explain": "The stack is data — set the array, optionally unanimated, and the back buttons all work. Navigation-as-state is also how restoration and coordinators think."
+        },
+        {
+         "q": "Pushing B over A fires which lifecycle pair (b2-03)?",
+         "options": [
+          "Only B's appearance callbacks — A is unaffected",
+          "B's willAppear/didAppear AND A's willDisappear/didDisappear",
+          "A's deinit, then B's viewDidLoad",
+          "Neither — navigation bypasses lifecycle"
+         ],
+         "correct": 1,
+         "explain": "A is covered, not destroyed: it stays in the stack (retained), gets disappearance callbacks, and will reappear on pop WITHOUT viewDidLoad rerunning — b2-03's per-visit vs once split, live."
+        },
+        {
+         "q": "The user taps 'Edit Profile' mid-flow and it's clearly the flow's next step. A teammate presents it modally. The cost?",
+         "options": [
+          "A memory spike from the extra window layer",
+          "A lost back button, and a stack that lies about place",
+          "The navigation bar permanently disappears",
+          "None — push and present are interchangeable"
+         ],
+         "correct": 1,
+         "explain": "The verbs encode meaning: deeper-in-journey = push (back button, one stack); separate-errand = present. Misusing them confuses both the user and every future reader of the flow."
+        }
+       ]
+      ]
+     },
+     "transfer": "Map one flow of your app (or checkpoint plan) as a diagram: boxes for screens, solid arrows for pushes, dashed for presents. For every dashed arrow ask the test question — 'separate errand, or next step in disguise?' Relabel any liar.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): stack count 1→2→1 through push/pop; topViewController tracked each mutation; popViewController returned the identical instance; detail.navigationController === nav. Presentation semantics (layering, dismissal) need a window — verify in your app with three prints.",
+     "goDeeper": "Apple docs: UINavigationController — the viewControllers array contract. WWDC 2022 \"The SwiftUI cookbook for navigation\" — the same stack-as-data idea, NavigationStack edition. The Coordinator pattern (Soroush Khanlou's classic post) builds directly on navigation-as-data."
+    },
+    {
+     "id": "b2-16",
+     "title": "Containment: view controllers inside view controllers",
+     "concept": {
+      "definition": "A view controller can host others as CHILDREN: `addChild`, add the child's view to your hierarchy, then `didMove(toParent:)`. Containment is what navigation and tab controllers ARE — executed here: pushed controllers appear in nav's `children`. The etiquette is asymmetric and was executed too: addChild calls `willMove` FOR you but didMove is YOUR job; on removal you call `willMove(toParent: nil)` and `removeFromParent` calls didMove for you.",
+      "code": "// executed sequence — the containment dance:\nhost.addChild(child)            // → child.willMove(toParent: host)  AUTO\nhost.view.addSubview(child.view)\nchild.didMove(toParent: host)   // YOUR call — the handshake ends\n\n// removal mirrors it:\nchild.willMove(toParent: nil)   // YOUR call — the warning\nchild.view.removeFromSuperview()\nchild.removeFromParent()        // → child.didMove(toParent: nil)  AUTO\n\nnav.children                    // pushed VCs — nav IS containment",
+      "underlying": "Why containment exists: a view controller is a unit of BEHAVIOR (lifecycle callbacks, rotation, trait handling, the responder-chain slot from b2-08) — not just a view factory. If you embed only `child.view` without the containment calls, the child renders but goes deaf: no viewWillAppear on screen changes, no trait updates, a broken responder chain, wrong safe areas. The parent-child registration is how UIKit knows to FORWARD the b2-03 lifecycle down the tree — appearance callbacks flow parent to children automatically once the relationship exists.\n\nThe asymmetric etiquette encodes a real gap: between addChild and didMove, YOU do view work (adding, constraining the child's view) — the handshake brackets it. Executed verbatim: addChild fired `willMove(toParent: parent)` immediately; `didMove` waited for our explicit call; removal mirrored with roles swapped. The rule of thumb — you call the one the system can't know the timing of.\n\nContainment is also the honest lens on controllers you use daily: UINavigationController (children = the stack, executed), UITabBarController (children = the tabs), UISplitViewController, UIPageViewController — all parents managing child lifecycles. Building your own is common and legitimate: a segmented screen swapping two child controllers beats one mega-controller with a mode enum — each child keeps its own b2-03 lifecycle, memory, and testability.",
+      "whyItMatters": "\"How do you embed one view controller in another?\" is a working-iOS interview staple, and the just-add-the-view mistake — child renders, lifecycle dead — ships constantly. Containment is also the escape hatch from Massive View Controller: split by child, not by extension."
+     },
+     "exercise": {
+      "prompt": "Find the two bugs. This dashboard embeds a chart controller. The chart DRAWS correctly, but its viewWillAppear never fires and its buttons don't respond. Explain each symptom's mechanism.",
+      "code": "final class DashboardVC: UIViewController {\n    let chartVC = ChartVC()\n    override func viewDidLoad() {\n        super.viewDidLoad()\n        view.addSubview(chartVC.view)       // ← the whole 'embedding'\n        chartVC.view.frame = view.bounds\n    }\n}",
+      "solution": "One root cause, two symptoms: the child's VIEW was adopted but the CONTROLLER was never registered — no addChild, no didMove.\n\nSymptom 1 (no viewWillAppear): lifecycle forwarding follows the parent-child graph, and this child isn't in it. The dashboard gets its b2-03 callbacks; UIKit has no idea chartVC exists, so nothing is forwarded.\nSymptom 2 (dead buttons): a root view's responder-chain next is its CONTROLLER (b2-08, executed there) — but that wiring, and the control events routed through it, assume the controller participates in the hierarchy; unregistered, the chain above the chart's view is wrong and its controller never joins event handling properly.\n\nFix — the executed dance: host.addChild(chartVC); view.addSubview(chartVC.view); constrain it; chartVC.didMove(toParent: self).",
+      "explanation": "The bug is invisible precisely because pixels don't need containment — only BEHAVIOR does. 'It draws but acts dead' is the fingerprint; the containment handshake is always the suspect."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is view controller containment, what's the correct add/remove sequence, and what breaks if you only add the child's view?",
+      "modelAnswer": "Containment registers a parent-child relationship between view controllers so UIKit forwards lifecycle, traits, and events down the tree — it's what navigation and tab controllers are built from. Adding: addChild (which calls willMove for you), add and constrain the child's view, then call didMove yourself; removal mirrors it — you call willMove(toParent: nil), remove the view, and removeFromParent calls didMove. Skipping the registration leaves a child that renders but is behaviorally dead: no appearance callbacks, wrong responder chain, missed trait and safe-area updates.",
+      "sets": [
+       [
+        {
+         "q": "In the ADD sequence, which callback does the system fire and which is your job?",
+         "options": [
+          "Both fire automatically on addChild",
+          "addChild fires willMove; you call didMove after placing the view",
+          "You call willMove; removeFromParent fires didMove",
+          "Neither — the callbacks are optional decorations"
+         ],
+         "correct": 1,
+         "explain": "Executed verbatim: willMove printed at addChild; didMove waited for our call. The gap between them is where YOUR view work belongs — the handshake brackets it."
+        },
+        {
+         "q": "Why does embedding just the child's VIEW leave viewWillAppear dead?",
+         "options": [
+          "Views strip lifecycle from foreign controllers",
+          "Lifecycle forwarding follows the registration — there is none",
+          "viewWillAppear requires a navigation controller",
+          "The child's view must be a subclass of the parent's"
+         ],
+         "correct": 1,
+         "explain": "b2-03's callbacks flow down the containment tree. Pixels need only addSubview; BEHAVIOR needs the registration — that split is the whole bug class."
+        },
+        {
+         "q": "UINavigationController relates to containment how?",
+         "options": [
+          "It predates containment and uses private APIs",
+          "It IS containment — pushed controllers are its children",
+          "It only contains the top controller at a time",
+          "It contains views directly, skipping controllers"
+         ],
+         "correct": 1,
+         "explain": "Executed: nav.children held the pushed controllers. Tab bars, split views, page controllers — the system's containers are this API used at scale."
+        }
+       ],
+       [
+        {
+         "q": "The removal sequence starts with child.willMove(toParent: nil) because…",
+         "options": [
+          "removeFromParent would crash without it",
+          "you call the one whose timing the system can't know",
+          "willMove(nil) is what actually detaches the view",
+          "legacy: pre-iOS 13 required it, now it's a no-op"
+         ],
+         "correct": 1,
+         "explain": "The etiquette is symmetric with roles swapped (executed both directions): the system brackets its half, you bracket yours around the view work."
+        },
+        {
+         "q": "A screen with two modes swaps entire child controllers instead of toggling subviews. The win?",
+         "options": [
+          "Fewer total view allocations at runtime",
+          "Each mode keeps its own lifecycle, memory, and testability",
+          "Child controllers render on the GPU directly",
+          "Traits stop propagating, saving layout passes"
+         ],
+         "correct": 1,
+         "explain": "Containment is the sanctioned split for Massive View Controller: each child is a full citizen — b2-03 callbacks, its own deinit (b1-02 leak checks!), unit-testable alone."
+        },
+        {
+         "q": "\"It draws fine but acts dead\" — the diagnostic shortcut for an embedded controller:",
+         "options": [
+          "Check the child view's alpha and isHidden first",
+          "Check for the containment handshake — addChild/didMove present?",
+          "Rebuild with the Main Thread Checker enabled",
+          "Verify the child uses Auto Layout, not frames"
+         ],
+         "correct": 1,
+         "explain": "Rendering needs only the view; behavior needs the registration. The fingerprint points straight at the missing dance — it's the b2-16 bug until proven otherwise."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find your biggest view controller (or the checkpoint's future main screen). Identify one region that could be a CHILD controller — a chart, a form section, a mode. Write the four-line containment dance for it as a comment, and note what lifecycle behavior it would gain over a plain subview.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): addChild fired willMove automatically with parent set, didMove waited for the explicit call; removal mirrored (manual willMove(nil), automatic didMove(nil) from removeFromParent); child.parent tracked both transitions; nav.children exposed pushed controllers. Reproduce with the LoudChild prints.",
+     "goDeeper": "Apple docs: \"Creating a custom container view controller\" — the canonical dance, with the appearance-forwarding details (shouldAutomaticallyForwardAppearanceMethods). WWDC 2011 \"Implementing UIViewController Containment\" — old, still definitive."
+    },
+    {
+     "id": "b2-17",
+     "title": "Gesture recognizers: the interpreters of touch",
+     "concept": {
+      "definition": "A gesture recognizer is a state machine attached to a view that watches its raw touches and announces PATTERNS: tap, pan, pinch, long-press. It sits between b2-09's delivery and your code — the hit-tested view's recognizers see touches first, and recognition can cancel touch delivery to the view itself. Executed here: attaching wires `view.gestureRecognizers`, a fresh recognizer idles in `.possible`, and `require(toFail:)` builds explicit dependencies between competing recognizers.",
+      "code": "let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))\nimageView.isUserInteractionEnabled = true   // image views default OFF!\nimageView.addGestureRecognizer(tap)          // executed: attached, .possible\n\nlet double = UITapGestureRecognizer(…); double.numberOfTapsRequired = 2\nsingle.require(toFail: double)   // single waits for double to give up\n\n// discrete: .possible → .recognized (tap)\n// continuous: .possible → .began → .changed… → .ended (pan, pinch)",
+      "underlying": "The state machine is the concept. Discrete gestures (tap) jump from `.possible` straight to `.recognized` — one action call. Continuous gestures (pan, pinch, rotation) walk `.began → .changed (repeatedly) → .ended`, calling your action at every step — which is why a pan handler switches on `state` and reads `translation(in:)` per change. Either kind can take `.failed` (the pattern broke) or `.cancelled` (a call interrupted, the system stole the touch).\n\nHow they fit b2-09/b2-08: hit-testing still picks the view, but recognizers attached to that view AND ITS ANCESTORS get the touches in parallel with (actually ahead of) the view's own touchesBegan. On recognition, the default is to CANCEL the view's touch delivery (cancelsTouchesInView) — the reason a table with a tap recognizer on it can eat cell selection, the classic collision. Competition between recognizers is resolved by exclusivity: one wins per gesture by default, with `require(toFail:)` (executed) declaring order — single-tap waits until double-tap's window expires, which is also why require-to-fail chains add perceptible delay. The escape hatches live on the delegate: `shouldRecognizeSimultaneously` for cooperation, per-touch vetoes for territory.\n\nTwo working gotchas, one executed: UIImageView and UILabel default to `isUserInteractionEnabled = false` — a recognizer on them silently never fires until the flag flips. And recognizers have one view: adding the SAME instance to a second view steals it from the first — make one per view.",
+      "whyItMatters": "\"Why does my tap recognizer break cell selection?\" and the dead-recognizer-on-an-image-view are two of the most-hit UIKit bugs in practice. The state machine plus require(toFail:) is also a favorite interview pairing with hit-testing."
+     },
+     "exercise": {
+      "prompt": "Three bug reports, one screen: (1) the tap recognizer on the avatar UIImageView never fires; (2) after adding a tap recognizer to the whole table view for 'dismiss keyboard', cell taps stopped selecting rows; (3) single-tap actions now fire with a ~0.35s delay since double-tap zoom was added. Diagnose each mechanism in one sentence.",
+      "code": "// 1. avatarImageView.addGestureRecognizer(tapRecognizer)   // never fires\n// 2. tableView.addGestureRecognizer(dismissTap)             // cells dead\n// 3. singleTap.require(toFail: doubleTap)                   // now sluggish",
+      "solution": "1. UIImageView defaults to isUserInteractionEnabled = false — the view is skipped in b2-09's hit-test, so its recognizers never see a touch. Flip the flag.\n2. The recognized dismissTap CANCELS touch delivery to the view (cancelsTouchesInView default true) — the table never completes the touch sequence that selects cells. Fix: dismissTap.cancelsTouchesInView = false, or scope the recognizer more narrowly.\n3. That's require(toFail:) doing exactly its job: single-tap must wait for double-tap's second-tap window to EXPIRE before it can succeed — the delay is the double-tap timeout. It's a trade you chose; if the delay hurts, reconsider whether both gestures belong on one view.\n\nAll three are the same lesson from different angles: recognizers are a layer with its own rules sitting on top of touch delivery.",
+      "explanation": "The three fixes touch three different knobs — the hit-test gate (b2-09), touch cancellation, and the dependency graph — which is the map of where recognizer bugs live. Nothing here is a mystery once the state machine and its position in the pipeline are explicit."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is a gesture recognizer mechanically, how do discrete and continuous gestures differ, and how do competing recognizers get resolved?",
+      "modelAnswer": "A recognizer is a state machine attached to a view that watches raw touches for a pattern, receiving them ahead of the view's own touch handling and by default cancelling delivery to the view once it recognizes. Discrete gestures jump from possible to recognized with one action call; continuous ones walk began/changed/ended, calling the action each step with live values like translation. Competition defaults to one-winner exclusivity, shaped explicitly with require(toFail:) dependencies — which trades responsiveness for disambiguation — or opened up via the delegate's simultaneous-recognition hook.",
+      "sets": [
+       [
+        {
+         "q": "A pan handler is called repeatedly during a drag because…",
+         "options": [
+          "UIKit retries the handler until it returns true",
+          "continuous recognizers fire per state change: began/changed/ended",
+          "the recognizer detaches and re-attaches per touch move",
+          "the run loop batches touch-move events into extra calls"
+         ],
+         "correct": 1,
+         "explain": "The state machine IS the API: switch on state, read translation per .changed. Discrete gestures (tap) collapse the walk into one .recognized call."
+        },
+        {
+         "q": "A tap recognizer on a UIImageView never fires. First suspect?",
+         "options": [
+          "The recognizer needs numberOfTapsRequired set",
+          "isUserInteractionEnabled defaults to false on image views",
+          "Image views only accept long-press gestures",
+          "The image must be non-nil to receive touches"
+         ],
+         "correct": 1,
+         "explain": "The b2-09 gate: interaction-disabled views are skipped in hit-testing, recognizers and all. UILabel shares the silent default. One flag, executed gotcha, endless bug reports."
+        },
+        {
+         "q": "By default, when a recognizer on a table view recognizes, the table's own touch handling…",
+         "options": [
+          "continues in parallel, unaffected",
+          "is cancelled — cancelsTouchesInView eats the sequence",
+          "receives a synthesized replacement tap",
+          "is delayed until the recognizer resets"
+         ],
+         "correct": 1,
+         "explain": "Recognition steals the touch by default — the dead-cell-selection classic. cancelsTouchesInView = false is the one-line peace treaty."
+        }
+       ],
+       [
+        {
+         "q": "single.require(toFail: double) makes single-taps feel slower because…",
+         "options": [
+          "two recognizers double the touch processing cost",
+          "single must wait out double's second-tap window before it may succeed",
+          "require(toFail:) forces main-thread synchronization",
+          "the delegate is consulted on every touch move"
+         ],
+         "correct": 1,
+         "explain": "The dependency is temporal: failure of a double-tap is only knowable when its timeout expires. Disambiguation always costs latency — decide if the gesture pair is worth it."
+        },
+        {
+         "q": "One recognizer instance is added to a second view. The result?",
+         "options": [
+          "Both views share it, actions tagged by view",
+          "It moves — a recognizer has exactly one view",
+          "A runtime crash on the second addGestureRecognizer",
+          "The second add is silently ignored"
+         ],
+         "correct": 1,
+         "explain": "One view per recognizer; adding elsewhere re-homes it and the first view goes quiet. Make one instance per view — they're cheap state machines, not shared services."
+        },
+        {
+         "q": "You want a pan to work WHILE the scroll view underneath also scrolls. The tool?",
+         "options": [
+          "Raise the pan's minimum touch count",
+          "The delegate's shouldRecognizeSimultaneouslyWith returning true",
+          "require(toFail:) from the scroll's pan to yours",
+          "Setting both recognizers' state to .began manually"
+         ],
+         "correct": 1,
+         "explain": "Exclusivity is the default, cooperation is the delegate's opt-in. (Scroll views expose their own panGestureRecognizer precisely so you can negotiate with it.)"
+        }
+       ]
+      ]
+     },
+     "transfer": "Add one gesture to your app or playground: a double-tap zoom on an image view. You'll hit the interaction flag, wire require(toFail:) against single-tap if one exists, and feel the timeout delay yourself. Narrate the state machine as you test: possible → recognized, and who got cancelled.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): addGestureRecognizer wired view.gestureRecognizers (count 1), a fresh recognizer reported .possible, and require(toFail:) accepted the dependency. Recognition itself needs real touches — in your app, print recognizer.state.rawValue inside a pan handler and watch the machine walk.",
+     "goDeeper": "Apple docs: \"Handling UIKit gestures\" + UIGestureRecognizer's state-machine diagram. WWDC 2014 \"Building Interruptible and Responsive Interactions\" — recognizers and scroll views negotiating. b2-09 for the delivery layer beneath."
+    },
+    {
+     "id": "b2-18",
+     "title": "Animation: two layers, one lie",
+     "concept": {
+      "definition": "UIView.animate does NOT gradually change your properties. Executed here: setting `alpha = 0.1` inside a 2-second animate block leaves the MODEL value at 0.1 immediately — the animation is a visual interpolation the render server (b2-02) plays between the old and new values, on a separate PRESENTATION layer. Your code sees the destination the moment you set it; the user watches the journey.",
+      "code": "box.alpha = 1.0\nUIView.animate(withDuration: 2.0) {\n    box.alpha = 0.1\n}\nprint(box.alpha)   // executed: 0.1 — IMMEDIATELY, not 2s later\n// model layer:        holds 0.1 (the truth your code reads)\n// presentation layer: shows 1.0 → 0.1 over 2s (what the user sees)\n// hit-testing uses the MODEL — the moved button is tappable at\n// its destination while its pixels are still traveling",
+      "underlying": "Core Animation keeps two parallel worlds. The model layer holds the real values — set inside an animate block, they change instantly (executed: alpha read 0.1 right after the call). The presentation layer is the render server's in-flight copy, interpolating frame by frame; `layer.presentation()` snapshots it mid-animation (and returned nil in our headless run — the presentation world literally lives with the render server, absent without one; b2-02's committed-animations-survive-blocked-main fact is the same architecture seen from the other side).\n\nConsequences worth owning. Hit-testing (b2-09) consults the MODEL: animate a button across the screen and the tappable spot is its destination from the start — mid-flight taps on the pixels miss; games and interruptible UIs read presentation() to hit what the user sees. Completion handlers get `finished: Bool` — false when another animation interrupted; the interrupting animate call retargets from the CURRENT presentation values by default, which is why a new animation mid-flight doesn't snap. And what's animatable is a fixed list — alpha, transform, frame/bounds/center, backgroundColor — because the render server must interpolate them without your code (which is also WHY they keep playing when your main thread blocks).\n\nThe constraint marriage from b2-06 completes the picture: constraints animate by changing the constant OUTSIDE and calling layoutIfNeeded INSIDE the block — the solve's frame writes are what get interpolated. Springs (`usingSpringWithDamping`) and UIViewPropertyAnimator (scrubbable, reversible) are richer timing over the same two-layer machinery.",
+      "whyItMatters": "\"Where is the view DURING the animation?\" is a precision interview question — model at destination, presentation in flight — and the wrong mental model produces real bugs: untappable moving buttons, completion handlers trusted after interruption, animations 'not working' because the property was never animatable."
+     },
+     "exercise": {
+      "prompt": "Predict: (1) both prints; (2) whether a user tap at the button's OLD position 1 second in does anything; (3) what `finished` is in each completion. Then explain what the second animate call visually does at t=1s.",
+      "code": "// button.frame.origin.x == 0 at start\nUIView.animate(withDuration: 2.0, animations: {\n    button.frame.origin.x = 300\n}, completion: { finished in print(\"anim1 finished:\", finished) })\n\nprint(\"x now:\", button.frame.origin.x)          // 1? (immediately)\n\n// … 1 second later, mid-flight:\nUIView.animate(withDuration: 1.0, animations: {\n    button.frame.origin.x = 0                    // send it back\n}, completion: { finished in print(\"anim2 finished:\", finished) })",
+      "solution": "1: x now: 300 — the model jumped immediately (executed pattern: alpha 0.1). \n2: A tap at the OLD position (x=0) 1s in does NOTHING — hit-testing reads the model, which says the button lives at 300. The pixels at x≈150 are also untappable: the touchable rectangle is the destination.\n3: anim1 finished: false — it was interrupted at t=1s. anim2 finished: true (assuming it completes).\nVisually at t=1s: the button is drawn around x≈150 (presentation); anim2 retargets FROM the current presentation position back toward 0 — a smooth turnaround, no snap, taking 1 more second.\n\nThe uncomfortable truth in one line: for that entire first second, the button LOOKS like it's on a journey and IS, legally, already at its destination.",
+      "explanation": "Every sub-answer is the two-layer split applied: code and hit-testing live in the model; eyes live in the presentation; completions report whether the journey was allowed to finish. Interruptible-by-default retargeting is why layering animate calls feels natural — and why `finished` must never be assumed true."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what actually happens to a property set inside UIView.animate, and where is the view during the animation — for your code, and for the user's finger?",
+      "modelAnswer": "The property's model value changes immediately to the destination — the animate block just tells Core Animation to render an interpolation from old to new, which the render server plays on a separate presentation layer. Your code and hit-testing consult the model, so the view is tappable at its destination the moment the animation starts; the user sees the presentation layer's in-flight values, readable via layer.presentation(). Completion handlers receive finished: false when interrupted, and a new animation retargets smoothly from the current presentation state.",
+      "sets": [
+       [
+        {
+         "q": "Right after `UIView.animate { view.alpha = 0 }` returns, view.alpha reads…",
+         "options": [
+          "1.0 until the animation completes",
+          "0 — the model changes immediately; the fade is presentational",
+          "an interpolated value that decreases each read",
+          "nil — the property is locked during animation"
+         ],
+         "correct": 1,
+         "explain": "Executed: 0.1 immediately on a 2-second fade. Code reads the truth (model); the user watches the render server's journey (presentation)."
+        },
+        {
+         "q": "A button animating from x=0 to x=300 — where can the user actually TAP it mid-flight?",
+         "options": [
+          "Wherever its pixels currently are",
+          "At the destination — hit-testing consults the model layer",
+          "Nowhere; animating views can't receive touches",
+          "At both the origin and destination rectangles"
+         ],
+         "correct": 1,
+         "explain": "b2-09's search runs on model geometry. The mid-flight pixels are a rendering artifact; touch-the-moving-thing UIs read layer.presentation() and hit-test that."
+        },
+        {
+         "q": "Why can only a fixed list of properties (alpha, transform, frame…) animate?",
+         "options": [
+          "Legacy limits from Core Animation's first release",
+          "The render server must interpolate them WITHOUT running your code",
+          "Only 8-byte properties fit the animation buffer",
+          "Apple curates the list for design consistency"
+         ],
+         "correct": 1,
+         "explain": "The journey plays out of process (b2-02) — which is both why the list is closed and why committed animations survive your blocked main thread. Custom properties need your code per frame: that's CADisplayLink territory."
+        }
+       ],
+       [
+        {
+         "q": "An animation's completion fires with finished == false. What happened?",
+         "options": [
+          "The view was off-screen, so frames were skipped",
+          "Another animation (or removal) interrupted it mid-flight",
+          "The animated property wasn't on the animatable list",
+          "The duration exceeded the run loop's frame budget"
+         ],
+         "correct": 1,
+         "explain": "finished reports whether the journey completed. Code that unconditionally chains work in completions breaks the moment animations start layering — check the flag."
+        },
+        {
+         "q": "A second animate call targets the same property mid-flight. Visually…",
+         "options": [
+          "the view snaps to the first destination, then animates",
+          "it retargets smoothly from the current presentation values",
+          "both animations run, averaging their values",
+          "the second call is ignored until the first ends"
+         ],
+         "correct": 1,
+         "explain": "Interruptible by default: the new journey departs from where the pixels ARE. That's the turnaround in the exercise — and why layered UI animation feels continuous."
+        },
+        {
+         "q": "Animating a CONSTRAINT change correctly (b2-06 + this loop):",
+         "options": [
+          "set the constraint's constant inside the animate block",
+          "constant outside, layoutIfNeeded inside — frames interpolate",
+          "animate the constraint's priority property instead",
+          "wrap a setNeedsLayout call inside the animate block"
+         ],
+         "correct": 1,
+         "explain": "Constants aren't animatable; frames are. Forcing the solve inside the block puts the resulting frame writes into the animation — b2-06's idiom, now with its mechanism visible."
+        }
+       ]
+      ]
+     },
+     "transfer": "In your app, animate a button 200 points sideways over 3 seconds and try to tap it mid-flight at both its old and current apparent positions. Then log frame in the completion with the finished flag, interrupt it with a second animation, and watch false arrive. Ten minutes; the two-layer model becomes permanent.",
+     "verify": "Executed on this Mac (UIKit via Catalyst): alpha read 0.1 immediately after a 2-second animate call — the model jumps; layer.presentation() was nil headless, confirming the presentation world lives with the render server (pairs with b2-02's blocked-main-thread experiment for the visual half). Interruption/finished behavior: verify with the transfer exercise's logs.",
+     "goDeeper": "WWDC 2014 \"Building Interruptible and Responsive Interactions\" — retargeting, done properly. objc.io issue #12 \"Animations Explained\" — model vs presentation at depth. UIViewPropertyAnimator docs for scrubbable/reversible control over the same machinery."
+    }
+   ]
+  },
+  {
+   "id": "b3",
+   "name": "One Thread Is Never Enough",
+   "tagline": "Queues, races, async/await, actors — concurrency from the machine up",
+   "loops": [
+    {
+     "id": "b3-01",
+     "title": "Threads and queues are different things",
+     "concept": {
+      "definition": "A thread is an operating-system resource: a call stack (b0-04's frames live there) plus a slot the kernel schedules onto a CPU core — real memory, real cost. A dispatch queue is just a data structure: a list of work items with a policy for running them (serial: one at a time, in order; concurrent: many at once). GCD owns a small pool of threads and drains your queues onto whichever pool thread is free — queues are what you use; threads are what the system spends.",
+      "code": "let qA = DispatchQueue(label: \"net\")     // serial queue: a TODO list\nlet qB = DispatchQueue(label: \"disk\")\n\nqA.async { work() }   // \"append to list, return immediately\"\n\n// executed on this Mac: 4 tasks on 2 queues used 2 pool threads —\n// task0 on A -> thread 2      task1 on B -> thread 3\n// task2 on A -> thread 2      task3 on B -> thread 3\n// queues ≠ threads: GCD assigns threads; you never see or own them",
+      "underlying": "Why the split exists: threads are expensive (each owns a stack — half a megabyte by default — plus kernel bookkeeping), and having many more runnable threads than cores makes the scheduler thrash between them. So GCD inverts the model: you create cheap queues freely — a queue is barely more than a linked list with a label — and the system maintains a thread pool sized to the hardware, lending threads to queues that have work. Executed here: four tasks across two serial queues consumed exactly two pool threads, each queue sticking to one lender while draining.\n\nThe practical consequences: never assume a queue IS a thread — the same queue may drain on different pool threads over its lifetime (it just won't use two at once if serial). `Thread.current` inside async work is an implementation detail that can change run to run. The one stable exception: the main queue drains on the main thread, always — that pairing is the bridge to b2-01's run loop and b2-12's rule.\n\nVocabulary to keep straight in interviews: CONCURRENCY is dealing with many things logically at once (queues give you this); PARALLELISM is literally executing on multiple cores at the same instant (threads on cores give you this). A serial queue provides concurrency with zero parallelism — and that combination, one-at-a-time execution, turns out to be a synchronization tool in two loops.",
+      "whyItMatters": "\"What's the difference between a queue and a thread?\" is the concurrency interview's opening question, and most self-taught developers answer as if they're synonyms. The pool model also explains GCD's real hazard — thread explosion when you block pool threads — before you ever hit it."
+     },
+     "exercise": {
+      "prompt": "A reasoning exercise, b0-04 style. For each claim, verdict TRUE or FALSE with one clause of justification: (1) two serial queues always run on two different threads; (2) one serial queue may use different threads over its lifetime; (3) `qA.async {}` creates a thread; (4) code on the main QUEUE is guaranteed to be on the main THREAD; (5) a serial queue can run two of its items in parallel if the pool has idle threads.",
+      "code": "// 1. Two serial queues ⇒ always two different threads?\n// 2. One serial queue ⇒ may drain on different threads over time?\n// 3. qA.async { } ⇒ creates a new thread?\n// 4. Main queue ⇒ main thread, guaranteed?\n// 5. Serial queue ⇒ two items in parallel when threads are idle?",
+      "solution": "1. FALSE — the pool may lend the SAME thread to both queues at different moments; executed here they happened to get two, but nothing guarantees it.\n2. TRUE — the queue borrows whatever pool thread is free per drain; only one at a time, but not the same one forever.\n3. FALSE — async appends a work item and returns; the pool already exists. Queues are cheap lists, not thread factories.\n4. TRUE — the one fixed pairing: the main queue drains on the main thread via the run loop (b2-01).\n5. FALSE — serial means one item at a time BY DEFINITION, regardless of how many threads sit idle. The policy lives in the queue, not the pool.",
+      "explanation": "Every answer follows from one sentence: queues hold the POLICY, the pool holds the THREADS. If you got 5 wrong, you merged the two concepts — the serial guarantee is the queue's promise about ordering, not a statement about thread supply."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is a thread, what is a dispatch queue, and how does GCD connect them?",
+      "modelAnswer": "A thread is an OS resource — a call stack plus a kernel-scheduled slot on a core — expensive to create and limited in useful number by the hardware. A dispatch queue is a cheap data structure: a list of work items with an execution policy, serial or concurrent. GCD maintains a small pool of threads sized to the machine and drains queues onto whichever pool thread is free — so you write against queues, the system spends threads, and the only fixed pairing is the main queue on the main thread.",
+      "sets": [
+       [
+        {
+         "q": "What does a thread physically consist of?",
+         "options": [
+          "A queue of closures and a priority number",
+          "A call stack plus a kernel-schedulable execution slot",
+          "One CPU core reserved for the app",
+          "A copy of the app's heap for isolation"
+         ],
+         "correct": 1,
+         "explain": "b0-04's stack finally gets its owner: each thread has one, plus kernel bookkeeping. That stack (~512KB default) is why threads are the expensive resource."
+        },
+        {
+         "q": "`myQueue.async { work() }` does what, immediately?",
+         "options": [
+          "Spawns a thread and starts work() on it",
+          "Appends the closure to the queue's list and returns",
+          "Runs work() inline if the queue is empty",
+          "Blocks until a pool thread accepts the closure"
+         ],
+         "correct": 1,
+         "explain": "async is 'append and go' — pure data-structure work. When and where the closure runs is the pool's business, later."
+        },
+        {
+         "q": "The same serial queue drains one task on thread 2 and a later task on thread 5. This is…",
+         "options": [
+          "a bug — serial queues own exactly one thread",
+          "normal — the queue borrows whichever pool thread is free",
+          "possible only for concurrent queues",
+          "evidence the queue was recreated in between"
+         ],
+         "correct": 1,
+         "explain": "Serial constrains ORDER (one at a time, FIFO), not identity of the lender. Never cache Thread.current assumptions about a queue."
+        }
+       ],
+       [
+        {
+         "q": "Why does GCD keep a small thread pool instead of a thread per queue?",
+         "options": [
+          "Threads cannot be created once the app has launched",
+          "Threads cost memory and scheduler churn; shared, queues are nearly free",
+          "Apple licenses a limited thread count per app",
+          "Queues would deadlock whenever they owned their threads"
+         ],
+         "correct": 1,
+         "explain": "A stack per thread and kernel context-switching are the costs; cores are the limit on useful parallelism. Cheap queues + rationed threads is the whole GCD design."
+        },
+        {
+         "q": "Concurrency vs parallelism — the correct split?",
+         "options": [
+          "Synonyms; Swift uses both words for style",
+          "Concurrency structures tasks logically; parallelism uses many cores at once",
+          "Concurrency is single-core only; parallelism needs the GPU",
+          "Parallelism is the async keyword; concurrency is GCD"
+         ],
+         "correct": 1,
+         "explain": "A serial queue gives concurrency (interleaved tasks) with zero parallelism (one at a time). The distinction sharpens everything in this block."
+        },
+        {
+         "q": "Which pairing of queue and thread is actually guaranteed?",
+         "options": [
+          "Each custom serial queue ↔ one dedicated thread",
+          "The main queue ↔ the main thread",
+          "Global queues ↔ one thread per QoS level",
+          "None — all pairings are pool-assigned"
+         ],
+         "correct": 1,
+         "explain": "The one fixed marriage, courtesy of b2-01's run loop draining the main queue. Everything else is the pool's discretion."
+        }
+       ]
+      ]
+     },
+     "transfer": "Count the DispatchQueue(label:) creations in your project. For each: is it there to get ORDERING (serial protection), to get work OFF main, or was it cargo culting? Queues are cheap but not meaningless — write one clause of purpose next to each.",
+     "verify": "Executed on this Mac (`swift file.swift`): four tasks across two serial queues drained on exactly two pool threads (thread 2 for A, thread 3 for B); serial order came out strictly FIFO [1,2,3,4,5]; Thread.isMainThread was true on the main queue. Rerun it — the thread NUMBERS may differ, which is itself the lesson.",
+     "goDeeper": "WWDC 2015 \"Building Responsive and Efficient Apps with GCD\" — the pool model, from the source. WWDC 2017 \"Modernizing Grand Central Dispatch Usage\" — thread explosion and how to avoid it. libdispatch is open source — the queue really is a list."
+    },
+    {
+     "id": "b3-02",
+     "title": "sync, async, and the self-deadlock",
+     "concept": {
+      "definition": "async and sync differ in what the CALLER does: async appends the work item and returns immediately; sync appends it and BLOCKS until it finishes. Two verified consequences: sync usually runs the block right on the caller's thread (an optimization — no hop needed, since the caller is waiting anyway), and calling sync on the serial queue you are already running on is a guaranteed deadlock — modern libdispatch detects it and crashes on the spot.",
+      "code": "let q = DispatchQueue(label: \"work\")   // serial\n\nq.async { step1() }   // caller moves on immediately\nq.sync  { step2() }   // caller WAITS here until step2 returns\n// executed: the sync block ran on the CALLER'S thread — no hop\n\nq.async {\n    q.sync { }        // sync onto the queue I'm ON:\n}                     // executed: SIGTRAP — libdispatch kills the\n                      // process rather than let it hang forever",
+      "underlying": "The deadlock's anatomy is pure b3-01: a serial queue runs ONE item at a time. The running item calls `q.sync{}`, which appends a new item and waits for it — but the new item can't start until the current item finishes, and the current item won't finish until the new one runs. Two waits, closed ring — b1-03's retain-cycle geometry, rebuilt from control flow. Executed on this Mac: the process died with SIGTRAP (exit 133), because libdispatch's serial queues track their current owner and trap on the impossible wait instead of hanging silently.\n\nThe caller's-thread optimization matters for reasoning: `q.sync{}` from the main thread ran its block ON the main thread (verified) — the queue's serial guarantee is held by BLOCKING the queue, not by moving the work. So sync work on a \"background queue\" can still be main-thread work; and `main.sync` from main is the same self-deadlock wearing different clothes (UIKit's classic frozen-launch bug).\n\nWhen is sync legitimate? Reading a value that a serial queue protects (next loop), or sequencing at startup. The discipline: sync is a WAIT — never call it on the main thread for anything slow (b2-01's frozen turn), and never when you can't name which queue you're already on. If you don't know where you are, you can't know sync is safe.",
+      "whyItMatters": "\"What happens if you call sync on the current queue?\" is a set-piece interview question — and the real-world version, main.sync in a launch path or a completion handler that's secretly already on your queue, freezes real apps. Exit 133 is cheaper to meet in a playground."
+     },
+     "exercise": {
+      "prompt": "Predict each program's complete output and final fate (runs to completion / hangs / traps). Programs A and B differ by one word.",
+      "code": "// A\nlet q = DispatchQueue(label: \"q\")\nprint(\"1\")\nq.async { print(\"2\") }\nprint(\"3\")\nq.sync  { print(\"4\") }\nprint(\"5\")\n\n// B\nlet q = DispatchQueue(label: \"q\")\nprint(\"1\")\nq.async {\n    print(\"2\")\n    q.sync { print(\"4\") }   // ← the one changed line\n    print(\"never?\")\n}\nprint(\"3\")\nThread.sleep(forTimeInterval: 1)\nprint(\"5\")",
+      "solution": "A: prints 1, 3 or 1,3 with 2 interleaving (2 may land before or after 3 — async gives no ordering against the caller), then 4, then 5 — ALWAYS in that tail order, because sync waits for the queue to drain 2 first (serial FIFO), run 4, and only then releases the caller. Runs to completion.\n\nB: prints 1, then 3 and 2 in either order — then TRAPS (SIGTRAP, exit 133). The async item is RUNNING on q when it calls q.sync: one-at-a-time meets wait-for-me, the impossible ring. \"never?\" and 4 never print; 5 never arrives because the trap kills the process first.\n\nThe one-word lesson: sync's safety depends entirely on WHERE YOU ALREADY ARE.",
+      "explanation": "A's guaranteed tail (4 before 5, 2 before 4) shows sync as a legitimate sequencing fence. B is the same call from inside the fence — and libdispatch chooses a loud corpse over a silent hang, which is a gift: the crash names the queue."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what's the difference between sync and async, and why does sync on the current serial queue deadlock?",
+      "modelAnswer": "async appends the work item to the queue and returns immediately; sync appends it and blocks the caller until it completes — often running the block directly on the caller's thread since it's waiting anyway. Calling sync on the serial queue you're currently running on deadlocks by construction: the queue runs one item at a time, the current item waits for the new one, and the new one can't start until the current one finishes. Modern libdispatch detects this specific cycle and traps rather than hanging.",
+      "sets": [
+       [
+        {
+         "q": "What exactly does `q.sync { work() }` do to the CALLER?",
+         "options": [
+          "Nothing — sync only affects the queue's ordering",
+          "Blocks it until work() has run to completion",
+          "Moves the caller onto queue q permanently",
+          "Raises the caller's priority until work() finishes"
+         ],
+         "correct": 1,
+         "explain": "sync is a wait. The queue still drains in order — the caller just stands still until its item's turn comes and finishes."
+        },
+        {
+         "q": "Executed here: a sync block from main ran ON the main thread. Why does GCD do that?",
+         "options": [
+          "The pool was exhausted at that moment",
+          "The caller is blocked anyway; running it in place skips a hop",
+          "sync blocks always run on the submitting thread by contract",
+          "Serial queues can only use one thread, ever"
+         ],
+         "correct": 1,
+         "explain": "An optimization with reasoning consequences: 'on my background queue' via sync can still be main-thread CPU time. The serial guarantee is enforced by blocking the queue, not by relocating work."
+        },
+        {
+         "q": "The self-deadlock (sync on your own serial queue) is, structurally…",
+         "options": [
+          "a priority inversion between two pool threads",
+          "two waits in a ring: each item awaits the other",
+          "a queue-capacity overflow",
+          "a race condition on the queue's label"
+         ],
+         "correct": 1,
+         "explain": "One-at-a-time plus wait-for-me closes the ring — b1-03's cycle geometry in control flow. No progress is possible from inside."
+        }
+       ],
+       [
+        {
+         "q": "Modern libdispatch responds to the self-deadlock by…",
+         "options": [
+          "queueing the sync item for after the current one",
+          "trapping — killing the process rather than hanging it",
+          "silently promoting the queue to concurrent",
+          "waiting with a 30-second timeout, then continuing"
+         ],
+         "correct": 1,
+         "explain": "Executed here: SIGTRAP, exit 133. A loud deterministic corpse beats a frozen app — the crash report points at the exact sync call."
+        },
+        {
+         "q": "`DispatchQueue.main.sync { … }` called from the main thread is…",
+         "options": [
+          "the correct way to force an immediate UI update",
+          "the same self-deadlock — main is a serial queue you're on",
+          "safe, because the main queue is special-cased",
+          "an async call in disguise"
+         ],
+         "correct": 1,
+         "explain": "Main is serial and you're on it: the ring closes. The classic real-world sighting is a frozen app in a launch path or a callback that was already on main."
+        },
+        {
+         "q": "Code review: a completion handler does `stateQueue.sync { cache[key] = value }`, and the API sometimes calls completions on stateQueue itself. Verdict?",
+         "options": [
+          "Fine — sync is safely reentrant on the same queue",
+          "A latent trap: arriving on stateQueue makes that sync the ring",
+          "Fine, as long as the write is fast",
+          "Wrong only in the case where cache is a value type"
+         ],
+         "correct": 1,
+         "explain": "sync's safety depends on where you already are — and 'sometimes on stateQueue' means sometimes dead. Fixes: async the write, or have the API guarantee its callback queue."
+        }
+       ]
+      ]
+     },
+     "transfer": "Grep your project for `.sync {`. For each hit, answer two questions in writing: (1) which queue is the CALLER on at that moment — can you actually prove it? (2) what is the sync waiting FOR — is the wait necessary? Any hit where you can't answer (1) is a latent b3-02.",
+     "verify": "Executed on this Mac: `q.sync{}` from main ran its block with Thread.isMainThread == true (caller's-thread optimization); the self-deadlock program died with exit 133 (SIGTRAP) — libdispatch's detection, not a hang. Program A's tail order (…4, 5) is reproducible every run; compile the deadlock variant and meet exit 133 yourself.",
+     "goDeeper": "WWDC 2017 \"Modernizing Grand Central Dispatch Usage\". libdispatch source: _dispatch_sync_f_slow — the trap you met, in C. Apple docs: DispatchQueue.sync's dead-simple warning paragraph."
+    },
+    {
+     "id": "b3-03",
+     "title": "Data races: when += loses updates",
+     "concept": {
+      "definition": "A data race is two threads touching the same memory at the same time with at least one writing. `n += 1` is not one operation — it's read, add, write (b0-01's box, read and rewritten) — so two threads can both read 5, both write 6, and one increment vanishes. Executed on this Mac: four threads incrementing a shared counter 100,000 times each produced 371,640 — not 400,000. No crash, no error: 28,360 updates silently lost.",
+      "code": "final class Counter { var n = 0 }\nlet c = Counter()\n\nDispatchQueue.concurrentPerform(iterations: 4) { _ in\n    for _ in 0..<100_000 { c.n += 1 }      // read-add-write, UNPROTECTED\n}\nprint(c.n)   // executed: 371640 — lost 28,360 increments\n\n// same, but every += goes through one serial queue:\n// executed: 400000, exactly, every run",
+      "underlying": "Zoom into the loss: thread A reads n (5), thread B reads n (5), A writes 6, B writes 6 — two increments, net one. That interleaving is invisible in source; it exists only in the scheduler's timing, which is why races are the definitive heisenbug: the numbers change per run (rerun the script and lose a different amount), tests with light load pass, production with real load corrupts.\n\nThe classical cure is the previous loop's tool used deliberately: route every access through one SERIAL queue. One-at-a-time is mutual exclusion — the read-add-write completes before the next begins. Executed: exactly 400,000, every run. (Locks — NSLock, os_unfair_lock — are the same idea with less ceremony; the serial queue's advantage is that it also gives you ordering and an async option.)\n\nTwo sharp edges. First, races need SHARED MUTABLE state — b1-09's all-struct models are immune by construction (copies, not shares), which is half of why Swift pushes value types. Second, a data race is undefined behavior, not just wrong arithmetic: torn reads of multi-word values (b0-11's array handles, b1-12's existentials) can crash or corrupt. Swift 6's strict concurrency mode exists to make this entire loop's bug a COMPILE error — Sendable checking — which is where this block is headed: the machinery you're learning is what those compiler errors are protecting you from.",
+      "whyItMatters": "\"What's a data race and how do you prevent one?\" is the interview question; the silent-lost-updates demo is the answer that shows you've SEEN one. This is also the exact bug class Swift 6 concurrency was built to eliminate — you're learning the disease before the vaccine."
+     },
+     "exercise": {
+      "prompt": "Predict each version's output range and reliability. Then answer the trap question: version C moves the loop INSIDE the sync — is it equivalent to B, and what did it trade?",
+      "code": "// A — unprotected\nDispatchQueue.concurrentPerform(iterations: 4) { _ in\n    for _ in 0..<100_000 { c.n += 1 }\n}\n\n// B — every increment serialized\nlet guard_ = DispatchQueue(label: \"guard\")\nDispatchQueue.concurrentPerform(iterations: 4) { _ in\n    for _ in 0..<100_000 { guard_.sync { c.n += 1 } }\n}\n\n// C — whole loop serialized\nDispatchQueue.concurrentPerform(iterations: 4) { _ in\n    guard_.sync { for _ in 0..<100_000 { c.n += 1 } }\n}",
+      "solution": "A: some value BELOW 400,000, different every run (executed here: 371,640; yours will differ). Never above, rarely exact: lost updates only subtract.\nB: exactly 400,000, every run — each read-add-write is one uninterrupted turn on the guard queue.\nC: exactly 400,000 as well — still mutually exclusive. Equivalent RESULT, different shape: C takes the queue once per thread instead of 100,000 times (far less sync overhead), but each thread holds the guard for its whole loop — the four \"concurrent\" workers now run their bodies strictly one after another. B has finer interleaving and more overhead; C is nearly serial execution with extra steps.\n\nThe general trade: lock granularity. Fine (B) = more concurrency, more synchronization cost. Coarse (C) = cheap and simple, less parallelism.",
+      "explanation": "A's varying loss is the fingerprint to remember: races don't fail, they LEAK correctness. And C's honesty is worth respecting — if the whole job must serialize anyway, structure it that way instead of paying per-increment sync tax."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 ssentences: what is a data race, why does `n += 1` lose updates across threads, and name two ways to prevent it.",
+      "modelAnswer": "A data race is unsynchronized access to shared memory from multiple threads where at least one access writes — and it's undefined behavior, not just wrong values. `n += 1` compiles to read, add, write, so two threads can read the same old value and both write back the same new one, silently losing an increment. Prevention: make the state not shared (value types, copies), or serialize access — a lock, or a serial queue that every read and write goes through.",
+      "sets": [
+       [
+        {
+         "q": "Why can `n += 1` lose updates across threads?",
+         "options": [
+          "Integer overflow silently wraps the counter around",
+          "It's read, add, write — and two threads can interleave the steps",
+          "The optimizing compiler reorders increments randomly",
+          "Each thread keeps its own private copy of n forever"
+         ],
+         "correct": 1,
+         "explain": "Both read 5, both write 6: two increments, net one. b0-01's read-modify-write on one box, with the scheduler shuffling the steps."
+        },
+        {
+         "q": "Executed here: 4×100,000 unprotected increments gave 371,640. What does rerunning produce?",
+         "options": [
+          "371,640 again — the loss is deterministic",
+          "A different number below 400,000 almost every run",
+          "Exactly 400,000 once the caches warm up",
+          "Numbers above 400,000 as writes duplicate"
+         ],
+         "correct": 1,
+         "explain": "The loss depends on scheduling timing — the definitive heisenbug fingerprint. Lost updates only subtract, so it stays below the true count."
+        },
+        {
+         "q": "Routing every access through one serial queue fixes the race because…",
+         "options": [
+          "serial queues run at higher priority than the racers",
+          "one-at-a-time execution completes each read-add-write whole",
+          "the queue's thread has exclusive CPU-cache access",
+          "sync calls flush the counter to disk"
+         ],
+         "correct": 1,
+         "explain": "Serial IS mutual exclusion — b3-01's ordering policy, weaponized. Executed: exactly 400,000 every run."
+        }
+       ],
+       [
+        {
+         "q": "Why are b1-09's all-struct model layers immune to data races on their own data?",
+         "options": [
+          "Structs are stored in thread-local memory",
+          "Value copies mean no SHARED mutable state to race on",
+          "The compiler adds locks to struct mutations",
+          "They aren't — structs race identically"
+         ],
+         "correct": 1,
+         "explain": "Races need sharing; b0-02's copy semantics remove it. This is half the reason Swift pushes value types — the other half arrives with Sendable."
+        },
+        {
+         "q": "A race on a multi-word value (an Array handle, an existential) can do worse than lose updates. Why?",
+         "options": [
+          "Multi-word values are simply copied more slowly",
+          "Torn reads can see half-written values — UB, corruption, crashes",
+          "Arrays detect torn access and throw exceptions",
+          "Copy-on-write makes every race of this kind benign"
+         ],
+         "correct": 1,
+         "explain": "A reader catching word one of the new value and word two of the old holds a frankenvalue. 'Race' means UB — lost math is the GENTLE outcome."
+        },
+        {
+         "q": "Swift 6 strict concurrency relates to this loop how?",
+         "options": [
+          "It inserts locks around every var automatically",
+          "It turns this loop's bug into a compile error via Sendable",
+          "It detects races at runtime and retries them",
+          "It removes threads from the language entirely"
+         ],
+         "correct": 1,
+         "explain": "The compiler now refuses unsynchronized sharing across concurrency boundaries. The rest of this block builds to exactly that machinery — disease first, then vaccine."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one `var` in your project that more than one queue/thread can plausibly touch (a cache dictionary, a flag set from a completion handler). Write down its read-modify-write sites. Protect it with a serial queue — or make it a value handed between contexts instead of shared.",
+     "verify": "Executed on this Mac (compiled with swiftc): unprotected 4×100,000 increments → 371,640 (lost 28,360); the identical loop with every += inside a serial-queue sync → 400,000 exactly. Rerun the race version three times and record three different losses — that variability IS the lesson.",
+     "goDeeper": "WWDC 2021 \"Protect mutable state with Swift actors\" — this loop's problem, Apple's framing. WWDC 2022 \"Eliminate data races using Swift Concurrency\" — the compile-time cure. The Thread Sanitizer (Xcode scheme → Diagnostics) catches these at runtime."
+    },
+    {
+     "id": "b3-04",
+     "title": "async/await: suspension, not blocking",
+     "concept": {
+      "definition": "`await` marks a SUSPENSION point: the function can pause there, give its thread back to the pool, and resume later — possibly on a different thread — when the awaited work completes. Suspension is the opposite of blocking: a blocked thread is held hostage doing nothing; a suspended function holds NO thread at all. Executed here: 200 tasks all sleeping concurrently occupied just 11 threads.",
+      "code": "func loadUser() async throws -> User {\n    let (data, _) = try await URLSession.shared.data(from: url)\n    //              ↑ SUSPEND: thread returned to the pool.\n    //                Function state saved on the heap.\n    return try decode(data)\n    //              ↑ RESUME: possibly on a DIFFERENT thread\n}\n// executed: across await, the thread changed in 3/10 pool runs —\n// and in 0/10 on the MainActor, which always resumes on main",
+      "underlying": "What the compiler does with an async function: it slices the body at each await into segments (a state machine), and the local state that must survive — b0-07's frame contents — moves to a heap allocation, because the stack frame can't outlive its thread visit. At a suspension, the current segment returns the thread to the cooperative pool; when the awaited result is ready, the next segment is scheduled to continue. That's why 200 sleeping tasks needed 11 threads: sleeping tasks hold zero threads.\n\nThe cooperative pool is sized to the CPU cores — and that smallness is a contract: code on the pool must never BLOCK a thread (no Thread.sleep, no lock-and-wait, no sync I/O), because blocked pool threads can't be reclaimed the way suspended functions can. Block enough of them and all async work stops. Suspend, don't block, is the pool's one law.\n\nTwo verified precision points. \"May resume on a different thread\" is exactly MAY: 3 of 10 detached runs hopped; 7 didn't. Never store or compare thread identity across an await. And actor-isolated code is the exception with a guarantee: top-level/MainActor code resumed on main 10 of 10 — isolation, not thread identity, is what's preserved (which is Swift's answer to b2-12's hop-home dance: @MainActor makes the compiler do it).\n\nOne more honesty: `await` does NOT mean 'runs in background'. Marking a call await adds a suspension POINT; where the work runs is decided by what you're calling and its isolation. async/await is about not-blocking, not about parallelism — that's the next loop's job.",
+      "whyItMatters": "\"What actually happens at an await?\" is the modern-concurrency interview opener, and 'the thread is released, state moves to the heap, resumption may be elsewhere' is the answer that shows machinery. The suspend-don't-block law explains every 'why is my async code frozen' mystery involving locks or sleeps."
+     },
+     "exercise": {
+      "prompt": "Predict-and-explain. Both functions 'wait one second'. Explain what each does to its THREAD, predict what happens when 50 of each run concurrently on the cooperative pool (≈10 threads), and name the law the second one breaks.",
+      "code": "func politeWait() async throws {\n    try await Task.sleep(nanoseconds: 1_000_000_000)\n}\n\nfunc rudeWait() async {\n    Thread.sleep(forTimeInterval: 1.0)   // same second… or is it?\n}\n\n// 50 concurrent politeWait() calls → ?\n// 50 concurrent rudeWait() calls   → ?",
+      "solution": "politeWait suspends: at the await, each task hands its thread back; 50 sleeping tasks hold ZERO threads (executed here: 200 held ~11 only at the running moments). All 50 finish in ~1 second total, and the pool stays responsive throughout.\n\nrudeWait blocks: Thread.sleep holds the current pool thread hostage for the full second. Fifty of them need fifty thread-seconds through a ~10-thread pool: they run in waves (~10 at a time, ~5 seconds total), and during each wave those threads can serve NO other async work — starving unrelated tasks. The law broken: never block a cooperative-pool thread — suspend instead.\n\nSame observable 'wait', opposite machinery: one is a bookmark, the other is a hostage.",
+      "explanation": "The compiler can't always save you: Thread.sleep, sync I/O, semaphores, and lock-waits inside async functions all compile fine and all take hostages. When old blocking code must be called, fence it off (a dedicated dispatch queue or executor) rather than letting it squat the pool."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what happens at an await, where does the function's state go, and what is the cooperative pool's one rule?",
+      "modelAnswer": "At an await the function may suspend: it returns its thread to the cooperative pool and its live local state is stored on the heap — the body is compiled as a state machine sliced at each suspension point. When the awaited result arrives, the continuation is scheduled and may resume on a different thread, unless actor isolation (like MainActor) pins it. The pool is small — about one thread per core — so its rule is: never block a pool thread; suspend instead.",
+      "sets": [
+       [
+        {
+         "q": "At a suspension point, what happens to the thread that was running the function?",
+         "options": [
+          "It waits, parked, until the function resumes",
+          "It returns to the pool and can run any other task",
+          "It's destroyed and a new one is made at resume",
+          "It spins on the awaited value's memory address"
+         ],
+         "correct": 1,
+         "explain": "Suspension releases the thread — executed here as 200 concurrently sleeping tasks holding just 11 threads. Blocking is the version where the thread waits, parked; await is the version where it leaves."
+        },
+        {
+         "q": "Where does a suspended function's local state live?",
+         "options": [
+          "In the thread's stack frame, locked in place",
+          "On the heap — the frame can't outlive its thread visit",
+          "In CPU registers reserved by the scheduler",
+          "It's discarded and recomputed at resumption"
+         ],
+         "correct": 1,
+         "explain": "b0-07's frames die with their visit; state that must survive suspension is heap-allocated by the compiler's state-machine transform. Async frames are heap frames."
+        },
+        {
+         "q": "After an await in a nonisolated function, Thread.current is…",
+         "options": [
+          "guaranteed to be the same thread as before",
+          "possibly different — resumption takes any free pool thread",
+          "always the main thread, for safety",
+          "undefined behavior to even read"
+         ],
+         "correct": 1,
+         "explain": "Executed: 3 of 10 runs hopped, 7 didn't. MAY is the word — never cache thread identity across a suspension point."
+        }
+       ],
+       [
+        {
+         "q": "Fifty async tasks each call Thread.sleep(1) on the cooperative pool. The system-wide effect?",
+         "options": [
+          "Identical to fifty await Task.sleep calls",
+          "Waves of hostage threads, starving all other async work",
+          "The pool grows fifty temporary threads",
+          "The compiler converts them to suspensions"
+         ],
+         "correct": 1,
+         "explain": "Blocking holds threads the pool can't reclaim; the pool is core-sized on purpose. Suspend-don't-block is the one law — old blocking APIs get fenced off, not awaited around."
+        },
+        {
+         "q": "Why did MainActor code resume on main 10/10 times while pool code hopped?",
+         "options": [
+          "The main thread is faster at resuming continuations",
+          "Isolation is preserved across await — MainActor pins home",
+          "MainActor code never actually suspends",
+          "A scheduler bug that Apple documents as a feature"
+         ],
+         "correct": 1,
+         "explain": "Swift guarantees ISOLATION, not thread identity — and MainActor's isolation happens to be a specific thread. This is b2-12's hop-home dance, moved into the type system."
+        },
+        {
+         "q": "Marking a call with await means the work runs in the background.",
+         "options": [
+          "True — await always moves work off the caller",
+          "False — await adds a suspension point; the callee decides where",
+          "True for throwing functions only",
+          "False — await forces work onto the main thread"
+         ],
+         "correct": 1,
+         "explain": "await is about not-blocking while you wait, not about relocation. Parallelism needs structured tools — async let and task groups, next loop."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one async function in your project (or write your first). Circle every await and narrate: 'here I may lose the thread, and these locals survive on the heap.' Then hunt for the law-breaker: any Thread.sleep, semaphore.wait, or sync network call inside async code. That's your pool hostage.",
+     "verify": "Executed on this Mac (compiled Swift): 200 concurrently sleeping tasks occupied 11 distinct threads; across an await, the thread changed in 3/10 detached (pool) runs and 0/10 MainActor runs. Rerun hop counts vary — that variance is the 'MAY' in the definition.",
+     "goDeeper": "WWDC 2021 \"Swift concurrency: Behind the scenes\" — the state-machine transform and the pool's design, from the engineers. SE-0296 (async/await). WWDC 2021 \"Meet async/await in Swift\"."
+    },
+    {
+     "id": "b3-05",
+     "title": "Structured concurrency: the task tree",
+     "concept": {
+      "definition": "Swift concurrency organizes work as a TREE: every task started with `async let` or a task group is a CHILD of the current task — it cannot outlive its parent, its errors propagate upward, and cancellation flows downward automatically. Executed here: two 0.5-second children under `async let` finished together in 0.5s (not 1.0s), and cancelling a parent cancelled its sleeping child mid-nap.",
+      "code": "// sequential: 1.0s — the second await waits for the first\nlet a = try await slowValue(1)\nlet b = try await slowValue(2)\n\n// structured children: 0.5s — both run CONCURRENTLY\nasync let x = slowValue(10)     // child task starts NOW\nasync let y = slowValue(20)     // second child, in parallel\nlet sum = try await x + y       // parent suspends until both done\n// executed: sequential 1.0s, async let 0.5s — time is max, not sum",
+      "underlying": "The word 'structured' is a promise about SCOPE: a child's lifetime is bracketed by its parent's, the way b0-09 bracketed locals with braces. You physically cannot leak a structured child — the compiler requires every async let to be awaited (or the scope's exit awaits-and-cancels it), and a task group's closing brace waits for all children. Compare unstructured `Task { }` and `Task.detached { }`: those are b1-03-style free objects you must remember to keep, await, and cancel by hand.\n\nThe tree carries three things automatically. Results: awaiting a child yields its value. Errors: a throwing child's error propagates to the parent's await — and a failed child cancels its siblings (the whole group either delivers or cleans up). Cancellation: executed here, cancelling the parent flagged the child, whose Task.sleep threw CancellationError mid-sleep. One cancel() at the root, and the entire subtree gets the message — no bookkeeping, no forgotten download.\n\nCancellation is COOPERATIVE, though: the flag is set, but only code that checks it stops. Task.sleep and URLSession check for you; your own loops must ask — `try Task.checkCancellation()` or `if Task.isCancelled` at sensible intervals. A cancelled task that never checks runs to completion, warm and oblivious.\n\nWhen do you need `withTaskGroup` over async let? Dynamic counts: async let is for a KNOWN number of children (each needs its own name); a group handles N-items-from-an-array, collecting results as they finish.",
+      "whyItMatters": "\"async let vs Task vs task group\" is the modern interview's sorting question, and 'children can't outlive parents, cancellation flows down, errors flow up' is the three-line answer. Practically: structure is what makes cancel-on-dismiss work without a single line of cleanup code."
+     },
+     "exercise": {
+      "prompt": "Predict total wall-clock time and what prints, for both versions. Each fetch takes 1 second. Then answer: in version B, what happens to the OTHER two fetches if fetchB throws at 0.3s?",
+      "code": "// A\nlet a = try await fetchA()   // 1s\nlet b = try await fetchB()   // 1s\nlet c = try await fetchC()   // 1s\nprint(\"A done:\", a, b, c)\n\n// B\nasync let a = fetchA()\nasync let b = fetchB()\nasync let c = fetchC()\nprint(\"B done:\", try await a, try await b, try await c)",
+      "solution": "A: ~3 seconds — each await completes before the next line starts the next fetch. Sequential by construction.\nB: ~1 second — all three children start at their async let lines and run concurrently; the awaits at the end collect. Executed equivalent here: 0.5+0.5 sequential = 1.0s vs async let = 0.5s.\n\nIf fetchB throws at 0.3s in B: the error surfaces at `try await b` (order of awaiting doesn't matter — it's stored), the parent's scope exits with the throw, and structured concurrency CANCELS the remaining children (a and c get their cancellation flags; well-behaved fetches abort). Nothing leaks, nothing keeps downloading into the void — the tree cleans itself.",
+      "explanation": "The B timing is the free lunch; the B error story is the actual product: one child's failure becomes everyone's cleanup, automatically. With unstructured Tasks you'd be writing that cancellation choreography yourself — and forgetting it."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what makes structured concurrency 'structured', and what three things flow through the task tree automatically?",
+      "modelAnswer": "Structure means scope: children started with async let or in a task group cannot outlive their parent — every child is awaited or cancelled by the time the scope ends, so tasks can't leak. Three things flow automatically: results flow up through await, errors propagate up and a failing child cancels its siblings, and cancellation flows down the whole subtree from a single cancel. Cancellation is cooperative — the flag is set instantly, but only code that checks it (Task.sleep and URLSession do; your loops must) actually stops.",
+      "sets": [
+       [
+        {
+         "q": "Two 1-second children under async let, then both awaited. Total time?",
+         "options": [
+          "~2 seconds — awaits serialize the children",
+          "~1 second — children run from their declaration lines",
+          "~0.5 seconds — the pool splits each child across cores",
+          "Unpredictable — depends on pool pressure"
+         ],
+         "correct": 1,
+         "explain": "Executed: 0.5s for two 0.5s children vs 1.0s sequential. async let STARTS the child; await only collects. Time is max, not sum."
+        },
+        {
+         "q": "What does 'structured' actually guarantee about a child task?",
+         "options": [
+          "It runs at the same priority as its parent",
+          "It cannot outlive its parent's scope",
+          "It always runs on the same thread as its parent",
+          "It gets its own dedicated pool thread"
+         ],
+         "correct": 1,
+         "explain": "b0-09's scoping promise, ported to tasks: the brace closes, the children are accounted for. Unstructured Task{} is the version where YOU are the accountant."
+        },
+        {
+         "q": "parent.cancel() was executed here. What reached the sleeping child?",
+         "options": [
+          "Nothing — cancellation applies to the parent only",
+          "The cancellation flag — its Task.sleep threw mid-nap",
+          "A forced termination that skipped its catch block",
+          "A priority drop to background"
+         ],
+         "correct": 1,
+         "explain": "Cancellation flows DOWN the tree, one cancel to the root. The child's sleep checked the flag and threw — verified with 'child cancelled: true'."
+        }
+       ],
+       [
+        {
+         "q": "A cancelled task whose code never checks Task.isCancelled will…",
+         "options": [
+          "be terminated by the runtime within a millisecond",
+          "run happily to completion — cancellation is cooperative",
+          "throw at its next function call",
+          "pause until un-cancelled"
+         ],
+         "correct": 1,
+         "explain": "cancel() sets a flag; stopping is the code's job. Sprinkle checkCancellation into your own loops — the system APIs already check for you."
+        },
+        {
+         "q": "One of three async-let siblings throws. The other two…",
+         "options": [
+          "keep running to completion; their results are discarded",
+          "are cancelled — a failing child triggers sibling cleanup",
+          "restart automatically once",
+          "become detached tasks owned by the runtime"
+         ],
+         "correct": 1,
+         "explain": "The tree either delivers or cleans up: error up, cancellation across and down. This is the choreography you'd otherwise hand-write around every multi-fetch."
+        },
+        {
+         "q": "You need one child per element of a runtime array. The right tool?",
+         "options": [
+          "A chain of async let declarations in a loop",
+          "withTaskGroup — dynamic children, results as they finish",
+          "One Task.detached per element, stored in an array",
+          "Sequential awaits — dynamic counts can't be concurrent"
+         ],
+         "correct": 1,
+         "explain": "async let needs one NAME per child, so it's for known counts. Groups take N addTask calls and keep the same structural guarantees; detached tasks abandon them."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find a place in your project that fires several independent fetches sequentially (await, await, await — or nested completion handlers). Sketch the async-let version and answer: what's the new wall-clock time, and what happens on one failure that didn't happen before?",
+     "verify": "Executed on this Mac: sequential awaits of two 0.5s children took 1.0s; async let took 0.5s; parent.cancel() made the child's Task.sleep throw CancellationError ('child cancelled — flowed down the tree: true'). Rerun and vary the sleep durations — time tracks the max child, always.",
+     "goDeeper": "WWDC 2021 \"Explore structured concurrency in Swift\" — the tree, drawn. SE-0304 (structured concurrency) — the design doc's 'structured' section is genuinely readable. WWDC 2023 \"Beyond the basics of structured concurrency\"."
+    },
+    {
+     "id": "b3-06",
+     "title": "Actors: the race fixed at the type level",
+     "concept": {
+      "definition": "An actor is a reference type whose mutable state is ISOLATED: only one task can execute inside the actor at a time, and all outside access must go through `await`. b3-03's counter, rebuilt as an actor and hammered by 4 tasks × 100,000 increments, produced exactly 400,000 — the serial-queue fix, but enforced by the compiler instead of by your discipline.",
+      "code": "actor Counter {\n    var n = 0                      // isolated state\n    func increment() { n += 1 }    // runs INSIDE the actor: no await\n}\n\nlet c = Counter()\n// outside: every access is a potential suspension\nawait c.increment()\nprint(await c.n)\n\n// c.n += 1  ← does not COMPILE from outside: that's the point\n// executed: 4 tasks × 100,000 increments → 400000, exactly",
+      "underlying": "Mechanically an actor is a class fused with a serial executor — b3-02's serial queue built into the type. Calls from outside don't run your code directly: they enqueue onto the actor and `await` marks the hop (b3-04's suspension). Inside actor methods there's no await for own state, because you're already isolated — one task at a time, by construction. The compile error on outside sync access is the upgrade over GCD: with a serial queue, forgetting the queue was a silent race (28,360 lost increments); with an actor, forgetting isolation is a red squiggle.\n\nThe subtle cost is REENTRANCY: when an actor method awaits something EXTERNAL (a network call, another actor), the actor is released during that suspension — other calls can enter and mutate state before your method resumes. Actor state is protected BETWEEN suspension points, not across them: check your assumptions after every await inside an actor (\"is this entry still in the cache?\"), or don't suspend mid-critical-section.\n\n@MainActor is one global actor whose executor is the main thread: mark a class or property with it and the compiler enforces b2-12's rule — off-main access to UI state becomes a compile error, and awaited calls hop home automatically (verified in b3-04: MainActor resumed on main 10/10). The b2-12 dance — 'remember to DispatchQueue.main.async' — becomes a type annotation the compiler polices.",
+      "whyItMatters": "\"What's an actor and how does it differ from a serial queue?\" plus \"what's actor reentrancy?\" are the two questions that separate modern-Swift candidates. @MainActor is the answer to a whole genre of UIKit threading bugs you learned to fear in b2-12."
+     },
+     "exercise": {
+      "prompt": "Find the bug — it's not a data race. The cache deduplicates downloads: if an image is already cached, return it; otherwise download and store. Under concurrent load, the SAME url still downloads multiple times. Explain precisely why, using the word 'reentrancy', and sketch the fix.",
+      "code": "actor ImageCache {\n    var images: [URL: UIImage] = [:]\n\n    func image(for url: URL) async throws -> UIImage {\n        if let cached = images[url] { return cached }\n        let img = try await download(url)     // ← suspension point\n        images[url] = img\n        return img\n    }\n}",
+      "solution": "The actor releases itself at `try await download(url)` — reentrancy. Task 1 checks the cache (miss), starts downloading, SUSPENDS; the actor is now open, so task 2 enters with the same url, ALSO misses (task 1 hasn't stored yet), and starts a second download. No data race — the dictionary is never touched concurrently — but the invariant 'one download per url' broke across the suspension.\n\nFix: store the TASK, not just the result — a [URL: Task<UIImage, Error>] cache. The first caller inserts its in-flight Task BEFORE suspending (no await between check and insert); later callers find the task and await its value. The check-and-reserve is atomic because it contains no suspension point.",
+      "explanation": "The rule this teaches: actor state is consistent between awaits, not across them. Every `await` inside an actor method is a door you left open — re-validate on return, or design so the critical section contains none."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what does an actor guarantee, how does it differ from protecting state with a serial queue, and what is reentrancy?",
+      "modelAnswer": "An actor guarantees its mutable state is only touched by one task at a time — external access requires await and hops onto the actor's serial executor. A serial queue gives the same runtime exclusion, but the actor's isolation is compiler-enforced: forgetting the queue was a silent race, forgetting isolation is a compile error. Reentrancy is the caveat: when an actor method awaits something external, the actor is released and other calls can interleave — so invariants must be re-checked after every internal suspension point.",
+      "sets": [
+       [
+        {
+         "q": "Why does external access to actor state require await?",
+         "options": [
+          "Actor memory lives in a separate address space",
+          "The call may enqueue on the actor's executor and wait its turn",
+          "Actors are always stored on background threads",
+          "await triggers the actor's reference counting"
+         ],
+         "correct": 1,
+         "explain": "One-at-a-time means your call might have to queue — b3-02's serial idea with b3-04's suspension instead of blocking. Inside the actor, own-state access needs no await: you already hold the turn."
+        },
+        {
+         "q": "Actor vs serial-queue protection — the decisive upgrade?",
+         "options": [
+          "Actors execute faster than any dispatch queue can",
+          "Isolation bypass is a COMPILE error; a queue bypass raced silently",
+          "Actors allow more than one writer when provably safe",
+          "Actors are exempt from reference counting entirely"
+         ],
+         "correct": 1,
+         "explain": "The discipline moved into the type system. b3-03's 28,360 lost increments required forgetting nothing visible; the actor version can't forget — it won't build."
+        },
+        {
+         "q": "The executed actor counter test produced…",
+         "options": [
+          "a number slightly below 400,000 — actors reduce races",
+          "exactly 400,000 — isolation made each increment whole",
+          "exactly 400,000 but only with one task",
+          "a compile error: actors can't hold var state"
+         ],
+         "correct": 1,
+         "explain": "Same hammering as b3-03's race, perfect score. var state is precisely what actors are FOR — holding it safely."
+        }
+       ],
+       [
+        {
+         "q": "An actor method awaits a network call mid-body. During that suspension…",
+         "options": [
+          "the actor stays locked until the method resumes",
+          "other calls may enter and change its state — reentrancy",
+          "all other callers receive CancellationError",
+          "the actor's state is snapshotted and restored after"
+         ],
+         "correct": 1,
+         "explain": "Isolation is one-task-at-a-time, not one-METHOD-to-completion. The await releases the turn; your locals survive but the actor's state may have moved — re-check on resume."
+        },
+        {
+         "q": "@MainActor on a view-model class means…",
+         "options": [
+          "its methods run at UI priority on any thread",
+          "its state is main-thread-isolated, compiler-enforced",
+          "it can only be created from viewDidLoad",
+          "its properties become atomic automatically"
+         ],
+         "correct": 1,
+         "explain": "One global actor whose executor IS the main thread: off-main access won't compile, awaited calls hop home automatically (verified: 10/10 resumed on main). The hop-home dance, retired."
+        },
+        {
+         "q": "The dedup cache downloaded twice under load. The canonical fix?",
+         "options": [
+          "Wrap the dictionary access in a serial queue too",
+          "Cache the in-flight Task, inserted before any suspension",
+          "Mark the actor @MainActor to serialize harder",
+          "Retry the cache check in a loop until stable"
+         ],
+         "correct": 1,
+         "explain": "Check-and-reserve with no await between them is atomic inside the actor; later callers await the stored Task's value. Reentrancy is designed around, not locked away."
+        }
+       ]
+      ]
+     },
+     "transfer": "Take the shared-mutable-state var you found in b3-03's transfer and rewrite its owner as an actor (on paper is fine). Then audit each method: does any await sit between a check and a write? Each one is a reentrancy door — note what could change while it's open.",
+     "verify": "Executed on this Mac: the actor counter absorbed 4×100,000 concurrent increments to exactly 400000 (b3-03's identical load lost 28,360 unprotected). Try adding `c.n += 1` from outside the actor — the compiler refuses; that refusal is the feature.",
+     "goDeeper": "WWDC 2021 \"Protect mutable state with Swift actors\" — including the reentrancy section most people skip. SE-0306 (actors); SE-0316 (@MainActor / global actors). The in-flight-Task cache pattern is in \"Beyond the basics of structured concurrency\" (WWDC 2023)."
+    },
+    {
+     "id": "b3-07",
+     "title": "Sendable: what may cross the boundary",
+     "concept": {
+      "definition": "Sendable is a marker protocol meaning \"values of this type are safe to share across concurrency boundaries.\" Value types with Sendable members conform automatically; classes only if they're final with immutable state; actors are Sendable by construction. In Swift 6 language mode the compiler enforces it: sharing a mutable class across a task boundary is a compile error — b3-03's data race, refused before it exists.",
+      "code": "struct Prefs: Sendable { var theme = \"dark\" }        // ✓ value type\nfinal class Config: Sendable { let theme = \"dark\" }  // ✓ immutable\nactor Session { var token = \"\" }                     // ✓ by construction\n// all three cross task boundaries freely — verified compiling\n\nfinal class UserSettings { var theme = \"dark\" }      // mutable class\nlet shared = UserSettings()\nTask.detached { shared.theme = \"light\" }\n// error: non-Sendable type 'UserSettings' of let 'shared'\n//        cannot exit main actor-isolated context",
+      "underlying": "Why these rules and not others — each falls out of Block 1. A struct crossing a boundary is COPIED (b0-02): each side owns its bytes, nothing shared, nothing to race — provided its fields are Sendable too (a struct carrying a mutable class smuggles the hazard). An immutable final class shares a reference, but there's nothing to write, and no subclass can add mutable state behind the checker's back. An actor shares mutable state ON PURPOSE — and its isolation (b3-06) is exactly the synchronization Sendable demands. A mutable non-final class is the b3-03 counter: shared bytes, unsynchronized writers — refused, with the exact error above, verified on this Mac.\n\nThe modern nuance, also verified: not every non-Sendable crossing errors. Swift's region-based isolation (SE-0414) reasons about VALUES, not just types — a local object the compiler can prove no longer used by the sender may be SENT across a boundary legally, because a transferred value can't race with anyone. Type-level Sendable is the blanket guarantee; region analysis is the flow-sensitive escape valve that keeps strict mode livable.\n\nTwo working tools: `@Sendable` on a closure declares its captures must be Sendable (that's why Task's closure complains about captured vars), and `@unchecked Sendable` is the I-promise escape hatch for classes that synchronize internally (a lock-protected cache) — the compiler trusts you and the b3-03 consequences return if you lied.",
+      "whyItMatters": "Swift 6 migration is this loop: most strict-concurrency errors are Sendable complaints, and knowing WHY each type category passes or fails turns red-squiggle whack-a-mole into design. \"What makes a type Sendable?\" is now a standard interview question."
+     },
+     "exercise": {
+      "prompt": "A reasoning drill. Swift 6 strict mode, each value crossing into a Task.detached. Verdict per case: CROSSES FREELY, COMPILE ERROR, or CROSSES-IF-PROVEN (region analysis). Justify each in one clause: (1) an Int; (2) a struct Point {var x, y: Double}; (3) a mutable final class stored in a GLOBAL; (4) that same class as a fresh LOCAL the sender never touches again; (5) an actor reference; (6) a struct holding a var reference to case-3's class.",
+      "code": "// 1. Int\n// 2. struct Point { var x, y: Double }\n// 3. global: final class Cache { var store: [String: Data] }\n// 4. the same Cache, created locally, sent once, never touched again\n// 5. an actor reference\n// 6. struct Wrapper { var cache: Cache }   // Cache from case 3",
+      "solution": "1. CROSSES — trivially Sendable value.\n2. CROSSES — value type of Sendable fields; the copy is the safety (b0-02).\n3. COMPILE ERROR — verified: \"non-Sendable type … cannot exit main actor-isolated context\". Shared mutable reference = b3-03 waiting.\n4. CROSSES-IF-PROVEN — region analysis can transfer a local whose sender provably stops using it; ownership moved, no sharing remains.\n5. CROSSES — actors are Sendable by construction; their isolation IS the synchronization.\n6. COMPILE ERROR — the struct copies, but the copy contains the same reference: Sendability is recursive through fields. A value-type wrapper doesn't launder a mutable class.",
+      "explanation": "Case 6 is the one that catches people: value semantics at the top level doesn't help if a field smuggles shared mutability (b1-08's asterisk, weaponized). And case 4 is why modern Swift 6 code compiles more often than the folklore suggests — values can MOVE even when types can't SHARE."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what does Sendable mean, which type categories conform and why, and what does Swift 6 do about violations?",
+      "modelAnswer": "Sendable marks types whose values can safely cross concurrency boundaries. Value types conform when their fields do — crossing copies them, so nothing is shared; final classes with only immutable state conform because there's nothing to write; actors conform because their isolation synchronizes access — while mutable classes don't, since sharing them is a data race waiting to happen. In Swift 6 language mode the compiler rejects non-Sendable sharing at compile time, with region-based analysis allowing provably-transferred locals through.",
+      "sets": [
+       [
+        {
+         "q": "Why is a plain struct with Double fields Sendable automatically?",
+         "options": [
+          "Structs carry an internal lock in Swift 6",
+          "Crossing copies it — each side owns its bytes",
+          "Doubles are stored in thread-safe registers",
+          "The compiler serializes all struct access"
+         ],
+         "correct": 1,
+         "explain": "b0-02's copy semantics ARE the thread safety: no shared mutable state, no race possible. The requirement recurses — fields must be Sendable too."
+        },
+        {
+         "q": "A class can be Sendable when it is…",
+         "options": [
+          "marked final, regardless of its properties",
+          "final with immutable (let, Sendable) state only",
+          "allocated on the stack by the optimizer",
+          "referenced from a single module"
+         ],
+         "correct": 1,
+         "explain": "Shared but unwritable is safe; final closes the subclass loophole for smuggled vars. Any var, and it's b3-03's counter again."
+        },
+        {
+         "q": "Actors are Sendable by construction because…",
+         "options": [
+          "the runtime copies actors between tasks",
+          "their isolation already synchronizes every state access",
+          "actor memory is immutable after init",
+          "they exist once per thread, never shared"
+         ],
+         "correct": 1,
+         "explain": "Sendable asks 'is sharing this safe?' — the actor's one-task-at-a-time executor (b3-06) is precisely the required synchronization, built in."
+        }
+       ],
+       [
+        {
+         "q": "Verified here: a fresh LOCAL mutable class sometimes crosses into Task.detached without error. Why?",
+         "options": [
+          "Swift 6 checking always skips local variables entirely",
+          "Region analysis proved a transfer — the sender stops using it",
+          "Task.detached runs with Sendable checking disabled",
+          "The class was promoted to an actor silently"
+         ],
+         "correct": 1,
+         "explain": "SE-0414 reasons about VALUES: moved ownership can't race. Type-level Sendable is the blanket rule; region analysis is the flow-sensitive exception that keeps strict mode livable."
+        },
+        {
+         "q": "`struct Wrapper { var cache: MutableCache }` — does the struct's value-ness make it Sendable?",
+         "options": [
+          "Yes — struct value semantics launder their contents",
+          "No — Sendability recurses; the copy still shares the reference",
+          "Yes, if Wrapper is declared in the same file",
+          "Only when cache is lazily initialized"
+         ],
+         "correct": 1,
+         "explain": "b1-08's asterisk strikes: copying the struct copies the REFERENCE, and both copies point at the same mutable object. Value semantics at the surface, shared mutability underneath."
+        },
+        {
+         "q": "@unchecked Sendable on a class means…",
+         "options": [
+          "the compiler verified it with extra-strict analysis",
+          "you promise internal synchronization; checking stops",
+          "it's Sendable only in debug builds",
+          "its properties become atomic automatically"
+         ],
+         "correct": 1,
+         "explain": "The escape hatch for lock-protected legacy classes. The compiler trusts your word — and b3-03's lost-update arithmetic returns in full if you lied."
+        }
+       ]
+      ]
+     },
+     "transfer": "Flip one target (or file) of your project to Swift 6 language mode and count the Sendable diagnostics. Classify each: mutable class shared (real bug — b3-03 was waiting), value type with a smuggled reference field, or a false alarm a local transfer would fix. The classification IS the migration plan.",
+     "verify": "Executed on this Mac (swiftc -swift-version 6): struct, immutable final class, and actor all crossed into a Task cleanly; a global mutable class errored verbatim — \"non-Sendable type 'UserSettings' of let 'shared' cannot exit main actor-isolated context\"; a purely local instance was allowed through (region analysis). Reproduce all three shapes.",
+     "goDeeper": "WWDC 2022 \"Eliminate data races using Swift Concurrency\" — the boat metaphor for Sendable. SE-0302 (Sendable), SE-0414 (region-based isolation). The Swift 6 migration guide (swift.org/migration)."
+    },
+    {
+     "id": "b3-08",
+     "title": "Continuations: bridging the callback world",
+     "concept": {
+      "definition": "A continuation converts a callback API into an async function: `withCheckedContinuation` suspends the caller (b3-04's machinery) and hands you a `cont` object; whenever the old API's callback finally fires, `cont.resume(returning:)` wakes the suspended function with the value. The contract is exactly one resume: zero leaves the caller suspended forever, twice is a deterministic crash — verified here with its exact message.",
+      "code": "// the old world\nfunc legacyFetch(completion: @escaping (Int) -> Void) { … }\n\n// the bridge\nfunc fetch() async -> Int {\n    await withCheckedContinuation { cont in\n        legacyFetch { value in\n            cont.resume(returning: value)   // exactly ONCE\n        }\n    }\n}\nlet v = await fetch()   // executed: 42, via a real async suspension",
+      "underlying": "What's in the `cont` box: the suspended function's resumption handle — b3-04's heap-stored state machine, reified as a value you can carry into a callback, store in a property, or pass to a delegate. That portability is the whole trick: async/await needs to know when to resume, and the continuation lets ANY old notification style — completion closure, delegate method, target-action — deliver that signal.\n\nThe exactly-once contract is load-bearing. Resume twice and the checked variant traps — executed here: \"SWIFT TASK CONTINUATION MISUSE: bad() tried to resume its continuation more than once, returning 2!\" (exit 133, b3-02's trap style). Resume never, and the awaiting task is suspended for eternity — no crash, no timeout, just a task that never continues (the checked variant at least logs a leak warning when the continuation is discarded). Audit every path through the callback: success, failure, early returns — each must resume exactly once, which is why `withCheckedThrowingContinuation` (resume(throwing:) for the error branch) exists.\n\nChecked vs unsafe: `withUnsafeContinuation` skips the misuse bookkeeping for speed. The professional default is checked — keep it until a profiler names the continuation as hot, which it almost never is. Delegate-based APIs bridge the same way with one extra step: store the continuation in a property when the request starts, resume and clear it in the delegate callback. This bridging is how the async URLSession methods, and every 'async wrapper' you've used, are built underneath.",
+      "whyItMatters": "Every real codebase has callback APIs that predate async/await — continuations are the official bridge, and \"how would you wrap a completion-handler API?\" is a practical interview standard. The exactly-once bugs (hung task, misuse trap) are what code review looks for around every bridge."
+     },
+     "exercise": {
+      "prompt": "Find both bugs in this bridge of a location API. One produces a permanent hang on a common path; the other is a latent trap. Name the contract each violates.",
+      "code": "func currentLocation() async throws -> Location {\n    try await withCheckedThrowingContinuation { cont in\n        locationService.request { result in\n            switch result {\n            case .success(let loc):\n                cont.resume(returning: loc)\n                if loc.accuracy < 10 {\n                    cont.resume(returning: loc)   // \"extra precision update\"\n                }\n            case .failure:\n                return                            // \"we'll get a retry later\"\n            }\n        }\n    }\n}",
+      "solution": "Bug 1 — the failure branch resumes ZERO times: `return` abandons the continuation, and the awaiting task suspends forever. No crash, no error — a hung task and, upstream, a spinner that never stops. Fix: `cont.resume(throwing: error)` — every path resumes.\n\nBug 2 — the accuracy branch resumes TWICE: the second resume is the misuse trap, verified as \"tried to resume its continuation more than once\" (exit 133). A continuation is a one-shot wake-up call, not a stream — there is no 'update' to deliver; the function already returned. Fix: delete the extra resume (a stream of updates wants AsyncSequence, not a continuation).\n\nContract in one line: exactly once, on every path, including the sad ones.",
+      "explanation": "The zero-resume bug is the nastier of the two precisely because it's silent — the trap at least hands you a stack trace. When bridging, enumerate the callback's exits like b1-13 enumerated defer paths: success, each failure, and any early return all need their resume."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what does a continuation do, what is its contract, and what happens on each violation?",
+      "modelAnswer": "withCheckedContinuation suspends the async caller and hands the callback world a resumption handle; calling resume delivers the value and wakes the suspended function — it's the bridge between completion-handler APIs and async/await. The contract is exactly one resume on every path. Resuming twice traps deterministically with a continuation-misuse fatal error; never resuming leaves the task suspended forever — a silent hang, which is why the checked variant (which detects both) is the default over the unsafe one.",
+      "sets": [
+       [
+        {
+         "q": "What does the `cont` value handed to your closure actually represent?",
+         "options": [
+          "A retry policy attached to the wrapped legacy API",
+          "The suspended function's resumption handle, portable anywhere",
+          "A background thread reserved for the result",
+          "A promise object polled periodically by the runtime"
+         ],
+         "correct": 1,
+         "explain": "b3-04's heap-stored state machine, reified: carry it into a closure or store it for a delegate, and resume() schedules the continuation wherever it must run."
+        },
+        {
+         "q": "A path through your bridge never calls resume. The awaiting task…",
+         "options": [
+          "throws CancellationError after a system timeout",
+          "stays suspended forever — a silent hang",
+          "crashes with the misuse fatal error",
+          "resumes with a default value"
+         ],
+         "correct": 1,
+         "explain": "No resume, no wake-up — and suspension holds no thread, so nothing even looks stuck in a debugger's thread list. The checked variant logs a leak warning; the hang remains."
+        },
+        {
+         "q": "Resuming a checked continuation twice was executed here. Result?",
+         "options": [
+          "The second value silently replaces the first",
+          "A deterministic trap: resumed more than once",
+          "Both values arrive, in order",
+          "The second resume becomes a no-op"
+         ],
+         "correct": 1,
+         "explain": "Exit 133, message verbatim. A continuation is a one-shot wake-up call — deliveries after the first have no suspended function left to wake."
+        }
+       ],
+       [
+        {
+         "q": "Bridging a DELEGATE-based API (request now, delegate method later) requires…",
+         "options": [
+          "converting the delegate API into a closure API first",
+          "parking the continuation in a property; the delegate resumes it",
+          "spinning up one actor per request to hold its state",
+          "polling the delegate on a timer until it has a value"
+         ],
+         "correct": 1,
+         "explain": "The continuation's portability is the point: park it wherever the eventual signal will arrive. Clearing after resume guards the exactly-once contract."
+        },
+        {
+         "q": "checked vs unsafe continuation — the professional default and why?",
+         "options": [
+          "Unsafe — the checked variant adds a heap allocation per await",
+          "Checked — it catches double-resumes and leaks; profile before switching",
+          "Unsafe in release, checked in debug, always",
+          "They differ only in Objective-C interop"
+         ],
+         "correct": 1,
+         "explain": "The bookkeeping is cheap; the bugs it catches are expensive (silent hangs, corruption). Premature unsafe-ing a continuation is the concurrency version of premature optimization."
+        },
+        {
+         "q": "A callback fires repeatedly with progress updates. Bridging it with one continuation is wrong because…",
+         "options": [
+          "progress values can't cross task boundaries",
+          "a continuation wakes its function once; streams want AsyncSequence",
+          "repeated callbacks always arrive on the main thread",
+          "continuations only carry Sendable errors"
+         ],
+         "correct": 1,
+         "explain": "One suspension, one resume, one return value. Multi-shot delivery is a different shape — AsyncStream is the bridge for event streams, with the same care about finishing."
+        }
+       ]
+      ]
+     },
+     "transfer": "Pick one completion-handler API in your project and write its continuation bridge. Then audit it aloud, path by path: success resumes once, each failure resumes once (throwing), no path returns without resuming. That audit sentence is what you'd say in code review forever after.",
+     "verify": "Executed on this Mac: the bridge returned 42 through a real suspension; the double-resume trapped with \"SWIFT TASK CONTINUATION MISUSE: bad() tried to resume its continuation more than once, returning 2!\" (exit 133). Build the zero-resume variant and watch it hang quietly — then kill it with ^C and respect the checked variant's leak warning.",
+     "goDeeper": "WWDC 2021 \"Meet async/await in Swift\" — the continuation section. SE-0300 (continuations). For event streams: SE-0314 AsyncStream — the multi-shot sibling with the same one-finish discipline."
+    },
+    {
+     "id": "b3-09",
+     "title": "Capstone: reading concurrent Swift",
+     "concept": {
+      "definition": "The block collapses into a reading checklist: for any concurrent code, identify WHO runs it (which task), WHERE it's isolated (actor? MainActor? nonisolated pool?), WHAT crosses boundaries (Sendable or transferred?), WHEN it suspends (every await is a door), and HOW it ends (value up, error up, cancellation down). Five questions, and every race, hang, and mystery-thread bug is a wrong answer to one of them.",
+      "code": "// THE CHECKLIST:\n// WHO   — which task? structured child or unstructured orphan? (b3-05)\n// WHERE — isolation: actor / @MainActor / nonisolated pool  (b3-06, b3-04)\n// WHAT  — crossing values: Sendable? transferred? shared?   (b3-07, b3-03)\n// WHEN  — suspension points: what may change at each await? (b3-04, b3-06)\n// HOW   — completion: results up, errors up, cancel down    (b3-05, b3-08)\n// …and the one law underneath: suspend, don't block.        (b3-04, b3-02)",
+      "underlying": "The block, in one pass: threads are the spent resource, queues and tasks the cheap abstractions (b3-01); sync is a wait and waits can ring into deadlocks (b3-02); unsynchronized sharing loses updates silently (b3-03 — 28,360 of them); await suspends without holding threads, moving frames to the heap (b3-04); structure makes tasks a tree that cleans up after itself (b3-05); actors move mutual exclusion into the type system, with reentrancy as the fine print (b3-06); Sendable polices what may cross, with region analysis as the escape valve (b3-07); continuations bridge the old callback world under an exactly-once contract (b3-08).\n\nNotice what this block did to Block 2's pain points: the hop-home dance (b2-12) became @MainActor; the wrong-row async image bug (b2-11) becomes a cancelled child task when the cell reuses; the frozen turn (b2-01) is what suspend-don't-block protects against. And notice what carried from further back: the deadlock is b1-03's ring in control flow; race-immunity of value types is b0-02's copies; async frames on the heap are b0-07's frames with a longer lease.\n\nThe exercise below is one program using the whole checklist. It was executed — the output is fact, not intention. If you can predict all four elements (order, count, total, elapsed), Block 3 is installed. The capstone project that proves it: the image feed with async loading and cancellation — zero AI, as always.",
+      "whyItMatters": "\"Walk me through this async code and tell me what could go wrong\" is the modern senior-interview format — the five questions ARE the walkthrough. This checklist is also exactly what Swift 6 strict mode automates; you now know what the compiler knows."
+     },
+     "exercise": {
+      "prompt": "The final exam — executed, so there is one right answer. Predict: (1) the print ORDER of the two 'done' lines; (2) the ledger total; (3) the approximate elapsed milliseconds; and (4) — the checklist question — why the ledger needs zero locks despite two concurrent writers upstream.",
+      "code": "actor Ledger {\n    var total = 0\n    func add(_ n: Int) { total += n }\n}\n\nfunc work(_ label: String, _ ms: UInt64) async -> Int {\n    try? await Task.sleep(nanoseconds: ms * 1_000_000)\n    print(\"done:\", label)\n    return Int(ms)\n}\n\nlet ledger = Ledger()\nlet start = Date()\n\nasync let a = work(\"A\", 300)\nasync let b = work(\"B\", 100)\nlet sum = await a + b\nawait ledger.add(sum)\n\nprint(\"total:\", await ledger.total,\n      \"in ~\\(Int(Date().timeIntervalSince(start) * 1000))ms\")",
+      "solution": "Executed output:\ndone: B\ndone: A\ntotal: 400 in ~300ms\n\n1. B before A — both children started at their async let lines (b3-05); B's 100ms nap ends first. The await order at the bottom is irrelevant to execution order.\n2. 400 — the values are the sleep durations, 300 + 100.\n3. ~300ms — concurrent children cost the MAX, not the sum (verified: not 400ms).\n4. The ledger is an actor: `add` runs isolated, one task at a time (b3-06). And in THIS program only the parent ever calls add — the children return values UP the tree (b3-05) rather than sharing state sideways, which is the design worth copying: prefer returning to sharing, and let the one shared thing be an actor.",
+      "explanation": "Every element of the checklist appears: structured children (WHO), an actor (WHERE), Ints crossing — trivially Sendable (WHAT), suspensions at the sleeps and awaits (WHEN), values flowing up (HOW). If all four predictions landed, take the image-feed checkpoint — it's this program wearing production clothes."
+     },
+     "assess": {
+      "explainPrompt": "Final articulation, interviewer-ready, 4 sentences max: you're shown unfamiliar async Swift. What five things do you establish to reason about it, and what's the one law you check first?",
+      "modelAnswer": "First the law: nothing on the cooperative pool may block — sleeps, sync I/O, or lock-waits in async code are the first red flags. Then: who runs each piece (structured children or orphaned Tasks), where each piece is isolated (actor, MainActor, or nonisolated), what crosses boundaries and whether it's Sendable or genuinely transferred, and when it suspends — because actor state and captured assumptions can change at every await. Finally, how it completes: results and errors flow up the task tree and cancellation flows down, so anything outside the tree needs manual lifecycle care. Races, hangs, and thread explosions are each a wrong answer to one of those questions.",
+      "sets": [
+       [
+        {
+         "q": "Two async-let children, 300ms and 100ms. Their 'done' prints appear…",
+         "options": [
+          "in declaration order: A prints before B",
+          "B first — concurrent children finish in duration order",
+          "in the await order written at the collection site",
+          "interleaved randomly on every run"
+         ],
+         "correct": 1,
+         "explain": "Executed: done: B, done: A, total in ~300ms. async let starts children at the declaration; the awaits below only collect."
+        },
+        {
+         "q": "In the capstone, the actor needs no locks because…",
+         "options": [
+          "single Int operations are always atomic on ARM chips",
+          "isolation serializes add(); children return values, not shares",
+          "async let children are barred from touching actors",
+          "the optimizer inlined the actor away entirely"
+         ],
+         "correct": 1,
+         "explain": "Two layers of design: the actor's executor guards the shared thing (b3-06), and the tree's values-up pattern (b3-05) means barely anything is shared at all. Prefer returning to sharing."
+        },
+        {
+         "q": "The block's one law, underneath everything:",
+         "options": [
+          "always use actors instead of classes",
+          "never block a cooperative-pool thread — suspend instead",
+          "one Task per queue, one queue per screen",
+          "await every function that can throw"
+         ],
+         "correct": 1,
+         "explain": "The pool is core-sized by design; blocked threads can't be reclaimed the way suspended functions can. Every 'async code frozen' mystery starts by hunting the hostage-taker."
+        }
+       ],
+       [
+        {
+         "q": "A cell's async image lands on the wrong row (b2-11's bug). Block 3's cleanest fix?",
+         "options": [
+          "A serial dispatch queue around the image cache",
+          "Store the load task on the cell; cancel in prepareForReuse",
+          "@MainActor annotations on the whole data source",
+          "Increasing the image request's task priority"
+         ],
+         "correct": 1,
+         "explain": "Cancellation flowing down (b3-05) turns the staleness guard into lifecycle: reuse cancels the old load; a cancelled URLSession stops. The guard-at-completion remains as belt-and-suspenders."
+        },
+        {
+         "q": "You spot `semaphore.wait()` inside an async function, 'to make the callback synchronous'. The diagnosis?",
+         "options": [
+          "Fine — semaphores are Sendable and safe to wait on",
+          "A pool hostage and deadlock risk; it wanted a continuation",
+          "Fine as long as the timeout stays under 16ms",
+          "Wrong only when called on the main actor"
+         ],
+         "correct": 1,
+         "explain": "Blocking a pool thread breaks the one law, and if the callback needs the same pool to fire — the ring closes (b3-02's geometry). withCheckedContinuation is the bridge that suspends instead."
+        },
+        {
+         "q": "Block 3's exit skill, in one sentence:",
+         "options": [
+          "Writing code that never uses classes across tasks",
+          "Answering who/where/what/when/how before running the code",
+          "Replacing every dispatch queue with an actor",
+          "Marking everything @MainActor until the errors stop"
+         ],
+         "correct": 1,
+         "explain": "The five questions are the reading skill; the compiler's strict mode is the same checklist automated. The image-feed checkpoint is where you prove it holds under production weight."
+        }
+       ]
+      ]
+     },
+     "transfer": "Before the image-feed checkpoint: take the capstone program and modify it three ways, predicting before each run — (1) make the parent Task cancellable and cancel at 50ms; (2) replace the actor with a plain class and compile in Swift 6 mode; (3) swap a Task.sleep for Thread.sleep and explain the difference you can't see. Then build the checkpoint: async image feed, cancellation on reuse, zero AI.",
+     "verify": "The capstone program was executed on this Mac: done: B, done: A, total: 400 in ~300ms — order, count, and max-not-sum timing all confirmed. Every other claim in this loop carries its verification in its home loop (b3-01..08); rerun any of them from the verify fields.",
+     "goDeeper": "Re-watch WWDC 2021 \"Swift concurrency: Behind the scenes\" — it's a different talk now that you know the machinery. Then the image-feed checkpoint. Block 4 (data & networking) builds on exactly these tools: URLSession's async API, caching actors, cancellation in feeds."
+    },
+    {
+     "id": "b3-10",
+     "title": "AsyncSequence: awaiting many values",
+     "concept": {
+      "definition": "An AsyncSequence delivers values over time, consumed with `for await` — each iteration is a suspension point (b3-04) that waits for the next element. AsyncStream is the bridge for making one from the callback world: b3-08's continuation, multi-shot — `yield` delivers a value, `finish` ends the sequence. Executed here: three yields collected as [1,2,3], with `onTermination` reporting `finished`.",
+      "code": "let taps = AsyncStream<Int> { cont in\n    button.onTap { cont.yield(tapCount) }     // multi-shot: yield many\n    cont.onTermination = { reason in stopObserving() }\n}                                              // cont.finish() ends it\n\nfor await count in taps {     // each iteration: a suspension point\n    updateBadge(count)         // pull-based — you consume at YOUR pace\n}\nprint(\"stream ended\")          // runs after finish()",
+      "underlying": "The shape difference from b3-08 is one-vs-many: a continuation wakes its function once; a stream keeps a standing channel — yield as often as events arrive, finish exactly once when they stop. `for await` is pull-based consumption: the loop body runs per element, and between elements the task is suspended, holding no thread (b3-04's law kept).\n\nProducers and consumers run at different speeds, so buffering policy is load-bearing. The default `.unbounded` buffers every yield until consumed — executed: values yielded before any consumption were all delivered. `.bufferingNewest(1)` keeps only the latest — executed: five yields, consumer received [5], four values silently dropped. That's not a bug; it's the right semantics for state-like streams (latest location, latest search text) versus event-like streams (every tap matters). Choosing the policy IS the design decision.\n\nHousekeeping mirrors b3-08's discipline, plural: `finish` is the multi-shot cousin of resume — forget it and `for await` waits forever after the last value; `onTermination` (executed: fired with `finished`) is where the bridge tears down its observation — and it also fires when the CONSUMER walks away (break, task cancelled), making it the reliable cleanup hook for both endings. Where you meet the abstraction daily: `URLSession.bytes`' line stream, NotificationCenter's `.notifications(named:)`, and every AsyncSequence operator (map, filter — b1-19's vocabulary, awaiting).",
+      "whyItMatters": "\"How do you bridge a delegate that fires repeatedly?\" — AsyncStream is the modern answer, and the wrong-shape mistake (a continuation for a stream) was b3-08's exam question. Buffering policy is the interview follow-up that separates users from designers."
+     },
+     "exercise": {
+      "prompt": "Predict both collected arrays, then answer the design question: a search screen streams the text field's changes to drive live results — which buffering policy, and why is the default wrong?",
+      "code": "// A — default policy, producer finishes before consumption\nlet a = AsyncStream<Int> { cont in\n    for i in 1...4 { cont.yield(i) }\n    cont.finish()\n}\nvar gotA: [Int] = []\nfor await v in a { gotA.append(v) }      // gotA == ?\n\n// B — bufferingNewest(1), same producer\nlet b = AsyncStream<Int>(bufferingPolicy: .bufferingNewest(1)) { cont in\n    for i in 1...4 { cont.yield(i) }\n    cont.finish()\n}\nvar gotB: [Int] = []\nfor await v in b { gotB.append(v) }      // gotB == ?",
+      "solution": "gotA == [1, 2, 3, 4] — .unbounded buffers everything; nothing is lost, executed with three values earlier.\ngotB == [4] — executed as [5] with five values: the newest-1 buffer overwrites, so a slow (or late) consumer sees only the last yield before each of its pulls.\n\nSearch screen: .bufferingNewest(1). The stream is STATE-like — only the latest query matters; running results for stale text is wasted work the user has already abandoned. The unbounded default would queue every intermediate keystroke and force the consumer to process 'sw', 'swi', 'swif' before reaching 'swift'. (Event-like streams — purchases, taps to count — are the opposite call: every element matters, buffer them all.)",
+      "explanation": "The policy question is really 'what does an element MEAN?' — a state snapshot (keep newest) or an event (keep all). Choosing consciously is the difference between a stream design and a stream accident."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is an AsyncSequence, how does AsyncStream relate to continuations, and what does buffering policy decide?",
+      "modelAnswer": "An AsyncSequence delivers values over time and is consumed with for await, where each iteration suspends — holding no thread — until the next element arrives. AsyncStream is the multi-shot version of a continuation: a bridge from callback-land where yield delivers each value, finish ends the sequence, and onTermination is the teardown hook for either ending. Buffering policy decides what happens when production outpaces consumption: unbounded keeps everything (event-like streams), bufferingNewest keeps only the latest (state-like streams), and the choice follows what an element means.",
+      "sets": [
+       [
+        {
+         "q": "Between elements, a `for await` loop's task is…",
+         "options": [
+          "spinning on the stream's buffer",
+          "suspended — no thread held until the next value arrives",
+          "blocked on a semaphore inside the stream",
+          "rescheduled to the main actor"
+         ],
+         "correct": 1,
+         "explain": "Each iteration is a b3-04 suspension point. A thousand idle for-await loops hold zero threads — the pool's law, kept by construction."
+        },
+        {
+         "q": "AsyncStream vs b3-08's continuation — the structural difference?",
+         "options": [
+          "Streams work only with Sendable elements",
+          "yield may fire many times; resume exactly once",
+          "Streams require an actor to consume them",
+          "Continuations are faster but deprecated"
+         ],
+         "correct": 1,
+         "explain": "One-shot wake-up versus standing channel. Same bridging idea, pluralized — with finish playing the once-only role that resume played."
+        },
+        {
+         "q": "Executed here: five yields into .bufferingNewest(1), consumer late. It received…",
+         "options": [
+          "all five, in order — policies only hint",
+          "just the last value; the rest were overwritten",
+          "the first value; later ones were rejected",
+          "nothing — late consumers get empty streams"
+         ],
+         "correct": 1,
+         "explain": "[5] of 1...5. Newest-N is a ring that overwrites — silent, deliberate loss. Right for state (latest wins), wrong for events (every one matters)."
+        }
+       ],
+       [
+        {
+         "q": "A GPS bridge streams location updates to a map. Which policy, and why?",
+         "options": [
+          "unbounded — GPS fixes are precious data",
+          "bufferingNewest(1) — stale positions are worthless; latest wins",
+          "bufferingOldest(1) — first fix is most accurate",
+          "no buffer — drop everything not consumed instantly"
+         ],
+         "correct": 1,
+         "explain": "Location is state, not events: rendering yesterday's positions in order is worse than useless. The policy encodes that meaning."
+        },
+        {
+         "q": "A bridge's producer never calls finish(). The consumer's for-await loop…",
+         "options": [
+          "throws once the runtime's stream timeout expires",
+          "waits forever after the last value — b3-08's hang, plural",
+          "ends as soon as the stream object deallocates",
+          "receives a nil element and exits normally"
+         ],
+         "correct": 1,
+         "explain": "finish is the multi-shot resume: every path that ends production must call it. onTermination is where the bridge unhooks its observation either way."
+        },
+        {
+         "q": "Where does onTermination fire besides finish()?",
+         "options": [
+          "Never — calling finish is its only trigger",
+          "When the consumer stops — a break, or its task cancelled",
+          "On every single yield, for internal bookkeeping",
+          "Only when the buffering policy's limit overflows"
+         ],
+         "correct": 1,
+         "explain": "The consumer walking away also ends the channel — and the bridge must stop observing (remove the delegate, invalidate the timer) or it works forever for nobody. Cleanup lives there because BOTH endings pass through it."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one repeated-callback source in your project (a delegate that fires per event, a NotificationCenter observer, a timer). Sketch its AsyncStream bridge: where yield fires, where finish must be called, what onTermination unhooks — and write one sentence choosing its buffering policy by what an element MEANS.",
+     "verify": "Executed on this Mac: three yields collected as [1,2,3] with onTermination reporting 'finished'; five yields through bufferingNewest(1) delivered only [5]. Reproduce, then flip the policy to .unbounded and watch all five arrive — the design decision, made visible.",
+     "goDeeper": "WWDC 2021 \"Meet AsyncSequence\". SE-0314 (AsyncStream) — the buffering-policy rationale. swift-async-algorithms on GitHub: debounce, merge, zip — b1-19's operators grown up and awaiting."
+    },
+    {
+     "id": "b3-11",
+     "title": "MainActor: the main thread as a type",
+     "concept": {
+      "definition": "@MainActor is a GLOBAL actor — one shared isolation domain whose executor is the main thread. Mark a class, function, or property with it and the compiler enforces b2-12's rule: touching it from elsewhere requires an await that hops home. Executed here: a detached task (off main, verified) called a @MainActor method and the print INSIDE showed main thread? true — the hop is real, automatic, and typed.",
+      "code": "@MainActor final class ProfileVM {          // whole class isolated\n    var name = \"…\"                           // main-thread-only state\n    func refresh() { name = \"Riya\" }          // runs on main, always\n    nonisolated func log() -> String { \"vm\" } // opt-out: no isolation\n}\n\n// from a background task:\nawait vm.refresh()          // executed: hops to main — verified inside\nlet s = vm.log()            // nonisolated: no await, any thread\nawait MainActor.run { spinner.stopAnimating() }   // one-off hop",
+      "underlying": "A global actor is b3-06's isolation without a private instance: one domain, annotation-addressable, shared program-wide — and MainActor's serial executor is the main thread itself, so 'isolated to MainActor' MEANS 'runs on main'. The type system now carries what b2-12 policed by discipline: UI state marked @MainActor can't be touched off-main — the violation is a compile error, and the awaited call site does the DispatchQueue.main.async dance for you (executed: bump() from a detached task ran with Thread.isMainThread == true).\n\nIsolation is inherited by context, which explains the things that confuse people: a plain `Task { }` created inside @MainActor code IS main-actor-isolated (its body runs on main — often surprising when heavy work sneaks in); `Task.detached` severs that inheritance (executed: not on main). SwiftUI Views and UIViewController are MainActor-annotated by Apple, which is why self-touching closures inside them often need no hop — you were already home. And b3-04's earlier observation — top-level code resuming on main 10/10 — was this exact machinery: isolation, preserved across suspension.\n\nThe working toolkit: `nonisolated` marks members that don't touch isolated state (executed: called without await from off-main) — pure helpers, logging, Sendable computations; `MainActor.run { }` is the one-off hop for a few lines inside otherwise-background code; and `@MainActor` on a protocol or a function type propagates the requirement. The design rule that falls out: isolate the STATE (view models, UI caches), keep the WORK nonisolated or on other actors — annotating whole subsystems @MainActor 'to be safe' quietly moves your CPU work onto b2-01's 16ms budget.",
+      "whyItMatters": "@MainActor is the single most-used concurrency annotation in modern iOS, and \"why did my Task run on main?\" (inheritance) plus \"why is the UI janky after we adopted actors?\" (over-annotation) are its two production bug shapes. Interviews now ask it by name."
+     },
+     "exercise": {
+      "prompt": "Predict, for each numbered line: which THREAD executes it (main / pool), and whether the line as written even compiles in Swift 6. vm is the @MainActor ProfileVM; all code below is inside a @MainActor view controller method.",
+      "code": "func handleTap() {                 // @MainActor context (UIKit VC)\n    vm.refresh()                    // 1 — no await. compiles?\n    Task {\n        heavyParse()                // 2 — plain Task { } … which thread?\n        vm.refresh()                // 3 — await needed?\n    }\n    Task.detached {\n        heavyParse()                // 4 — which thread?\n        vm.refresh()                // 5 — await needed?\n    }\n}",
+      "solution": "1: compiles, no await — same isolation (VC and vm are both MainActor); runs on MAIN.\n2: MAIN — the trap. Task { } inherits the surrounding MainActor isolation; heavyParse just moved onto the 16ms budget while looking 'async'.\n3: compiles WITHOUT await — the inherited isolation means the Task body is already home. (Runs on main.)\n4: POOL — detached severs inheritance (executed: Thread.isMainThread false).\n5: needs `await vm.refresh()` — crossing from the pool into MainActor; without await it's a compile error, and with it the hop is automatic (executed: ran on main).\n\nThe pairing to memorize: Task inherits (lines 2–3 = still main), detached escapes (4–5 = pool + explicit hops).",
+      "explanation": "Line 2 is the production bug: 'I wrapped it in a Task, why is scrolling janky?' — because Task{} is a context inheritor, not a background sender. Off-main work wants Task.detached, a nonisolated function, or another actor — then line 5's typed hop brings only the UI touch home."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is @MainActor, what does Task{} vs Task.detached inherit, and what's the failure mode of over-annotating?",
+      "modelAnswer": "@MainActor is a global actor whose executor is the main thread — state marked with it is compiler-enforced main-thread-only, and awaited calls from elsewhere hop home automatically, replacing the manual DispatchQueue.main.async dance. Task{} inherits the surrounding actor context, so inside MainActor code its body runs on main; Task.detached severs that and runs on the pool, making cross-ins require await. Over-annotating moves real CPU work onto the main thread's frame budget — isolate the state, not the work.",
+      "sets": [
+       [
+        {
+         "q": "Calling a @MainActor method from a detached task, with await — where does the method's body run?",
+         "options": [
+          "On the detached task's pool thread",
+          "On the main thread — the await hops to the executor",
+          "On whichever thread is idle at the moment",
+          "It won't compile from a detached context"
+         ],
+         "correct": 1,
+         "explain": "Executed: Thread.isMainThread was true INSIDE the method, false in the caller. The hop b2-12 made you write by hand is now the type system's job."
+        },
+        {
+         "q": "A plain `Task { }` created inside a view controller method runs its body…",
+         "options": [
+          "on the cooperative pool, exactly like all other tasks",
+          "on the main actor — Task inherits surrounding isolation",
+          "on a dedicated thread spun up for that one task",
+          "wherever its first await happens to send it"
+         ],
+         "correct": 1,
+         "explain": "Inheritance is the trap AND the convenience: UI code in the task needs no hop, but heavy work in it lands on the 16ms budget. Detached is the severing tool."
+        },
+        {
+         "q": "`nonisolated` on a method of a @MainActor class means…",
+         "options": [
+          "it can only be called from background threads",
+          "opting out of isolation — callable anywhere, no isolated state",
+          "it runs on main without the hop cost",
+          "it is invisible to Objective-C callers"
+         ],
+         "correct": 1,
+         "explain": "Executed: called without await from off-main. The price of the freedom: the compiler bars it from the class's isolated vars — pure helpers only."
+        }
+       ],
+       [
+        {
+         "q": "\"We adopted @MainActor everywhere and now scrolling stutters.\" The mechanism?",
+         "options": [
+          "Actor hops add per-call latency to rendering",
+          "CPU work in annotated code now rides the main frame budget",
+          "MainActor disables the render server's caching",
+          "Awaits inside cells block the run loop"
+         ],
+         "correct": 1,
+         "explain": "The annotation moves execution, not just access rules: parse/compute code marked (or inheriting) MainActor competes with b2-01's 16ms. Isolate state; keep work nonisolated or elsewhere."
+        },
+        {
+         "q": "UIViewController subclasses rarely need explicit hops to touch their views because…",
+         "options": [
+          "UIKit checks the thread at runtime and corrects it",
+          "UIViewController is @MainActor — overrides are already home",
+          "views are Sendable and safe from anywhere",
+          "the compiler special-cases UIKit imports"
+         ],
+         "correct": 1,
+         "explain": "Apple annotated the UI layer. Your lifecycle overrides, actions, and their inherited Tasks are MainActor-isolated by inheritance — which is also why extracting work OUT of them changes its thread."
+        },
+        {
+         "q": "You need three lines of UI update in the middle of a long nonisolated async function. The idiomatic tool?",
+         "options": [
+          "Annotate the whole function @MainActor",
+          "await MainActor.run { the three lines }",
+          "DispatchQueue.main.sync around the lines",
+          "Task.detached with a main-queue executor"
+         ],
+         "correct": 1,
+         "explain": "Executed: the run block reported main. It's the scalpel — the function's heavy remainder stays off main, and main.sync from unknown contexts risks b3-02's ring."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find every `Task {` in your project. For each, answer from its surrounding context: does this body run on main (inherited) or the pool? Flag any heavy work riding an inherited main context — that's the line 2 bug — and decide: detached, nonisolated function, or another actor.",
+     "verify": "Executed on this Mac: a detached task reported Thread.isMainThread false; the @MainActor method it awaited reported true from inside; MainActor.run's block reported true; the nonisolated method ran without await. Reproduce, then delete an await to a MainActor member from detached code and read the Swift 6 error.",
+     "goDeeper": "SE-0316 (global actors) — the design doc's MainActor section. WWDC 2021 \"Swift concurrency: Update a sample app\" — migrating hop-by-hand code to annotations. WWDC 2022 \"Eliminate data races\" for the isolate-state-not-work design rule."
+    },
+    {
+     "id": "b3-12",
+     "title": "GCD survival kit: groups, barriers, QoS",
+     "concept": {
+      "definition": "Three GCD tools you'll meet in every pre-async codebase. DispatchGroup counts in-flight work: enter before, leave after, and notify/wait fire when the count hits zero — executed: three staggered tasks, wait returned with all 3 done. Barriers make a concurrent queue momentarily exclusive: reads run in parallel, `.barrier` writes run alone — executed: 100 barriered appends landed intact. QoS labels work with a priority class the scheduler uses to order the world.",
+      "code": "let group = DispatchGroup()\nfor url in urls {\n    group.enter()                       // count += 1\n    fetch(url) { …; group.leave() }     // count -= 1\n}\ngroup.notify(queue: .main) { updateUI() }   // fires at count == 0\n\nlet rw = DispatchQueue(label: \"cache\", attributes: .concurrent)\nrw.sync { cache[key] }                      // reads: parallel\nrw.async(flags: .barrier) { cache[key] = v } // writes: exclusive",
+      "underlying": "DispatchGroup is a thread-safe counter with a completion hook — the pre-async answer to 'run N things, then…', which b3-05's task groups replaced with structure (results, errors, and cancellation included, none of which DispatchGroup carries). Its classic bug is unbalanced bookkeeping: a code path that returns early without leave() leaves the count above zero — notify never fires, the group's version of b3-08's never-resumed continuation. Every enter must have exactly one leave on every path (b1-13's defer discipline is the standard guard).\n\nThe barrier pattern is the reader-writer lock in queue clothing: on a CONCURRENT queue, plain items run in parallel (cheap simultaneous reads), while a `.barrier` item waits for everything running, executes ALONE, then reopens the floodgates. Executed: 100 barriered appends to shared state arrived exactly intact — b3-03's protection with concurrent reads kept. Two footnotes: barriers only mean something on your own concurrent queues (global queues ignore the flag), and an actor (b3-06) is the modern spelling unless you specifically need parallel reads.\n\nQoS (userInteractive, userInitiated, utility, background) is the scheduler's triage: it decides which runnable work gets cores first, energy behavior, and — the subtle part — priority INHERITANCE: when high-QoS work waits on low-QoS work (a sync, a lock), the system boosts the low one to prevent priority inversion. The practical rules: label work honestly (everything-userInitiated is the same as nothing labeled), and know that mislabeled background work being waited on by the UI is a real jank source the boost can't always save.",
+      "whyItMatters": "Every real codebase predates async/await somewhere — you'll read and fix these patterns for years. \"DispatchGroup vs task group?\" and \"how do barriers work?\" remain standard interview questions precisely because legacy code keeps them alive."
+     },
+     "exercise": {
+      "prompt": "Find the bug in each snippet — one makes a spinner spin forever, one corrupts under load. Name the mechanism and the one-line-shaped fix for each.",
+      "code": "// A\nfunc loadAll(_ ids: [Int]) {\n    let group = DispatchGroup()\n    for id in ids {\n        group.enter()\n        fetch(id) { result in\n            guard let result else { return }   // ← error path\n            store(result)\n            group.leave()\n        }\n    }\n    group.notify(queue: .main) { spinner.stop() }\n}\n\n// B\nlet q = DispatchQueue(label: \"cache\", attributes: .concurrent)\nfunc write(_ v: Data, for key: String) {\n    q.async { cache[key] = v }          // ← concurrent queue…\n}\nfunc read(_ key: String) -> Data? {\n    q.sync { cache[key] }\n}",
+      "solution": "A: the early `return` on the error path skips leave() — the count never reaches zero, notify never fires, the spinner spins forever (the group's never-resumed continuation). Fix: `defer { group.leave() }` as the closure's first line — b1-13's every-exit guarantee, applied.\n\nB: the write is a PLAIN async on a concurrent queue — it runs in parallel with other writes and with reads: b3-03's data race on the dictionary, corrupting under load. The queue being 'your own serial-sounding cache queue' fooled nobody but the author. Fix: `q.async(flags: .barrier) { cache[key] = v }` — reads stay parallel, writes go exclusive (executed pattern: 100/100 intact).",
+      "explanation": "Both bugs are contract violations invisible at the call site: a count that must balance on every path, a flag that must mark every write. The modern translations — a task group, an actor — make both contracts structural instead of disciplinary, which is exactly why they replaced these."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what do DispatchGroup and barriers each do, and what did their async/await successors add?",
+      "modelAnswer": "DispatchGroup counts in-flight work — enter increments, leave decrements, notify or wait fire at zero — coordinating N callbacks into one completion, with unbalanced enter/leave as its classic hang. A barrier on your own concurrent queue lets reads run in parallel while flagged writes execute exclusively — a reader-writer lock in queue form. Their successors add what the originals never carried: task groups bring results, thrown errors, and cancellation down the tree; actors make the exclusive-access contract compiler-enforced instead of a flag you must remember.",
+      "sets": [
+       [
+        {
+         "q": "group.notify fires when…",
+         "options": [
+          "the queue it targets becomes idle",
+          "the enter/leave count returns to zero",
+          "all queues in the app drain completely",
+          "a fixed timeout elapses after the last enter"
+         ],
+         "correct": 1,
+         "explain": "Executed: wait returned exactly when the third staggered task left. The group is a counter with a hook — nothing more, which is both its power and its fragility."
+        },
+        {
+         "q": "An error path returns from a completion without calling leave(). The observable symptom?",
+         "options": [
+          "A crash on the group's deallocation",
+          "notify never fires — completion UI hangs forever",
+          "The group fires early with partial results",
+          "leave() is inferred from the closure's exit"
+         ],
+         "correct": 1,
+         "explain": "Count stuck above zero — the DispatchGroup edition of the never-resumed continuation (b3-08). defer { group.leave() } is the every-path guarantee."
+        },
+        {
+         "q": "On a concurrent queue, a `.barrier` work item…",
+         "options": [
+          "runs at boosted priority ahead of the queue",
+          "waits for running items, runs alone, then service resumes",
+          "moves the queue to serial permanently",
+          "splits across all cores for speed"
+         ],
+         "correct": 1,
+         "explain": "Momentary exclusivity: the reader-writer pattern. Executed: 100 barriered appends intact where plain concurrent writes would be b3-03's race."
+        }
+       ],
+       [
+        {
+         "q": "Why does `.barrier` on DispatchQueue.global() fail to protect anything?",
+         "options": [
+          "Global queues are serial already",
+          "Global queues ignore the flag — you must own the queue",
+          "The flag only works with sync, not async",
+          "It works, but only above utility QoS"
+         ],
+         "correct": 1,
+         "explain": "You can't ask the SHARED system queues to stop the world for you. Barrier semantics require your own concurrent queue — or, in modern spelling, an actor."
+        },
+        {
+         "q": "High-QoS UI work does q.sync onto a queue running background-QoS work. The system…",
+         "options": [
+          "deadlocks — QoS classes cannot interact",
+          "boosts the low-QoS work to prevent priority inversion",
+          "drops the UI work to background priority",
+          "cancels the background work outright"
+         ],
+         "correct": 1,
+         "explain": "Priority inheritance: the waiter's urgency transfers to what it waits on. It saves you often — but honest labeling beats depending on the rescue."
+        },
+        {
+         "q": "DispatchGroup vs b3-05's task group — what does the modern one add?",
+         "options": [
+          "Nothing; it's the same API with new names",
+          "Results, errors, and downward cancellation — structure",
+          "Automatic retry of failed children",
+          "Higher throughput on Apple silicon"
+         ],
+         "correct": 1,
+         "explain": "DispatchGroup counts; it carries no values, no errors, no tree. The successor made the coordination structural — the entire theme of this block's second half."
+        }
+       ]
+      ]
+     },
+     "transfer": "Grep your project for DispatchGroup and .barrier. For each group: verify every enter has a leave on every path (add the defer if not). For each barrier: confirm the queue is yours and concurrent, then write one sentence on what the actor version would look like — even if you don't migrate today.",
+     "verify": "Executed on this Mac: group.wait returned with done == 3 after three staggered tasks; 100 barrier-flagged appends to shared state landed 100/100 (plain concurrent appends would race — b3-03); QoS wiring confirmed on a global queue. Reproduce, then delete one leave() and watch notify never fire.",
+     "goDeeper": "WWDC 2017 \"Modernizing Grand Central Dispatch Usage\" — the definitive QoS + queue-hierarchy talk. WWDC 2015 \"Building Responsive and Efficient Apps\" for priority inheritance. b3-05/b3-06 for the successors you migrate toward."
+    }
+   ]
+  },
+  {
+   "id": "b4",
+   "name": "Bytes You Don't Control",
+   "tagline": "Networking, parsing, caching, persisting — data from elsewhere",
+   "loops": [
+    {
+     "id": "b4-01",
+     "title": "URLSession: two kinds of failure",
+     "concept": {
+      "definition": "URLSession is the transport machine: a session (configured once — timeouts, caching, headers) runs tasks that move bytes. Its async face — `try await URLSession.shared.data(from:)` — suspends (b3-04) until bytes arrive. The load-bearing distinction, executed here: TRANSPORT failures throw (connection refused threw `URLError.cannotConnectToHost`), but HTTP failures do NOT — a 404 returned normally with `statusCode: 404` and a body. The server answering 'no' is a successful conversation.",
+      "code": "let (data, response) = try await URLSession.shared.data(from: url)\n// throws ONLY for transport: no network, DNS, timeout, TLS…\n\nlet http = response as! HTTPURLResponse\nhttp.statusCode        // executed: 200 — or 404, WITHOUT throwing\n\n// the pattern every call needs:\nguard (200..<300).contains(http.statusCode) else {\n    throw APIError.badStatus(http.statusCode, data)  // YOUR job\n}",
+      "underlying": "The two-failure split is the loop's whole point, and both halves were executed. Transport errors mean the conversation never completed: no route, DNS failure, refused connection (executed: URLError .cannotConnectToHost), timeout, cancelled — URLSession throws, because there's nothing else to give you. HTTP status codes mean the conversation SUCCEEDED and the server said something — maybe 'not found' (executed: 404 arrived as data + response, no throw), maybe 'server error'. Treating them as one category produces both classic bugs: apps that crash-path on airplane mode AND apps that parse a 500's HTML error page as JSON.\n\nThe object model: URLSessionConfiguration is the policy sheet (timeoutIntervalForRequest, waitsForConnectivity, cache — b4-05's subject, default headers); a URLSession binds a configuration; tasks do the work. `.shared` is the zero-config convenience — fine until you need policy, then you make ONE session and reuse it (sessions hold caches and connection pools; per-request sessions throw those away). Data/upload/download tasks split by payload shape: bytes in memory, bytes from a file, bytes to a file.\n\nConcurrency inheritance from Block 3: the async methods suspend on the pool — no thread held during the round trip (b3-04); completion-handler variants arrive on background queues (b2-12's hop rule); cancellation flows in from your task tree (b3-05) — a URLSession task inside a cancelled Task aborts the transfer.",
+      "whyItMatters": "\"Does URLSession throw on a 404?\" is a near-universal interview screen, and the guard-the-status pattern is the first line of every production networking layer. The one-session-reused rule is the difference between using and misusing the connection pool."
+     },
+     "exercise": {
+      "prompt": "For each scenario, predict: does `try await data(from:)` THROW or RETURN — and if it returns, what must your code check? (1) Wi-Fi off, airplane mode; (2) server up, path wrong → 404 JSON error body; (3) server up but overloaded → 500 with HTML body; (4) valid response but 30s of silence first, default timeout; (5) the surrounding Task is cancelled mid-flight.",
+      "code": "// 1. airplane mode\n// 2. 404 with {\"error\": \"not found\"}\n// 3. 500 with an HTML error page\n// 4. 30s silence, default timeoutIntervalForRequest (60s)\n// 5. parent Task cancelled mid-transfer",
+      "solution": "1. THROWS — URLError(.notConnectedToInternet): transport never happened.\n2. RETURNS — executed: statusCode 404, body intact, no throw. Your guard must catch it before any decode.\n3. RETURNS — 500 is a completed conversation. Decoding that HTML as your JSON model produces b4-03's typeMismatch — the status guard belongs BEFORE the decoder.\n4. RETURNS — 30s < the 60s default; slow is not failed. (At 60s it THROWS URLError(.timedOut) — policy lives on the configuration.)\n5. THROWS — URLError(.cancelled): b3-05's cancellation reached the transfer and aborted it.\n\nThe sorting rule: did the conversation COMPLETE? No → thrown URLError. Yes → returned, and the status code is your problem.",
+      "explanation": "Scenario 3 is the production classic: the crash report blames the decoder, but the sin was skipping the status guard. Error handling for networking is a two-layer funnel — transport catch, then status guard — and every request goes through both."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what does URLSession's data(from:) throw for, what does it NOT throw for, and what does correct calling code look like?",
+      "modelAnswer": "It throws only for transport failures — no connectivity, DNS, refused connections, timeouts, cancellation — cases where the conversation never completed. HTTP error statuses like 404 or 500 return normally with data and response, because the server successfully answered; checking statusCode is the caller's job. Correct code catches URLError for transport, casts to HTTPURLResponse and guards the status range before touching the body, and only then decodes.",
+      "sets": [
+       [
+        {
+         "q": "The server responds 404 with a JSON error body. `try await data(from:)`…",
+         "options": [
+          "throws URLError(.fileDoesNotExist)",
+          "returns normally — data plus a statusCode-404 response",
+          "returns nil data with a non-nil response",
+          "retries once, then throws"
+         ],
+         "correct": 1,
+         "explain": "Executed: no throw, status 404, body intact. HTTP 'no' is a successful conversation — the transport layer's job ended when bytes arrived."
+        },
+        {
+         "q": "Connection refused (server down) produces…",
+         "options": [
+          "a response with statusCode 503",
+          "a thrown URLError: .cannotConnectToHost",
+          "empty data and a nil response",
+          "an infinite await until timeout"
+         ],
+         "correct": 1,
+         "explain": "No server, no conversation, nothing to return — the transport layer throws. This is the category airplane mode, DNS failures, and timeouts live in."
+        },
+        {
+         "q": "Why make ONE URLSession and reuse it, instead of one per request?",
+         "options": [
+          "Sessions are class instances and leak otherwise",
+          "Sessions own connection pools and caches; fresh ones start cold",
+          "URLSession.init is main-actor isolated",
+          "Apple rate-limits session creation"
+         ],
+         "correct": 1,
+         "explain": "Connection reuse (no TLS re-handshake per call) and the URLCache live on the session. A fresh session per request is a fresh cold start per request."
+        }
+       ],
+       [
+        {
+         "q": "A 500 response's HTML body reaches your JSON decoder. The crash report shows a decoding error. The real bug?",
+         "options": [
+          "The model should have been Codable-optional",
+          "The missing status guard — decode ran on a foreign body",
+          "JSONDecoder needs the .allowFragments option",
+          "The server violated the HTTP standard"
+         ],
+         "correct": 1,
+         "explain": "The funnel order is fixed: transport catch → status guard → decode. Skipping the middle layer makes every server hiccup look like a parsing bug."
+        },
+        {
+         "q": "Where does timeout policy live?",
+         "options": [
+          "On each URL, as a query parameter",
+          "On URLSessionConfiguration — the session's policy sheet",
+          "Hard-coded at 60s, not configurable",
+          "On the HTTPURLResponse, set by the server"
+         ],
+         "correct": 1,
+         "explain": "timeoutIntervalForRequest, waitsForConnectivity, cache policy, default headers — configuration is decided once, at session creation. Which is also WHY the session is worth keeping."
+        },
+        {
+         "q": "The Task running your await data(from:) is cancelled mid-transfer. The transfer…",
+         "options": [
+          "completes and discards the result quietly",
+          "aborts — the call throws URLError(.cancelled)",
+          "pauses until the task resumes",
+          "continues; URLSession ignores Swift cancellation"
+         ],
+         "correct": 1,
+         "explain": "b3-05's tree reaches the network layer: URLSession's async API checks cancellation and aborts the underlying task — the image-feed checkpoint's cell-reuse cancellation rides exactly this."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find (or write) one networking call in your project. Trace its two-layer funnel: where is the transport catch, where is the status guard, and what happens today on a 500? If the guard is missing, add it — and log the status AND body on failure; future-you debugging production will say thanks.",
+     "verify": "Executed on this Mac against a local HTTP server: 200 with headers round-tripped; 404 returned WITHOUT throwing (status + body intact); connection to a dead port threw URLError(.cannotConnectToHost); a cancelled parent task aborts transfers per b3-05. Run a local server (python3 -m http.server) and reproduce all three categories.",
+     "goDeeper": "Apple docs: URLSession + URLSessionConfiguration. WWDC 2021 \"Use async/await with URLSession\". WWDC 2022 \"Reduce networking delays for a more responsive app\" — what the connection pool you're preserving actually does."
+    },
+    {
+     "id": "b4-02",
+     "title": "HTTP: what actually crosses the wire",
+     "concept": {
+      "definition": "HTTP is structured text: a request is a method + path line, headers (key: value pairs), a blank line, then an optional body; a response mirrors it with a status line first. Executed here, verbatim from the wire: `GET /user HTTP/1.1` with our `X-Client: learnloop` header, answered by `HTTP/1.0 200 OK` with `Content-Type: application/json` and the JSON body. URLRequest is just a builder for that text.",
+      "code": "// what URLSession sent — captured from the wire:\n// GET /user HTTP/1.1\n// Host: 127.0.0.1:8977\n// X-Client: learnloop\n//              ← blank line = headers end\n// what came back:\n// HTTP/1.0 200 OK\n// Content-Type: application/json\n//\n// {\"id\": 7, \"user_name\": \"riya\"}\n\nvar req = URLRequest(url: url)\nreq.httpMethod = \"POST\"\nreq.setValue(\"application/json\", forHTTPHeaderField: \"Content-Type\")\nreq.httpBody = try JSONEncoder().encode(payload)   // executed: 201",
+      "underlying": "Demystifying the wire kills a whole category of confusion. Methods are VERBS with contracts: GET reads (no body, cacheable, repeatable), POST creates (body, NOT safely repeatable — the double-submit problem), PUT replaces and DELETE removes (both idempotent: retrying is safe — a distinction that decides your retry policy in b4-10). Executed: our POST with a JSON body came back 201 Created, the body echoed.\n\nStatus codes are classed by their first digit, and the class tells you WHO failed: 2xx success; 3xx redirection (URLSession follows these silently by default — you rarely see them); 4xx = the CLIENT is wrong (401 unauthenticated, 403 forbidden, 404 no such thing, 429 slow down) — retrying the same request is pointless; 5xx = the SERVER is struggling — retrying later is reasonable. That client/server split is the first question of every production incident.\n\nHeaders are the metadata channel, and four families do most of the work: content description (`Content-Type: application/json` — executed; the decoder trusts this), authentication (`Authorization: Bearer <token>` — b4-08's Keychain feeds it), caching (`Cache-Control`, `ETag` — b4-05's machinery), and negotiation (`Accept`, `Accept-Language`). URLRequest's builder maps one-to-one: httpMethod, setValue(forHTTPHeaderField:), httpBody — you're always just writing the text at the top of this card.",
+      "whyItMatters": "Every API integration, every Postman session, every 'why is the backend rejecting this?' conversation happens in HTTP's vocabulary. Idempotency deciding retry-safety is a real system-design interview question — and the 4xx/5xx whose-fault split is how on-call engineers triage."
+     },
+     "exercise": {
+      "prompt": "A debugging drill. For each production symptom, name the HTTP-level diagnosis and the first thing to check: (1) every request returns 401; (2) a payment POST occasionally charges customers twice; (3) requests return 200 but the decoder says the body is HTML; (4) GETs return stale data after an update; (5) the API returns 429 during your app's launch spike.",
+      "code": "// 1. all requests → 401\n// 2. payment POST → occasional double charges\n// 3. 200 OK, but body is HTML, decoder fails\n// 4. GET returns stale data post-update\n// 5. 429 storm at app launch",
+      "solution": "1. 401 Unauthorized = the Authorization header is missing/expired/wrong — check the token's presence and freshness before blaming the server (4xx: client's fault).\n2. POST is not idempotent — a timeout-then-retry (or double-tap) resubmits the charge. Fix: idempotency keys or a server-side dedupe; never blind-retry POSTs (b4-10).\n3. Check what URL you actually hit and the response Content-Type — 200-with-HTML is usually a captive portal, a proxy, or a wrong path serving an index page. The status guard passed; the content check didn't exist.\n4. Caching: some layer (URLCache, a CDN honoring Cache-Control) served the old body. Inspect the response's cache headers — b4-05 is this bug's whole loop.\n5. 429 Too Many Requests = the server is rate-limiting you, and launch is your traffic spike. Respect Retry-After, add jitter/backoff — hammering harder makes it worse.\n\nEach diagnosis lived entirely in the request/response text — no Swift required.",
+      "explanation": "The drill's lesson: production networking bugs are usually PROTOCOL conversations gone wrong, and the evidence is in methods, statuses, and headers. Charles/Proxyman/`curl -v` show you the same text captured here — look at the wire before the code."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what does an HTTP request physically consist of, what do the status-code classes mean, and why does idempotency matter for retries?",
+      "modelAnswer": "A request is structured text: a method-and-path line, headers as key-value pairs, a blank line, then an optional body — a response mirrors it with a status line first. Status classes assign fault: 2xx success, 3xx redirection, 4xx the client is wrong (retrying the same request won't help), 5xx the server is struggling (retrying later is reasonable). Idempotent methods — GET, PUT, DELETE — can be retried safely because repeating them yields the same result; POST isn't, which is why blind retry of a payment can charge twice.",
+      "sets": [
+       [
+        {
+         "q": "The blank line in an HTTP message marks…",
+         "options": [
+          "the end of the connection",
+          "the boundary between headers and body",
+          "a keep-alive heartbeat",
+          "the start of TLS encryption"
+         ],
+         "correct": 1,
+         "explain": "Executed on the wire: method line, headers, blank, body. The whole protocol is that text — URLRequest is a builder for it, proxies are readers of it."
+        },
+        {
+         "q": "4xx vs 5xx — the operational difference?",
+         "options": [
+          "4xx are recoverable warnings; 5xx are hard errors",
+          "4xx: client wrong, fix the request; 5xx: server, retry later",
+          "4xx responses carry bodies; 5xx responses never do",
+          "4xx responses get cached; 5xx responses never are"
+         ],
+         "correct": 1,
+         "explain": "The first digit assigns fault, and fault decides response: correcting a 401 means fixing your token; 'retrying' it identically is a loop of failure."
+        },
+        {
+         "q": "Why is retrying a timed-out GET safe but a timed-out POST dangerous?",
+         "options": [
+          "GET responses are smaller and faster",
+          "GET is idempotent; the POST may already have run once",
+          "POST retries are blocked by URLSession",
+          "GETs skip the server's write path entirely"
+         ],
+         "correct": 1,
+         "explain": "The timeout hides whether the first POST landed — retry and the charge may run twice. Idempotency keys or dedupe are the fix; the method contract is the reason."
+        }
+       ],
+       [
+        {
+         "q": "A response says 200 but the body is HTML instead of your JSON. The likely story?",
+         "options": [
+          "JSONEncoder accidentally produced HTML upstream",
+          "A portal, proxy, or wrong path answered — check Content-Type",
+          "The server compressed the JSON body into HTML form",
+          "URLSession decoded the response body twice over"
+         ],
+         "correct": 1,
+         "explain": "Status guards don't check CONTENT. Hotel Wi-Fi login pages are the classic: transport fine, status fine, body foreign — Content-Type is the tell."
+        },
+        {
+         "q": "URLSession and 3xx redirects, by default:",
+         "options": [
+          "they throw URLError(.redirected) for you to catch",
+          "followed automatically — you see the final response",
+          "returned to your code for fully manual handling",
+          "followed automatically, but only for GET requests"
+         ],
+         "correct": 1,
+         "explain": "The silent follower is why you rarely meet 3xx — and why a 'wrong' final URL sometimes traces back to a redirect chain (a delegate hook exists when you must intercept)."
+        },
+        {
+         "q": "The four header families that do most production work:",
+         "options": [
+          "Encoding, compression, chunking, trailers",
+          "Content description, auth, caching, negotiation",
+          "Cookies, sessions, tokens, signatures",
+          "Host, port, path, fragment"
+         ],
+         "correct": 1,
+         "explain": "Content-Type/Length; Authorization; Cache-Control/ETag; Accept-*. Read those four on any captured request and you understand most of what's being negotiated."
+        }
+       ]
+      ]
+     },
+     "transfer": "Capture one real request from your app or any API: `curl -v` it (or use Proxyman). Read the raw text top to bottom and annotate each line's family — verb contract, status class, header family. Ten minutes of reading the wire beats a month of guessing above it.",
+     "verify": "Executed on this Mac against a local server: the raw wire text captured via curl -v (method line, headers, blank line, body — verbatim in the concept card); a POST with JSON body returned 201 with the body echoed; the X-Client header round-tripped. Reproduce with python3's http.server and curl.",
+     "goDeeper": "MDN's HTTP docs — the canonical readable reference (methods, status codes, headers). RFC 9110 for the real contracts (idempotency: §9.2.2). Proxyman/Charles to watch your own app's wire."
+    },
+    {
+     "id": "b4-03",
+     "title": "Codable: the decoder the compiler writes",
+     "concept": {
+      "definition": "Declaring `struct User: Codable` makes the COMPILER synthesize the encoding and decoding code — member-by-member, from your property names and types (the same synthesis story as b1-17's wrappers). JSONDecoder runs that generated code against bytes: executed here, snake_case JSON decoded into camelCase properties via one strategy switch, and failures arrived as precise typed errors — `typeMismatch` at path 'id', `keyNotFound: signupDate` — naming exactly what and where.",
+      "code": "struct User: Codable {           // compiler writes init(from:) +\n    let id: Int                   // encode(to:) from these members\n    let userName: String          // ← camelCase here…\n    let signupDate: String\n}\nlet dec = JSONDecoder()\ndec.keyDecodingStrategy = .convertFromSnakeCase   // …snake_case wire\nlet user = try dec.decode(User.self, from: data)  // executed: works\n\n// executed failure texts:\n// typeMismatch — path 'id': Expected to decode Int but found a string\n// keyNotFound — 'signupDate'",
+      "underlying": "The synthesis is real code you could write: for each stored property, the generated `init(from:)` asks a keyed container for that key with that type — which is why the error vocabulary maps one-to-one to what can go wrong: `keyNotFound` (the JSON lacks a field your type requires — executed), `typeMismatch` (the field exists, wrong shape — executed, with the path 'id' pinpointing WHERE in nested structures), `valueNotFound` (explicit null into a non-optional), `dataCorrupted` (not even JSON). Reading these errors precisely is the debugging skill; logging just 'decoding failed' throws it away.\n\nThe contract-mismatch toolkit, in escalation order: OPTIONALS make absence legal (`let nickname: String?` — missing key decodes as nil; b1-01 doing API-evolution work: fields the server may omit should be optional, and this is the resilience decision, not an afterthought). STRATEGIES fix systematic differences — key case (executed both directions: decode from snake, encode back to snake), date formats (.iso8601 vs seconds — dates are the #1 Codable fight), data encodings. CODINGKEYS renames per-field when names genuinely differ (`case userName = \"login\"`) — and the enum's cases also select WHICH properties participate. CUSTOM `init(from:)` is the last resort, for structural surgery — flattening nested wrappers, tolerating string-or-int servers.\n\nOne design habit that pays forever: your Codable structs are the CONTRACT with the server, written as types. When decode fails, either the contract changed (server) or your transcription is wrong (you) — the error names which line to check first.",
+      "whyItMatters": "Every API-backed app is Codable-shaped, and 'why does decoding fail?' is a daily question the typed errors answer precisely if you read them. Interview classics live here too: 'how does Codable work under the hood?' (synthesis) and 'how do you handle a field the server sometimes omits?' (optional = resilience)."
+     },
+     "exercise": {
+      "prompt": "The server sends the JSON below. For each of the four Swift models, verdict: DECODES or FAILS — and if it fails, name the exact DecodingError case and the offending path. The decoder uses .convertFromSnakeCase.",
+      "code": "// {\"id\": 7, \"user_name\": \"riya\", \"plan\": null}\n\n// A\nstruct A: Codable { let id: Int; let userName: String }\n\n// B\nstruct B: Codable { let id: Int; let userName: String; let plan: String }\n\n// C\nstruct C: Codable { let id: Int; let userName: String; let plan: String?\n                    let bio: String? }\n\n// D\nstruct D: Codable { let id: String; let userName: String }",
+      "solution": "A: DECODES — extra JSON fields (plan) are simply ignored; the contract only demands what the type declares.\nB: FAILS — valueNotFound at path 'plan': the key exists but holds explicit null, and B demands a non-optional String.\nC: DECODES — plan's null becomes nil, and bio (absent entirely) also becomes nil: optionals absorb both null and missing.\nD: FAILS — typeMismatch at path 'id' (executed verbatim: \"Expected to decode Int but found a string\" — reversed here: expected String, found number).\n\nThe asymmetry worth memorizing: extra JSON is free; missing/null JSON costs exactly one optional per field.",
+      "explanation": "B vs C is the resilience decision in miniature: every non-optional property is a hard demand on the server forever. Model the fields you can't live without as required, everything the API might evolve away as optional — the type IS the contract negotiation."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what does the compiler synthesize for a Codable struct, what do the main DecodingError cases mean, and how do you make a model resilient to API changes?",
+      "modelAnswer": "The compiler generates init(from:) and encode(to:) member-by-member — each property becomes a keyed-container lookup by name and type, customizable via CodingKeys and decoder strategies like snake_case conversion. The errors map to what lookups can hit: keyNotFound (field absent), typeMismatch (wrong shape, with a path naming where), valueNotFound (explicit null into non-optional), dataCorrupted (not valid JSON). Resilience is mostly optionals — they absorb both missing keys and nulls — with required properties reserved for fields the feature genuinely cannot function without.",
+      "sets": [
+       [
+        {
+         "q": "Who writes the code that turns JSON into your struct's properties?",
+         "options": [
+          "The runtime, via Mirror-based reflection on each decode",
+          "The compiler — synthesized init(from:), one lookup per member",
+          "JSONDecoder itself, interpreting the type's name",
+          "A build-phase script Apple ships with Xcode"
+         ],
+         "correct": 1,
+         "explain": "b1-17's synthesis story again: real generated code, one container lookup per property — which is why errors can name the exact key and expected type."
+        },
+        {
+         "q": "The JSON has fields your struct doesn't declare. Decoding…",
+         "options": [
+          "fails with unknownKey errors",
+          "succeeds — undeclared fields are ignored",
+          "succeeds but logs warnings per extra field",
+          "depends on the decoder's strictness flag"
+         ],
+         "correct": 1,
+         "explain": "The generated code only ASKS for declared members; extra JSON is never consulted. That's the free half of resilience — servers may add fields without breaking you."
+        },
+        {
+         "q": "typeMismatch's context includes a codingPath. What is it for?",
+         "options": [
+          "The file path of the model's source",
+          "Where INSIDE nested JSON the wrong shape sits",
+          "The URL the data was fetched from",
+          "The list of strategies the decoder tried"
+         ],
+         "correct": 1,
+         "explain": "Executed: path 'id', expected Int, found string. In deep structures the path (user.address.zipcode) is the difference between a minute and an afternoon of debugging."
+        }
+       ],
+       [
+        {
+         "q": "The server sends `\"plan\": null` and your property is `let plan: String`. The error?",
+         "options": [
+          "keyNotFound — null-valued keys get dropped entirely",
+          "valueNotFound — the key holds null; non-optionals refuse it",
+          "typeMismatch — null counts as its own JSON type",
+          "No error at all; plan becomes an empty string"
+         ],
+         "correct": 1,
+         "explain": "Null and missing are DIFFERENT failures (valueNotFound vs keyNotFound) — but one optional absorbs both, which is why `String?` is the resilience move."
+        },
+        {
+         "q": "camelCase properties, snake_case API — the maintainable fix?",
+         "options": [
+          "Rename your properties to snake_case",
+          "One decoder-wide strategy: .convertFromSnakeCase",
+          "A CodingKeys enum in every single model",
+          "Preprocess the JSON text with replacements"
+         ],
+         "correct": 1,
+         "explain": "Executed both directions. Strategies handle SYSTEMATIC differences once, decoder-wide; CodingKeys is for genuine per-field renames (userName = \"login\"), not case conventions."
+        },
+        {
+         "q": "When is a custom init(from: Decoder) actually warranted?",
+         "options": [
+          "Whenever a model grows past five stored properties",
+          "Structural surgery — flattened wrappers, string-or-int fields",
+          "Always; the synthesized code is measurably slower",
+          "Only for classes, which cannot use the synthesis"
+         ],
+         "correct": 1,
+         "explain": "The escalation ladder: optionals → strategies → CodingKeys → custom init, last. Hand-written decoding is a maintenance liability you accept only when the shape truly differs."
+        }
+       ]
+      ]
+     },
+     "transfer": "Take your app's most important model and audit each property against the real API: which are genuinely guaranteed (required), which could the server omit or null (optional)? Then break it on purpose — feed it a null, a missing key, a wrong type — and read all three error cases with their paths. That vocabulary is your production debugging kit.",
+     "verify": "Executed on this Mac against a live local server: snake_case JSON decoded via .convertFromSnakeCase and re-encoded back; typeMismatch verbatim — path 'id', \"Expected to decode Int but found a string instead\"; keyNotFound: 'signupDate'. Reproduce by feeding a decoder progressively broken JSON strings.",
+     "goDeeper": "Apple docs: \"Encoding and Decoding Custom Types\" — the synthesis contract. WWDC 2021 \"Review code performance\" touches decode costs; objc.io's \"Swift Talk\" Codable episodes for custom-init surgery patterns. b1-01/b1-13 for the enum-and-errors machinery underneath."
+    },
+    {
+     "id": "b4-04",
+     "title": "Decoding resilience: surviving the server's surprises",
+     "concept": {
+      "definition": "Synthesized decoding is all-or-nothing at every level: executed here, ONE bad element (`\"id\": \"two\"`) failed the entire array decode at path `Index 1.id` — three items in, zero items out. Resilience is choosing where to bend instead of break: lossy collections that skip poisoned elements (executed: recovered [1, 3]), tolerant enums that map unknown cases to `.unknown` (executed), and optionals for fields the server may drop. Each is a POLICY decision, not a trick.",
+      "code": "// executed: [{\"id\":1},{\"id\":\"two\"},{\"id\":3}] into [Item] →\n// typeMismatch at 'Index 1.id' — you get NOTHING.\n\nstruct Lossy<T: Codable>: Codable {         // the recover-the-rest policy\n    let elements: [T]\n    init(from decoder: Decoder) throws {\n        var c = try decoder.unkeyedContainer()\n        var out: [T] = []\n        while !c.isAtEnd {\n            if let v = try? c.decode(T.self) { out.append(v) }\n            else { _ = try? c.decode(Blank.self) }  // consume the bad slot\n        }\n        elements = out\n    }\n    private struct Blank: Codable {}\n}\n// executed: Lossy<Item> over the same bytes → [1, 3]",
+      "underlying": "Why all-or-nothing is the default: the synthesized code (b4-03) throws on the first failed lookup, and a throw mid-array abandons the array — one malformed row in a feed of 200 blanks the screen. The lossy wrapper flips the policy per element: `try?` converts each element's throw into a skip (b1-13's error-to-optional move), and the Blank decode is the subtle line — an unkeyed container only advances by consuming, so the bad slot must be swallowed or the loop spins.\n\nEnums have the same cliff, executed: a raw-value enum meeting an unknown string (\"hologram\") throws dataCorrupted — meaning the SERVER ADDING A CASE breaks old clients. The tolerant pattern (custom init, `Kind(rawValue:) ?? .unknown`) is API-evolution insurance: shipped apps survive tomorrow's server vocabulary. Note what .unknown demands downstream: every switch now handles it — the b1-16 exhaustiveness audit working FOR the policy.\n\nThe policy menu, in order of preference: OPTIONALS for absence (b4-03 — free); TOLERANT ENUMS for open vocabularies; LOSSY COLLECTIONS for feeds where partial beats empty; custom init surgery last. And one discipline that makes all of them safe: LOG what you dropped. Silent lossiness converts server bugs into invisible data loss — the wrapper that skips an element should count it somewhere a dashboard can see, or you'll ship a feed that quietly shows 3 of 200 items and call it working.",
+      "whyItMatters": "\"One bad item blanked the whole feed\" is a real outage pattern at every scale, and \"how do you decode an array with possibly-bad elements?\" is a standard senior-iOS interview question. The unknown-enum-case crash is the other classic: apps that break the day the server ships a new type."
+     },
+     "exercise": {
+      "prompt": "Your feed endpoint returns 200 posts; the server has a bug making ~2% of posts have `\"likes\": \"lots\"` (string, not Int). For each strategy, predict what the USER sees and name the failure/cost: (A) `[Post].self` as-is; (B) `Lossy<Post>`; (C) `likes` becomes `Int?`; (D) custom init decoding likes as Int-or-string-parsed.",
+      "code": "// server bug: ~2% of posts have \"likes\": \"lots\"\n// A: try decoder.decode([Post].self, from: data)\n// B: try decoder.decode(Lossy<Post>.self, from: data).elements\n// C: struct Post { …; let likes: Int? }\n// D: custom init(from:) — try Int, else parse the string, else 0",
+      "solution": "A: user sees an EMPTY feed (or error state) — one bad post kills all 200 (executed pattern: zero items out). Cost: total failure from a 2% bug.\nB: user sees ~196 posts; the poisoned ones vanish. Cost: silent item loss — acceptable for a feed, dangerous without logging the drops.\nC: all 200 posts appear; broken ones show likes as nil (render as '—'). Cost: the FIELD degrades instead of the item — often the best trade, but nil now means both 'absent' and 'malformed'.\nD: all 200 appear with best-effort likes ('lots' → 0 or parsed). Cost: hand-written decode to maintain, and fabricated data — 0 is a lie the analytics team inherits.\n\nRanking for a feed: C or B (with logging) > D > A. The interview answer is the REASONING: match the blast radius to the data's importance.",
+      "explanation": "Every strategy is a blast-radius decision: A fails the screen, B drops items, C degrades a field, D fabricates a value. There is no universally right answer — there is a right answer per field, and 'what does the user lose?' is the question that finds it."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: why does one bad element fail a whole array decode, and what are the main resilience strategies with their trade-offs?",
+      "modelAnswer": "Synthesized decoding throws on the first failed lookup, and a throw inside an unkeyed container abandons the entire collection — so one malformed element yields zero results. The resilience menu: optionals absorb missing or null fields for free; tolerant enums map unknown raw values to an .unknown case so new server vocabulary doesn't crash old clients; lossy collection wrappers try? each element and skip failures, trading silent item loss for a working screen. Each choice sets a blast radius — fail the screen, drop the item, or degrade the field — and dropped data should always be logged.",
+      "sets": [
+       [
+        {
+         "q": "An array of 200 decodes with one bad element. Plain [Item].self yields…",
+         "options": [
+          "199 items plus one automatically logged warning",
+          "zero items — one element's throw abandons the array",
+          "200 items, the bad one replaced by a placeholder",
+          "199 items delivered, completely silently"
+         ],
+         "correct": 1,
+         "explain": "Executed: typeMismatch at 'Index 1.id', nothing returned. The synthesized code has one policy — throw — and a mid-array throw abandons the collection."
+        },
+        {
+         "q": "In the lossy wrapper, why must the failed slot decode into a Blank struct?",
+         "options": [
+          "Codable requires every element consumed as some type",
+          "The container advances only by consuming — else it spins",
+          "Blank preserves the array's original count",
+          "It converts the throw into a logged warning"
+         ],
+         "correct": 1,
+         "explain": "The container is a cursor: a failed try? didn't move it. Swallowing the bad slot with a decode-anything is the line everyone forgets — and the infinite loop that teaches them."
+        },
+        {
+         "q": "A raw-value enum meets an unknown string from the server. Default behavior?",
+         "options": [
+          "It becomes the enum's first case",
+          "dataCorrupted — 'Cannot initialize Kind from invalid…'",
+          "nil, even in non-optional position",
+          "The string is stored for later re-decoding"
+         ],
+         "correct": 1,
+         "explain": "The server adding vocabulary breaks shipped clients — the day-one crash of many apps. The tolerant-init-with-.unknown pattern is the vaccine."
+        }
+       ],
+       [
+        {
+         "q": "The tolerant enum's .unknown case pays off at compile time because…",
+         "options": [
+          "it makes the enum Sendable automatically",
+          "every switch must now handle it — b1-16's audit at work",
+          "it removes the need for CodingKeys",
+          "raw-value enums skip synthesis entirely"
+         ],
+         "correct": 1,
+         "explain": "Adding .unknown forces every consumer to decide what unknown MEANS there (hide? placeholder?) — the exhaustiveness check turning a runtime surprise into a design conversation."
+        },
+        {
+         "q": "Why must a lossy decoder LOG what it drops?",
+         "options": [
+          "App Review requires data-loss disclosure",
+          "Silent skips turn server bugs into invisible data loss",
+          "The logs re-populate the dropped items later",
+          "try? leaks memory unless the error is read"
+         ],
+         "correct": 1,
+         "explain": "Resilience hides failure from USERS, not from you. A drop counter on a dashboard is the difference between graceful degradation and quietly shipping a broken feed."
+        },
+        {
+         "q": "Field-level degradation (likes: Int?) versus item-level (lossy array) — the trade?",
+         "options": [
+          "Optionals are slower to decode than wrappers",
+          "The field degrades but items stay; lossy loses whole items",
+          "They're equivalent; pick by code style",
+          "Lossy arrays can't contain optional fields"
+         ],
+         "correct": 1,
+         "explain": "C shows all posts with a '—'; B shows fewer, perfect posts. Match the blast radius to what the user can better live without — that reasoning IS the senior answer."
+        }
+       ]
+      ]
+     },
+     "transfer": "Take your app's main list model and inject one poisoned element into captured JSON (wrong type on one field). Watch the whole decode fail. Then pick a policy per the blast-radius question, implement it, and add the drop-counter log line. Twenty minutes; permanent instinct.",
+     "verify": "Executed on this Mac: plain [Item] over a 3-element array with one bad id failed at 'Index 1.id' with zero items; the Lossy wrapper recovered [1, 3]; the unknown enum value threw dataCorrupted verbatim; the tolerant enum decoded [\"image\",\"hologram\"] as [.image, .unknown]. All four runs reproducible from the snippet.",
+     "goDeeper": "objc.io Swift Talk on lossy decoding; the community LossyCodableList pattern (Sundell). b1-16 for what .unknown demands of switches; b4-03 for the synthesis this bends. Apple docs: Unkeyed containers in 'Encoding and Decoding Custom Types'."
+    },
+    {
+     "id": "b4-05",
+     "title": "HTTP caching: the request you never send",
+     "concept": {
+      "definition": "URLCache sits inside URLSession and answers repeat requests from storage when the server said it may: executed here, three identical GETs to a `Cache-Control: max-age=60` endpoint produced ONE server hit — the second and third bodies came from cache, byte-identical (`server_hits: 1` three times). The server's headers set the policy; the client machinery honors it invisibly; `cachePolicy` on a request is your override (executed: `.reloadIgnoringLocalCacheData` forced hit 2).",
+      "code": "// server response includes:  Cache-Control: max-age=60\nlet (d1, _) = try await session.data(from: url)   // server hit 1\nlet (d2, _) = try await session.data(from: url)   // CACHE — no request\nlet (d3, _) = try await session.data(from: url)   // CACHE — no request\n// executed: all three bodies say {\"server_hits\": 1}\n\nvar fresh = URLRequest(url: url)\nfresh.cachePolicy = .reloadIgnoringLocalCacheData\n// executed: forces the wire — server_hits becomes 2",
+      "underlying": "The cache is a dictionary from request to stored response, consulted BEFORE the network: a fresh entry (its max-age not yet elapsed) is returned without any I/O — the fastest request is the one never sent, and the executed hit-counter is the proof most developers never see. Freshness policy travels IN the response: `Cache-Control: max-age=N` (cache for N seconds), `no-store` (never cache — auth responses, personal data), `no-cache` (store, but REVALIDATE before reuse).\n\nRevalidation is the protocol's second gear: responses carrying an `ETag` (a content fingerprint) let the client ask cheaply — the next request includes `If-None-Match: <etag>`, and the server answers `304 Not Modified` with NO body if nothing changed. URLSession handles the 304 transparently: your code receives the cached body with a 200, never seeing the exchange. Stale-but-validatable beats refetching megabytes to learn nothing changed.\n\nWhat's on by default: URLSession.shared has a URLCache (memory + disk) and honors these headers already — meaning caching BUGS are usually surprises in either direction: staleness (a too-long max-age serving old data — b4-02's exercise symptom 4) or waste (no-store/no headers making every request full price). Debugging steps in order: inspect the response's cache headers, check the configured URLCache capacities, and use cachePolicy overrides (`.reloadIgnoringLocalCacheData` for force-fresh, executed) rather than cache-busting query strings. What URLCache is NOT: your image cache or your model cache — those want purpose-built layers (the b3-06 actor cache) with YOUR eviction policy; URLCache is specifically the HTTP-semantics cache.",
+      "whyItMatters": "'Why is my app showing stale data?' and 'why is my app re-downloading everything?' are the two faces of one system — and both are diagnosed from response headers, not Swift. Interviewers love 'explain ETag/304' because it separates people who've read the wire from people who've guessed."
+     },
+     "exercise": {
+      "prompt": "Predict the server-side hit count after each numbered step, given the endpoint returns `Cache-Control: max-age=60` and the session has a working URLCache. Then the diagnosis question: a teammate 'fixes' stale data by appending `?t=<timestamp>` to every URL — what did they actually do, and what was the right tool?",
+      "code": "// endpoint: Cache-Control: max-age=60\n// 1. GET /feed            → hits = ?\n// 2. GET /feed  (2s later) → hits = ?\n// 3. GET /feed with cachePolicy .reloadIgnoringLocalCacheData → hits = ?\n// 4. GET /feed  (2s later) → hits = ?\n// 5. 61 seconds pass. GET /feed → hits = ?",
+      "solution": "1. hits = 1 — cold cache, real request.\n2. hits = 1 — fresh entry (2s < 60), served from cache; no wire (executed: three calls, one hit).\n3. hits = 2 — the policy bypasses the cache and refetches (executed) — and the fresh response re-primes the cache.\n4. hits = 2 — the re-primed entry serves it.\n5. hits = 3 — max-age elapsed; the entry is stale; the request goes out (with revalidation headers if an ETag was present).\n\nThe ?t=timestamp 'fix': every URL is now UNIQUE, so nothing ever matches the cache — they didn't refresh the cache, they DESTROYED it, for every user, forever, including all the requests that were fine. The right tools: fix the server's max-age if the policy was wrong, or use cachePolicy for the specific force-fresh moments (pull-to-refresh).",
+      "explanation": "Cache-busting query strings are the classic overcorrection: one stale screen becomes zero caching app-wide. The header IS the policy — change the policy where it lives, override per-request where you must."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: how does URLCache decide to skip the network, what does the ETag/304 exchange do, and where do staleness bugs come from?",
+      "modelAnswer": "URLCache consults stored responses before the network: while a response's Cache-Control max-age hasn't elapsed, repeat requests are answered from storage without any I/O — the server never sees them. ETags enable cheap revalidation: the client sends If-None-Match with the stored fingerprint, and a 304 Not Modified reply — bodyless — tells URLSession to reuse the cached body, invisibly to your code. Staleness bugs are policy bugs: a max-age longer than the data's real volatility, diagnosed by reading the response's cache headers, and overridden per-request with cachePolicy — not by cache-busting URLs.",
+      "sets": [
+       [
+        {
+         "q": "Executed: three identical GETs, server hit once. Where did responses 2 and 3 come from?",
+         "options": [
+          "HTTP keep-alive replayed the first response",
+          "URLCache — the stored response was still fresh; no wire",
+          "The server deduplicated the requests",
+          "URLSession coalesced them into one in-flight call"
+         ],
+         "correct": 1,
+         "explain": "The fastest request is unsent. The server's own counter is the proof: {\"server_hits\": 1} on all three bodies — the network was idle for two of them."
+        },
+        {
+         "q": "Cache-Control: no-cache means…",
+         "options": [
+          "never store this response anywhere",
+          "store it, but revalidate with the server per reuse",
+          "cache it in memory only, never disk",
+          "identical to max-age=0 plus no-store"
+         ],
+         "correct": 1,
+         "explain": "The misnamed one: no-STORE forbids storage (auth/personal data); no-CACHE allows storage but demands a freshness check — usually the cheap ETag/304 handshake — per use."
+        },
+        {
+         "q": "The server replies 304 Not Modified. What does YOUR code receive?",
+         "options": [
+          "A 304 response with an empty body to handle",
+          "The cached body with a 200 — the exchange was invisible",
+          "A thrown URLError(.notModified)",
+          "nil data, signaling reuse-your-copy"
+         ],
+         "correct": 1,
+         "explain": "Revalidation is transport-layer machinery: the If-None-Match request and bodyless 304 happen under you. You see fresh-looking data that cost almost no bytes."
+        }
+       ],
+       [
+        {
+         "q": "Appending ?t=timestamp to defeat staleness actually…",
+         "options": [
+          "refreshes the cache entry in place",
+          "makes every request unique — the cache never matches again",
+          "is equivalent to reloadIgnoringLocalCacheData",
+          "works, but only over HTTPS"
+         ],
+         "correct": 1,
+         "explain": "The cache keys on the request; unique URLs mean permanent cold cache for everyone. Fix the max-age (policy) or use cachePolicy (targeted override) — not URL vandalism."
+        },
+        {
+         "q": "Pull-to-refresh should guarantee fresh data. The right mechanism?",
+         "options": [
+          "Delete the entire URLCache before the request",
+          "That request's cachePolicy = .reloadIgnoringLocalCacheData",
+          "A one-second max-age on all endpoints",
+          "A cache-busting header the server ignores"
+         ],
+         "correct": 1,
+         "explain": "Executed: the policy forced the wire (hit 2) while leaving the cache system intact for everything else. Surgical override, not demolition."
+        },
+        {
+         "q": "Why is URLCache the wrong home for your decoded-image cache?",
+         "options": [
+          "Images exceed URLCache's size limits",
+          "It follows HTTP rules; decoded artifacts want YOUR eviction",
+          "URLCache is deprecated for binary data",
+          "Disk caching requires a special entitlement"
+         ],
+         "correct": 1,
+         "explain": "URLCache stores wire bytes under server-set policy. Decoded UIImages, model objects, computed results want a purpose-built layer (b3-06's actor cache) where YOU own keys, costs, and eviction."
+        }
+       ]
+      ]
+     },
+     "transfer": "Capture one of your app's GET responses (Proxyman or curl -v) and read its Cache-Control/ETag headers. Answer: is this endpoint's caching policy intentional? If there are no cache headers at all, calculate what that costs: every scroll-back refetches everything, full price.",
+     "verify": "Executed on this Mac against a hit-counting local server: 3 client GETs → 1 server hit (bodies all showed server_hits: 1); .reloadIgnoringLocalCacheData forced hit 2; final server counter read 2 after 4 client requests. The server recipe (Cache-Control header + hit counter) is 20 lines of python3 http.server — rebuild it and watch requests not happen.",
+     "goDeeper": "MDN: 'HTTP caching' — the best single explainer of Cache-Control/ETag. Apple docs: URLCache + NSURLRequest.CachePolicy. WWDC 2022 'Reduce networking delays' pairs caching with the connection pool from b4-01."
+    },
+    {
+     "id": "b4-06",
+     "title": "Persistence: choosing where bytes sleep",
+     "concept": {
+      "definition": "iOS gives you a ladder of persistence tools, and the choice is a fit question, not a fashion one. UserDefaults: tiny key-value preferences, loaded whole into memory (executed: ints and strings round-tripped). Files: whole documents you read and write yourself — executed: a Codable expense array to JSON on disk, 62 bytes, atomic write. SQLite/Core Data/SwiftData: real databases for data you QUERY — partial reads, relationships, migrations. The deciding questions: how big, how queried, how related, how often changed.",
+      "code": "// rung 1 — preferences (executed round trip):\nUserDefaults.standard.set(42, forKey: \"loopCount\")\n\n// rung 2 — documents (executed: 62 bytes, atomic):\ntry JSONEncoder().encode(expenses)\n    .write(to: fileURL, options: .atomic)\n\n// rung 3 — a database, when you QUERY:\n@Model class Expense {                    // SwiftData\n    var amount: Double; var date: Date\n    @Relationship var category: Category   // relations, predicates,\n}                                           // partial fetches, migrations",
+      "underlying": "Each rung's machinery explains its limits. UserDefaults is a plist file read entirely into memory at launch and synced back — perfect for a theme flag, catastrophic as a database: every byte you stuff there is paid at startup, there are no queries (you get the whole value or nothing), and 'store the array of everything in defaults' is the junior mistake this loop exists to prevent. Files-plus-Codable is honest whole-document storage: you own the format (b4-03), `.atomic` writes guard against corruption mid-write (write-to-temp-then-rename — b1-13's cleanup thinking at the filesystem level), and the cost model is all-or-nothing I/O — fine for a checkpoint's expense list at 62 bytes, brutal at 50MB when you wanted one record.\n\nDatabases earn their complexity exactly where whole-document breaks: PARTIAL access (fetch this month's expenses, not the file), QUERIES (sum by category — a predicate, not a decode-then-filter), RELATIONSHIPS (expense → category without manual ID bookkeeping), and MIGRATIONS (your schema WILL change; a database has a story for v2, your ad-hoc JSON has b1-13-style versioning you must hand-roll — this app's own storage migration was exactly that). SQLite is the engine; Core Data and SwiftData are Apple's object-graph layers over it — SwiftData being the modern Swift-native face (@Model classes, #Predicate queries, b1-17's macro-style synthesis).\n\nThe decision table to memorize: preferences → UserDefaults; whole documents / small caches → files+Codable; queried, related, growing data → SwiftData. And one boundary note: none of these are for secrets — tokens and passwords have their own rung (Keychain, next loop), because everything above is readable plaintext on a jailbroken device.",
+      "whyItMatters": "\"UserDefaults vs Core Data — when?\" is a guaranteed interview question with a one-word rubric (queries), and the everything-in-defaults app is a genuine production pattern that dies at launch time. Your expense-tracker checkpoint faces exactly this choice — and its file-based v1 hitting migration pain is the planned lesson."
+     },
+     "exercise": {
+      "prompt": "A fit-the-tool drill, b0-04 style. For each data item, verdict — UserDefaults, FILE (Codable), or DATABASE — with the deciding question named: (1) hasDismissedOnboarding: Bool; (2) the draft of a half-written post (recoverable after crash); (3) 4 years of expenses, browsed by month and summed by category; (4) a 40MB cached API response used as boot fallback; (5) the user's auth token.",
+      "code": "// 1. hasDismissedOnboarding: Bool\n// 2. draft of a half-written post\n// 3. 4 years of expenses — month views, category sums\n// 4. 40MB cached API response (boot fallback)\n// 5. auth token",
+      "solution": "1. UserDefaults — a preference: tiny, unqueried, wants launch-time availability.\n2. FILE — a whole document, read/written as a unit; .atomic protects the crash-recovery story it exists for.\n3. DATABASE — the word 'by' twice: month PREDICATES and category AGGREGATES are queries; decode-everything-then-filter re-reads 4 years to show one month.\n4. FILE — but NOT UserDefaults (40MB in the launch-loaded plist is a startup tax on every cold boot forever). A cache directory file, whole-document by nature.\n5. NONE OF THE ABOVE — it's a secret: Keychain (next loop). Defaults and files are plaintext to anyone with the container.\n\nItem 4 is the trap: 'small enough for a file' hides 'too big for defaults', and the difference is WHERE the bytes get paid — at use versus at launch.",
+      "explanation": "Every verdict came from one of the four deciding questions — size, queries, relations, change-rate — plus the secrets boundary. Tools don't have prestige tiers; data has shapes, and the shape picks the tool."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: when do UserDefaults, files, and a database each fit, and what's the machine-level reason UserDefaults can't be a database?",
+      "modelAnswer": "UserDefaults fits tiny preference values: it's a plist loaded wholly into memory at launch, so everything stored there is a startup cost and nothing is queryable. Files with Codable fit whole documents — you own the format, atomic writes prevent corruption, but access is all-or-nothing I/O. A database (SQLite under Core Data or SwiftData) earns its complexity when you need partial fetches, predicates, relationships, or migrations — the moment you'd otherwise decode everything to filter for one month. Secrets fit none of these; they belong in the Keychain.",
+      "sets": [
+       [
+        {
+         "q": "The machine-level reason UserDefaults is wrong for large data?",
+         "options": [
+          "It enforces a hard 1MB serialization limit per key",
+          "A plist loaded whole at launch — every byte is startup tax",
+          "Its writes run synchronously on the main thread",
+          "Its contents are cleared on every OS update"
+         ],
+         "correct": 1,
+         "explain": "The whole store rides along at boot, queryless. A theme flag is free; 'the array of everything' makes cold launch pay for your laziness forever."
+        },
+        {
+         "q": "What does .atomic buy on a file write?",
+         "options": [
+          "Hardware encryption of the bytes while at rest",
+          "Write-to-temp-then-rename — mid-write crashes can't corrupt",
+          "Exclusive file locking against other processes",
+          "Automatic iCloud backup of the file's contents"
+         ],
+         "correct": 1,
+         "explain": "The old file survives until the new one is complete; the rename is the atomic step. For a crash-recovery draft, this IS the feature."
+        },
+        {
+         "q": "The one-word rubric for 'time to graduate to a database':",
+         "options": [
+          "Encryption",
+          "Queries",
+          "Threading",
+          "Size, alone"
+         ],
+         "correct": 1,
+         "explain": "'Browsed by month, summed by category' is SQL-shaped work. Decode-then-filter re-reads the world per question; a database reads the answer."
+        }
+       ],
+       [
+        {
+         "q": "SwiftData relates to SQLite how?",
+         "options": [
+          "It replaces SQLite with a JSON store",
+          "A Swift-native object-graph layer over the engine family",
+          "It's SQLite compiled into your app binary",
+          "An in-memory cache with disk snapshots"
+         ],
+         "correct": 1,
+         "explain": "The ladder's top rung: the engine does storage and queries, the layer maps rows to your @Model classes (b1-17-style synthesis) and owns the migration story."
+        },
+        {
+         "q": "Schema evolution — v2 adds a field. Compare the stories:",
+         "options": [
+          "All three tools migrate automatically",
+          "Databases ship migration machinery; ad-hoc JSON is on you",
+          "Files migrate automatically; databases need scripts",
+          "UserDefaults handles it via key namespacing"
+         ],
+         "correct": 1,
+         "explain": "Lightweight migrations come with the database. Your Codable file needs the versioned-blob dance this very app performed for its v1→v2 storage — doable, but yours to build and test."
+        },
+        {
+         "q": "Why does the auth token belong in NONE of this loop's tools?",
+         "options": [
+          "Tokens are too small to store efficiently anywhere",
+          "Both are plaintext in the container — secrets need Keychain",
+          "Tokens expire far too fast to persist usefully",
+          "App Review rejects any app persisting raw tokens"
+         ],
+         "correct": 1,
+         "explain": "Everything in this loop is readable bytes in your sandbox. Secrets get hardware-backed storage with access control — the next loop's entire subject."
+        }
+       ]
+      ]
+     },
+     "transfer": "Audit your app's (or checkpoint plan's) every persisted item against the drill's questions: anything big in UserDefaults? anything queried from a flat file? any secret outside the Keychain? Write the three-column inventory — data, current home, right home — and move ONE item.",
+     "verify": "Executed on this Mac: UserDefaults int/string round trip; a Codable array written atomically to disk (62 bytes) and read back equal. The database rung's claims (predicates, migrations) verify in an Xcode project with SwiftData — 20 minutes with @Model and #Predicate makes the query argument physical.",
+     "goDeeper": "WWDC 2023 \"Meet SwiftData\" + \"Model your schema with SwiftData\" (migrations). Apple docs: UserDefaults ('not for large data') and FileManager. The checkpoint's planned pain: ship file-based v1, feel the month-query cost, migrate — that's the lesson working."
+    },
+    {
+     "id": "b4-07",
+     "title": "Keychain: where secrets actually live",
+     "concept": {
+      "definition": "The Keychain is the OS's encrypted credential store — hardware-backed, outside your app's readable container, with per-item access policies. Its C-era API is four verbs over attribute dictionaries, all executed here: SecItemAdd (adding twice returned errSecDuplicateItem), SecItemCopyMatching (read the secret back), SecItemUpdate, SecItemDelete (reading after returned errSecItemNotFound). Tokens, passwords, keys go here — never UserDefaults, never files.",
+      "code": "var query: [String: Any] = [\n    kSecClass as String:       kSecClassGenericPassword,\n    kSecAttrService as String: \"com.app.api\",     // item identity =\n    kSecAttrAccount as String: \"authToken\"        // class+service+account\n]\nvar add = query; add[kSecValueData as String] = tokenData\nSecItemAdd(add as CFDictionary, nil)         // executed: success\nSecItemAdd(add as CFDictionary, nil)         // executed: errSecDuplicateItem\n\nquery[kSecReturnData as String] = true\nSecItemCopyMatching(query as CFDictionary, &result)  // executed: read back",
+      "underlying": "Why a special store exists: b4-06's tools are plaintext bytes in your sandbox — trivially readable off a jailbroken device or a backup. Keychain items are encrypted with keys derived in the Secure Enclave and gated by ACCESS POLICY, set per item via kSecAttrAccessible: `WhenUnlocked` (default — readable only while the device is unlocked), `AfterFirstUnlock` (readable from first unlock until reboot — what background-refresh tokens need), and the `ThisDeviceOnly` variants (never migrate via backup to another device). Choosing this attribute IS the security decision: a background upload that dies at 3am because its token was WhenUnlocked is the classic mismatch.\n\nThe API's shape explains its errors. Items are identified by their attribute tuple (class + service + account), and the verbs are strict: Add refuses to overwrite (executed: -25299 duplicate), so the standard 'save' is add-then-update-on-duplicate (or delete-then-add); reads fail loudly when absent (executed: -25300 not found). Statuses are return codes, not throws — every call needs its `== errSecSuccess` check, which is why every codebase grows a small wrapper (and why yours should too: one type, four methods, typed errors — b1-16 fodder).\n\nTwo behavioral footnotes worth knowing cold: Keychain items SURVIVE app deletion (uninstall-reinstall keeps the token — startling until you know, a logout-bug generator after), and they're per-app by default (access groups exist for suite sharing). The simulator fakes all of this without the Secure Enclave — behavior verified here runs anywhere; the hardware guarantees need a device.",
+      "whyItMatters": "\"Where do you store the auth token?\" is a screening question with exactly one right answer, and kSecAttrAccessible mismatches cause real 3am-background-job outages. The survives-reinstall surprise ships logout bugs constantly."
+     },
+     "exercise": {
+      "prompt": "A security review drill. For each finding, verdict — FINE or VULNERABILITY/BUG — with the mechanism: (1) refresh token in UserDefaults 'because Keychain is complicated'; (2) token stored WhenUnlocked, app does 4am background sync; (3) 'save' implemented as SecItemAdd only, called on every login; (4) after account deletion, app is reinstalled and auto-logs-in the old user; (5) API key stored with ThisDeviceOnly.",
+      "code": "// 1. refresh token → UserDefaults\n// 2. kSecAttrAccessibleWhenUnlocked + 4am background sync\n// 3. save = SecItemAdd, every login\n// 4. reinstall auto-logs-in deleted account\n// 5. API key + kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly",
+      "solution": "1. VULNERABILITY — defaults are plaintext in the container (b4-06); any backup or jailbreak reads the token. Keychain, full stop.\n2. BUG — at 4am the device is locked; WhenUnlocked items are unreadable and the sync fails. AfterFirstUnlock is the background-work policy.\n3. BUG — executed: the second Add returns errSecDuplicateItem (-25299); login #2 silently fails to store the NEW token, and the app keeps authenticating with the stale one. Save = add, and on duplicate, update.\n4. BUG (and the mechanism): Keychain items survive app deletion — the reinstall read the old token and resumed a session the user believed erased. Fix: clear your Keychain items on logout/first-run-after-install.\n5. FINE — and deliberately good: ThisDeviceOnly keeps the key out of backups and device migrations; right for device-bound credentials.\n\nEvery verdict is an attribute or a return code — the security is in the details you set, not in 'using Keychain' as a checkbox.",
+      "explanation": "Findings 2–4 are the loop's real lesson: Keychain misuse fails FUNCTIONALLY (dead syncs, stale tokens, ghost logins), not just theoretically. The accessibility attribute and the duplicate-handling pattern are where reviews should look first."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: why does the Keychain exist when files are simpler, what does kSecAttrAccessible control, and what are two behaviors that surprise developers?",
+      "modelAnswer": "Files and UserDefaults are plaintext in the app container — readable from backups or jailbroken devices — while Keychain items are encrypted with Secure-Enclave-derived keys and gated by per-item policy. kSecAttrAccessible sets when an item is readable: WhenUnlocked for foreground secrets, AfterFirstUnlock for tokens background work needs, ThisDeviceOnly variants to keep items out of backups. The surprises: items survive app deletion — reinstalls can silently resume old sessions unless you clear on logout — and SecItemAdd refuses duplicates, so save must be add-then-update.",
+      "sets": [
+       [
+        {
+         "q": "Why is a token in UserDefaults a vulnerability rather than a style issue?",
+         "options": [
+          "Defaults sync tokens to iCloud automatically",
+          "The plist is plaintext — backups and jailbreaks read it",
+          "Tokens exceed the defaults size limit",
+          "Defaults are wiped on OS updates, logging users out"
+         ],
+         "correct": 1,
+         "explain": "b4-06's boundary made sharp: everything in the sandbox is just bytes. The Keychain's encryption and access gating are the difference, not convention."
+        },
+        {
+         "q": "Executed: calling SecItemAdd for an existing item returns…",
+         "options": [
+          "errSecSuccess — it overwrites in place",
+          "errSecDuplicateItem — add refuses; update is its own verb",
+          "the old item's stored data, returned for comparison",
+          "errSecAuthFailed until the user confirms via Face ID"
+         ],
+         "correct": 1,
+         "explain": "-25299, verbatim. The save-on-login that's only an Add silently keeps the OLD token from then on — the stale-auth bug in one return code."
+        },
+        {
+         "q": "A background task at 4am can't read its token. The likely attribute?",
+         "options": [
+          "kSecAttrSynchronizable was set to false",
+          "WhenUnlocked — locked device; AfterFirstUnlock was needed",
+          "ThisDeviceOnly blocks background processes",
+          "The token was stored as the wrong item class"
+         ],
+         "correct": 1,
+         "explain": "Accessibility is per-item policy about device state. WhenUnlocked is the safe default for foreground secrets and exactly wrong for 3am work."
+        }
+       ],
+       [
+        {
+         "q": "User deletes the app, reinstalls, and is mysteriously still logged in. The mechanism?",
+         "options": [
+          "iCloud quietly restored the app's entire container",
+          "Keychain items survive deletion — the old token was read",
+          "The server recognized the device's vendor identifier",
+          "UserDefaults values persist through app reinstalls"
+         ],
+         "correct": 1,
+         "explain": "The store belongs to the OS, not your sandbox lifecycle. Ghost logins after reinstall are this footnote shipping as a bug — clear your items on logout."
+        },
+        {
+         "q": "ThisDeviceOnly variants exist to…",
+         "options": [
+          "block simulator builds from reading items",
+          "keep items out of backups and migrations — hardware-bound",
+          "restrict items to one app extension",
+          "force Face ID on every single read"
+         ],
+         "correct": 1,
+         "explain": "Migration via backup is a threat model: a restored phone shouldn't necessarily carry the old device's credentials. Device-bound keys want the bound variant."
+        },
+        {
+         "q": "Why does every codebase wrap the SecItem API?",
+         "options": [
+          "The raw API is deprecated in modern iOS",
+          "Status-code returns and CFDictionary ceremony — tame once",
+          "Wrapping is required for App Store approval",
+          "SecItem calls must run on the main thread"
+         ],
+         "correct": 1,
+         "explain": "Four verbs, stringly-typed dictionaries, integer statuses (executed: -25299, -25300) — a 60-line wrapper with b1-16-style typed errors turns it into civilized Swift once, forever."
+        }
+       ]
+      ]
+     },
+     "transfer": "Write the 60-line KeychainStore wrapper for your project: save (add→update-on-duplicate), read, delete, typed errors. Then audit: what accessibility does your token actually need — does any background work read it? Set the attribute deliberately and comment why.",
+     "verify": "Executed on this Mac (Security framework): add succeeded; duplicate add returned errSecDuplicateItem; the secret read back intact; update succeeded; read-after-delete returned errSecItemNotFound. The access-policy semantics (WhenUnlocked at 4am) need a locked device to observe — attribute behavior is documented; the API mechanics you just watched run anywhere.",
+     "goDeeper": "Apple docs: \"Storing keys in the keychain\" + kSecAttrAccessible constants. WWDC 2019 \"What's New in Authentication\" for access groups and synchronizable items. objc.io's Keychain articles for wrapper design."
+    },
+    {
+     "id": "b4-08",
+     "title": "Pagination and retry: loops that respect the server",
+     "concept": {
+      "definition": "Two patterns govern polite repeated requests. CURSOR PAGINATION: each response carries the key to the next (`next_cursor`), and the client walks until nil — executed here across 3 pages into one collection. RETRY WITH BACKOFF: on retryable failures only (5xx, timeouts — never 4xx, never non-idempotent calls), wait exponentially longer between attempts — executed: two 503s absorbed at 100ms then 200ms, success on attempt 3.",
+      "code": "// the pagination walk — executed across 3 pages:\nvar cursor: Int? = 0\nwhile let c = cursor {\n    let page = try await fetchPage(cursor: c)\n    all.append(contentsOf: page.items)\n    cursor = page.next_cursor          // nil = done\n}\n\n// the retry ladder — executed: 503, 503, success:\nif (500..<600).contains(status), attempt < maxAttempts {\n    let delay = pow(2.0, Double(attempt - 1)) * base   // 0.1, 0.2, 0.4…\n    try await Task.sleep(nanoseconds: …)               // suspend, not block\n    return try await fetchPage(cursor: c, attempt: attempt + 1)\n}",
+      "underlying": "Why cursors beat offsets: `?offset=20&limit=10` asks for rows by POSITION, and positions shift — an item inserted at the top between your page-1 and page-2 requests pushes everything down, so page 2 re-serves page 1's last item (duplicates) or skips one (gaps). A cursor names a position IN THE DATA ('after item 17'), immune to insertions above it. Offset survives only for genuinely static data; feeds want cursors — and the client-side dedupe-by-ID habit anyway, because networks re-deliver.\n\nThe retry decision tree is b4-02's taxonomy operationalized. Retry: 5xx (server struggling — later may differ), timeouts and transport drops (b4-01's thrown category), 429 (but honor its Retry-After header over your own schedule). Never retry: 4xx (the request is WRONG — identical resends are identical failures), and never blind-retry non-idempotent calls (the double-charged POST). Backoff must be EXPONENTIAL (executed ladder: 0.1s → 0.2s → 0.4s), because constant-interval retries from thousands of clients synchronize into waves that keep a recovering server down — and production code adds JITTER (randomizing each delay) precisely to break that synchronization. A retry ceiling (attempt < 4, executed) turns infinite optimism into a proper error.\n\nBlock 3 does the mechanics: the backoff sleep SUSPENDS (b3-04 — no thread hostage while waiting), cancellation cuts the whole walk mid-flight (b3-05 — a dismissed screen stops pagination), and each retry attempt is just recursion with a counter. The whole pattern is twenty lines you'll write once and reuse forever.",
+      "whyItMatters": "\"Why cursor over offset?\" and \"design a retry policy\" are both standard system-design interview questions — and thundering-herd retries plus offset-drift duplicates are real production incidents at every company with a feed."
+     },
+     "exercise": {
+      "prompt": "Two incident reports, one design question. (1) Users report seeing the same post twice while scrolling a busy feed (offset pagination). Walk the exact sequence that duplicates it. (2) After a 10-minute outage, the server recovers, then immediately collapses again under request load. Explain, and name the two fixes. (3) Which of these calls may be retried blindly: GET /feed, POST /purchase, PUT /profile, DELETE /post/7?",
+      "code": "// 1. offset feed: ?offset=0&limit=10, then ?offset=10&limit=10\n// 2. outage → recovery → immediate second collapse\n// 3. blind-retry safety: GET /feed | POST /purchase | PUT /profile | DELETE /post/7",
+      "solution": "1. Page 1 serves items 1–10. Someone posts: everything shifts down one. Page 2 (?offset=10) now starts at what WAS item 10 — already on screen. Duplicate. (An item deleted instead → a gap: item 11 vanishes unseen.) Cursor-after-item-10 is immune: it names the data, not the position.\n2. Thundering herd: every client that failed during the outage retries on synchronized schedules — the recovery instant is a stampede of accumulated retries. Fixes: exponential backoff (spreads the schedule — executed ladder 0.1/0.2/0.4s) AND jitter (randomizes it, breaking synchronization). Server-side, 429 + Retry-After spreads what remains.\n3. GET /feed: yes — idempotent read. PUT /profile: yes — idempotent by contract (same body, same result). DELETE /post/7: yes-with-care — idempotent (deleting twice = deleted), though the second may 404, which retry logic should treat as success. POST /purchase: NO — b4-02's double-charge; needs an idempotency key before any retry is legal.",
+      "explanation": "All three answers come from the same two ideas: name data not positions, and let the METHOD's contract decide retry-legality. The herd collapse is the one people fail in interviews — the outage isn't over when the server returns; it's over when the retry wave passes."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: why do cursors beat offsets for feeds, and what makes a retry policy safe for both the client and the server?",
+      "modelAnswer": "Offsets address rows by position, and positions shift under insertion and deletion — page boundaries drift, producing duplicates and gaps in any live feed; a cursor names a position in the data itself and is immune. A safe retry policy retries only retryable failures — 5xx, timeouts, 429 honoring Retry-After — never 4xx and never non-idempotent calls without an idempotency key. It backs off exponentially with jitter so thousands of clients don't synchronize into a thundering herd against a recovering server, and it caps attempts so persistent failure becomes a proper error.",
+      "sets": [
+       [
+        {
+         "q": "The mechanism behind offset pagination's duplicate items:",
+         "options": [
+          "The server cached page 1 and re-served it verbatim",
+          "An insertion shifted positions — page 2 restarted on-screen",
+          "URLCache silently replayed the first page's body",
+          "The limit parameter was off by one in the request"
+         ],
+         "correct": 1,
+         "explain": "Positions move; data doesn't. 'After item 17' (a cursor) survives the insertion that breaks '?offset=10' — and deletions cause the mirror bug: silent gaps."
+        },
+        {
+         "q": "Which failure should NOT be retried?",
+         "options": [
+          "A 503 Service Unavailable reply",
+          "400 Bad Request — the request itself is wrong",
+          "A plain connection timeout",
+          "A 429 carrying a Retry-After header"
+         ],
+         "correct": 1,
+         "explain": "b4-02's fault split, operationalized: 5xx/timeouts may differ next time; a 4xx resent identically fails identically. Retrying client errors is a loop, not a policy."
+        },
+        {
+         "q": "Why exponential backoff instead of a constant interval?",
+         "options": [
+          "It reduces battery use during the waits",
+          "Constant intervals synchronize clients into crushing waves",
+          "URLSession requires increasing timeouts",
+          "It gives the UI time to render between tries"
+         ],
+         "correct": 1,
+         "explain": "The executed ladder (0.1/0.2/0.4s) spreads load in time; jitter spreads it across clients. The thundering herd is a real incident class — the outage ends when the retry wave does."
+        }
+       ],
+       [
+        {
+         "q": "POST /purchase timed out. Before any retry is legal, the request needs…",
+         "options": [
+          "a longer timeout configuration",
+          "an idempotency key the server dedupes on",
+          "conversion to a PUT request",
+          "a 4xx check on the eventual response"
+         ],
+         "correct": 1,
+         "explain": "The timeout hides whether the charge landed (b4-02). The key lets the server say 'seen this one' — turning an unsafe method into a retryable operation."
+        },
+        {
+         "q": "The backoff wait uses Task.sleep rather than Thread.sleep because…",
+         "options": [
+          "Task.sleep is accurate to the nanosecond",
+          "it suspends — no pool thread held hostage while waiting",
+          "Thread.sleep is banned by the App Store",
+          "Task.sleep survives app backgrounding"
+         ],
+         "correct": 1,
+         "explain": "A retry ladder that blocks threads turns one server outage into client-side pool starvation. Suspension makes waiting free — and cancellable (b3-05) if the screen goes away."
+        },
+        {
+         "q": "The pagination walk's client-side companion habit:",
+         "options": [
+          "Sorting each page before display",
+          "Deduplicating by item ID across pages",
+          "Prefetching all pages at first load",
+          "Storing the cursor in UserDefaults"
+         ],
+         "correct": 1,
+         "explain": "Even cursors can re-deliver at boundaries, and networks replay. An ID set (or diffable snapshot) makes duplicates structurally impossible to display — cheap insurance."
+        }
+       ]
+      ]
+     },
+     "transfer": "Check your API's pagination style (or your checkpoint plan's): cursor or offset? If offset over live data, write the duplicate-scroll repro from the exercise as a comment. Then wrap ONE call in the 20-line retry ladder — exponential, jittered, capped, 5xx-only — and keep it as your template.",
+     "verify": "Executed on this Mac against a local flaky server: the cursor walk collected all pages (3 requests); two 503s on page 2 were absorbed at 100ms/200ms backoff with success on attempt 3; server stats confirmed 5 total hits (3 pages + 2 failures). The recipe is in the scratchpad pattern — rebuild and tune the failure count.",
+     "goDeeper": "Stripe's API docs on idempotency keys — the industry-standard writeup. AWS Architecture Blog: \"Exponential Backoff and Jitter\" (the definitive jitter analysis). b4-02 for the method contracts; b3-05 for the cancellation that stops the walk."
+    },
+    {
+     "id": "b4-09",
+     "title": "The network layer: one funnel, typed ends",
+     "concept": {
+      "definition": "A network layer is the block's patterns composed into ONE reusable funnel: an Endpoint value describes each call (path, method, body), a single generic `request<T: Decodable>` executes the funnel — build URLRequest, transport catch, status guard, decode — and one `APIError` enum (b1-16) gives every failure a typed name. The transport itself hides behind a protocol, so tests inject a fake and exercise the whole funnel without a server.",
+      "code": "struct Endpoint {                       // a REQUEST as a value\n    let path: String\n    var method = \"GET\"\n    var body: Data? = nil\n}\n\nprotocol Transport {                     // b1-14: capability, not class\n    func send(_ req: URLRequest) async throws -> (Data, HTTPURLResponse)\n}\n\nfunc request<T: Decodable>(_ e: Endpoint, as type: T.Type) async throws -> T {\n    // ONE place: auth header, status guard, decode, APIError mapping\n}\n\nenum APIError: Error {                   // b1-16: every failure, named\n    case transport(URLError)\n    case badStatus(Int, Data)\n    case decoding(DecodingError)\n}",
+      "underlying": "The design earns its keep three ways. CENTRALIZATION: b4-01's funnel (transport catch → status guard → decode) exists ONCE — add the auth header (from b4-07's Keychain, via an injected token provider), the retry ladder (b4-08), and logging in one function, and every feature call inherits them. The alternative — each screen hand-rolling URLSession calls — is how one endpoint gets the status guard and five don't.\n\nTYPED ERRORS: the funnel's three failure layers map onto one enum with payloads (b1-16 — the associated values carry the evidence: the URLError, the status + body, the DecodingError). Callers switch once and can make real decisions — retry on .transport, sign-out on .badStatus(401, _), report on .decoding — instead of string-matching error descriptions.\n\nTESTABILITY is what the protocol buys (b1-14's capability thinking): `Transport` has two conformers — the real one wrapping URLSession, and a fake returning canned (Data, HTTPURLResponse) pairs. Tests then exercise YOUR logic — does a 404 map to .badStatus? does malformed JSON surface .decoding with the path? does the auth header get attached? — with zero network, zero flakiness, in milliseconds. (URLProtocol interception is the heavier alternative when you must test URLSession's own configuration.) The rule of thumb for the layer's size: Endpoint descriptions are cheap data — one per call is fine; funnel logic is precious — exactly one copy, ever.",
+      "whyItMatters": "\"Design a networking layer\" is THE practical iOS interview exercise — and the funnel/protocol/typed-error triad is the expected shape. In real work, this is the difference between adding retry in one place versus auditing forty call sites."
+     },
+     "exercise": {
+      "prompt": "A design review. This PR adds networking to a feature. List every defect against the funnel design — there are at least four — and state what each costs six months from now.",
+      "code": "final class ProfileScreenVM {\n    func loadProfile() async {\n        let url = URL(string: \"https://api.app.com/profile\")!\n        var req = URLRequest(url: url)\n        req.setValue(\"Bearer \\(UserDefaults.standard.string(forKey: \\\"token\\\")!)\",\n                     forHTTPHeaderField: \"Authorization\")\n        do {\n            let (data, _) = try await URLSession.shared.data(for: req)\n            self.profile = try JSONDecoder().decode(Profile.self, from: data)\n        } catch {\n            self.errorText = \"Something went wrong\"\n        }\n    }\n}",
+      "solution": "1. Token from UserDefaults — b4-07's vulnerability, plus force-unwrap: logged-out users crash (b1-01's trap).\n2. No status guard — a 500's HTML body goes straight to the decoder (b4-01's classic); the catch then misreports it as a mystery.\n3. URLSession called directly in the view model — untestable without a network; six months out, this screen's tests are 'skipped: flaky'.\n4. `catch { errorText = \"Something went wrong\" }` — all three failure layers collapsed into one string; no retry-on-transport, no sign-out-on-401, no decode diagnostics. The b1-16 enum was the missing type.\n5. (Bonus) Hard-coded absolute URL — environments (staging/prod) now require editing feature code.\n\nThe rewrite: `profile = try await api.request(.profile, as: Profile.self)` — one line here, every concern in the funnel.",
+      "explanation": "None of these defects FAIL today — the demo works, the PR merges. Each is a cost with a six-month fuse: the crash, the misdiagnosis, the flaky test, the un-actionable error. Layer design is time-shifted debugging."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what are the pieces of a well-designed network layer, and what does each buy?",
+      "modelAnswer": "Endpoints as values describe each call's path, method, and body; one generic request function runs the whole funnel — attach auth, catch transport errors, guard the status, decode — so cross-cutting concerns like retry and logging exist exactly once. Failures map to one enum with payloads carrying the evidence, so callers can switch on transport-versus-status-versus-decoding and act accordingly. The transport hides behind a protocol with a real URLSession conformer and a canned-response fake, making the entire funnel unit-testable without a network.",
+      "sets": [
+       [
+        {
+         "q": "Why must the transport-catch → status-guard → decode funnel exist exactly once?",
+         "options": [
+          "URLSession allows one data call per session",
+          "Cross-cutting concerns attach there; copies drift apart",
+          "Generic functions can't be duplicated in Swift",
+          "The decoder caches per call site"
+         ],
+         "correct": 1,
+         "explain": "Forty hand-rolled call sites means forty places to forget the status guard. One funnel means retry lands everywhere in one PR."
+        },
+        {
+         "q": "APIError as an enum with payloads (over a message string) buys callers…",
+         "options": [
+          "a smaller binary size from string deduplication",
+          "decisions by case: retry, sign out on 401, report decodes",
+          "automatic localization of every error message",
+          "full compatibility with legacy NSError bridging"
+         ],
+         "correct": 1,
+         "explain": "b1-16's payloads carry the evidence (the code, the body, the DecodingError path). \"Something went wrong\" is where diagnostics go to die."
+        },
+        {
+         "q": "The Transport protocol's second conformer — the fake — exists so that…",
+         "options": [
+          "the app can run offline in production",
+          "tests run the funnel on canned responses — no network",
+          "URLSession can be swapped for sockets later",
+          "endpoints can be mocked in Interface Builder"
+         ],
+         "correct": 1,
+         "explain": "b1-14's capability seam: does a 404 map to .badStatus? does bad JSON surface the path? Milliseconds per test, zero servers — YOUR logic is what's under test."
+        }
+       ],
+       [
+        {
+         "q": "Where does the auth token enter requests in this design?",
+         "options": [
+          "Each Endpoint carries its own copy of it",
+          "The funnel attaches it via an injected token provider",
+          "A URLProtocol rewrites headers globally",
+          "The server reads it from a session cookie"
+         ],
+         "correct": 1,
+         "explain": "b4-07's storage + injection at the funnel: rotate the token, change the provider, and no feature code knows. Endpoints stay dumb data."
+        },
+        {
+         "q": "Six months later, staging and production environments are needed. In the funnel design this costs…",
+         "options": [
+          "a find-and-replace across every feature",
+          "one base-URL value where requests are built",
+          "duplicate Endpoint definitions per environment",
+          "a compiler flag per network call"
+         ],
+         "correct": 1,
+         "explain": "Endpoints carry PATHS; the funnel owns the base. Hard-coded absolute URLs in features are the version of this that costs a week."
+        },
+        {
+         "q": "What belongs in an Endpoint value, and what must NOT?",
+         "options": [
+          "Path/method/body in; execution, auth, and decoding logic out",
+          "The full URLRequest, pre-signed",
+          "A reference to the session it will use",
+          "The completion handler for its response"
+         ],
+         "correct": 1,
+         "explain": "Endpoints are cheap descriptions — b1-09's data. The moment one knows HOW to execute, the funnel has leaked and concerns re-scatter."
+        }
+       ]
+      ]
+     },
+     "transfer": "Build the 80-line layer for your checkpoint: Endpoint struct, Transport protocol + URLSession conformer, generic request() with the funnel, APIError enum. Then write ONE test using a fake transport: feed it a 404 and assert .badStatus. That file is your template for every future project.",
+     "verify": "This loop composes verified pieces: the funnel's layers were executed in b4-01 (two failure kinds), b4-03 (decode errors), b4-07 (token storage), b4-08 (retry). The protocol-seam claim verifies itself the first time your fake-transport test runs green with the network cable conceptually unplugged.",
+     "goDeeper": "WWDC 2018 \"Testing Tips & Tricks\" — the URLProtocol interception pattern. Swift by Sundell: \"Constructing URLs in Swift\" and the endpoint-type articles. b1-14 (protocol seams) and b1-16 (error enums) are the design's foundations."
+    },
+    {
+     "id": "b4-10",
+     "title": "Capstone: the pipeline, end to end",
+     "concept": {
+      "definition": "The block collapses into one executable pipeline, and it WAS executed: a cursor walk (b4-08) over a flaky paginated API absorbed two 503s with exponential backoff (100ms, 200ms — attempt 3 succeeded), lossy-decoded each page (b4-04: one poisoned element dropped), and collected [1, 2, 3, 4, 6, 7] — six of seven items, one logged drop, zero crashes. Every layer of the funnel earned its place in one run.",
+      "code": "// THE BLOCK'S CHECKLIST — for any networking code:\n// 1. Failure kind: transport (thrown) or status (returned)?   (b4-01)\n// 2. What's on the wire — method contract, status class,\n//    cache headers?                                            (b4-02, b4-05)\n// 3. Decode policy: where does it bend — field, item, enum?    (b4-03, b4-04)\n// 4. Repeat politely: cursors, 5xx-only retry, backoff+jitter  (b4-08)\n// 5. Secrets in Keychain; bytes in the right bed               (b4-07, b4-06)\n// 6. All of it in ONE funnel, typed ends, protocol seam        (b4-09)",
+      "underlying": "Trace the executed run through the checklist. The 503s were STATUS failures (returned, not thrown — b4-01) of the retryable class (5xx — b4-02), so the ladder engaged: suspending waits (b3-04), doubling delays, capped attempts. The poisoned element (`\"id\": \"five\"`) hit the decode layer, where the lossy policy (b4-04) had already decided the blast radius: drop the item, count it, keep the page. The cursor (b4-08) named data, not positions, so the retry on page 2 couldn't duplicate page 1. Server stats confirmed the economics: 5 hits for 3 pages — the two failures, and nothing wasted.\n\nNotice what made the pipeline PREDICTABLE: every layer's behavior was a policy chosen in advance — retry only 5xx, drop only elements, walk only cursors — rather than improvised in catch blocks. That's the block's real teaching: production networking is deciding, before the bytes arrive, what bends and what breaks at each layer. The funnel (b4-09) is where those decisions live as code.\n\nAnd the concurrency block underneath is doing constant work: the waits suspend, cancellation would cut the walk mid-page (a dismissed screen stops the whole pipeline — b3-05), and the collection happens in one task with values flowing up, no shared state to race. Blocks 3 and 4 are one machine now. The weather-app checkpoint — fetch, cache, degrade gracefully offline — is this pipeline wearing a UI; you have every piece.",
+      "whyItMatters": "\"Walk me through what happens when your app loads a feed\" is the senior-interview version of this loop — and the answer that names failure layers, policies, and their order is the one that gets hired. This checklist IS that answer, rehearsed."
+     },
+     "exercise": {
+      "prompt": "The final exam — the pipeline was executed; predict its exact behavior. Pages of 3 from 7 items via cursor; page 2 (cursor=3) fails twice with 503 then succeeds; item 5 has a string id; retry ladder = 3 attempts max, base 100ms doubling; lossy page decode. Predict: (1) total requests the SERVER sees; (2) the backoff delays; (3) the final collected ids; (4) what changes if the ladder were capped at 2 attempts; (5) what changes if item 5's poison were on the CURSOR field instead.",
+      "code": "// 7 items, pages of 3, cursors 0 → 3 → 6 → nil\n// cursor=3: 503, 503, then 200\n// item 5: {\"id\": \"five\"}\n// retry: max 3 attempts, 100ms base, exponential\n// decode: lossy elements, strict envelope",
+      "solution": "1. FIVE requests (executed: server stats {hits: 5}) — pages at cursors 0, 3, 3, 3, 6: one clean, two failures + the success, one clean.\n2. 100ms after the first 503, 200ms after the second (executed) — 2⁰·base, 2¹·base.\n3. [1, 2, 3, 4, 6, 7] with dropped: 1 (executed) — the lossy policy spent item 5 to save page 2.\n4. Cap at 2: the second 503 exhausts the ladder → the page-2 fetch throws → the WALK dies at cursor 3: user gets items [1,2,3] and an error. The cap is a policy about how much patience a screen can afford.\n5. Poison on next_cursor: the ENVELOPE decode fails — lossiness was scoped to elements only, so the page throws, the walk dies. Deliberate: losing an item is survivable; losing your place in the walk is not. Blast radius was chosen per FIELD.",
+      "explanation": "Questions 4 and 5 are the real exam: the pipeline's numbers follow from POLICIES, and changing a policy changes the failure story predictably. If you answered both by reasoning about which layer owns the failure — Block 4 is installed. The weather-app checkpoint awaits."
+     },
+     "assess": {
+      "explainPrompt": "Final articulation, interviewer-ready, 4 sentences max: your app loads a paginated feed over a flaky network. Walk through every layer of what happens, naming the policy at each.",
+      "modelAnswer": "Each page request runs one funnel: transport failures throw and status failures return, so a 503 is caught by the status guard and — being 5xx, a retryable class — enters an exponential-backoff ladder with a cap, suspending between attempts. Successful pages decode under chosen policies: optional fields absorb absence, a lossy collection drops malformed elements with a logged count rather than blanking the page. The walk itself follows cursors, which name data rather than positions, so retries and insertions can't duplicate or gap the feed. Auth comes from the Keychain via the funnel, responses cache under their HTTP headers, and cancellation from the UI cuts the whole walk mid-flight.",
+      "sets": [
+       [
+        {
+         "q": "In the executed run, the server saw 5 requests for 3 pages. The extra two were…",
+         "options": [
+          "cache revalidations for pages 1 and 3",
+          "the two 503s on page 2 — retries are real requests",
+          "URLSession's automatic duplicates",
+          "cursor lookups preceding each page"
+         ],
+         "correct": 1,
+         "explain": "Retry economics are visible server-side: every attempt costs a hit. That's why the ladder is capped and 5xx-only — and why 429s must be honored, not hammered."
+        },
+        {
+         "q": "The poisoned item cost one element; a poisoned CURSOR would kill the walk. Why the asymmetry?",
+         "options": [
+          "Cursors decode before elements in JSON order",
+          "Lossiness was scoped: items may bend, the envelope not",
+          "Int decoding is stricter than String decoding",
+          "The retry ladder doesn't cover decode errors"
+         ],
+         "correct": 1,
+         "explain": "b4-04's blast-radius design at work: a dropped item is a logged blemish; a corrupted cursor is a lost place. Policy is chosen field by field, not decoder-wide."
+        },
+        {
+         "q": "Capping the ladder at 2 attempts changes the story to…",
+         "options": [
+          "the same result, one fewer server hit",
+          "the walk dies at page 2 — 3 items and an error",
+          "page 2 is skipped; pages 1 and 3 merge",
+          "the 503 is surfaced as a decode failure"
+         ],
+         "correct": 1,
+         "explain": "The cap is patience-as-policy: exhausting it converts retries into a thrown error, and the walk's structure decides what the user keeps. Every number in the pipeline traces to a decision."
+        }
+       ],
+       [
+        {
+         "q": "The user dismisses the screen mid-walk. The pipeline…",
+         "options": [
+          "finishes the walk and caches the result",
+          "stops — cancellation aborts sleeps and transfers alike",
+          "completes the current page, then stops",
+          "keeps a detached copy running for next time"
+         ],
+         "correct": 1,
+         "explain": "b3-05's tree reaches every layer: Task.sleep throws mid-backoff, URLSession aborts mid-transfer. Structured concurrency is why the cleanup costs zero lines."
+        },
+        {
+         "q": "The single highest-leverage place to add logging to this pipeline:",
+         "options": [
+          "every outgoing URLRequest's complete headers",
+          "the funnel — every failure with layer and evidence",
+          "each individual screen's catch blocks",
+          "the server's access logs, on their own"
+         ],
+         "correct": 1,
+         "explain": "One funnel means one logging point sees everything: which layer failed, on what call, with what evidence (status+body, decode path). Scattered catch blocks see fragments."
+        },
+        {
+         "q": "Block 4's exit skill, in one sentence:",
+         "options": [
+          "Writing URLSession calls from memory",
+          "Choosing what bends and breaks per layer, in advance",
+          "Avoiding servers by caching everything",
+          "Migrating every API to WebSockets"
+         ],
+         "correct": 1,
+         "explain": "The pipeline was predictable because every behavior was a pre-chosen policy. That habit — blast radius by design, not by catch block — is what the checkpoint now proves."
+        }
+       ]
+      ]
+     },
+     "transfer": "Before the weather-app checkpoint: rebuild this exact pipeline against the local-server recipe (flaky page, poison item), but change ONE policy — the cap, the lossiness scope, the backoff base — and predict the new behavior before running. Then the checkpoint: fetch, cache, degrade offline. Zero AI. Every piece is yours now.",
+     "verify": "The whole capstone WAS the verification: executed on this Mac — 5 server hits for 3 pages, backoff at 100/200ms, success on attempt 3, collected [1,2,3,4,6,7] with dropped: 1, server stats confirming. The two counterfactuals (questions 4 and 5) are one-line server edits away — run them.",
+     "goDeeper": "Re-read your own b4-01..09 verify fields in order — they ARE this pipeline's documentation. Then the weather-app checkpoint. Block 5 (craft) picks up with how to structure, test, and profile what you now know how to build."
+    }
+   ]
+  },
+  {
+   "id": "b5",
+   "name": "Code You Can Change",
+   "tagline": "Architecture, testing, profiling — engineering beyond making it work",
+   "loops": [
+    {
+     "id": "b5-01",
+     "title": "MVVM: logic that runs without a screen",
+     "concept": {
+      "definition": "MVVM splits a screen into Model (the data — b1-09 structs), View (UIKit — dumb rendering and event forwarding), and ViewModel: a plain type owning the screen's STATE and DECISIONS, with zero UIKit imports. The proof is executable and was executed: a FeedVM with a state enum and title logic ran its full lifecycle — idle, loaded, failed — as headless assertions on this Mac. Logic that needs no screen can be tested without one.",
+      "code": "enum LoadState { case idle, loading, loaded([Item]), failed(String) }\n\nfinal class FeedVM {                       // imports Foundation. NOT UIKit.\n    private(set) var state: LoadState = .idle\n    func titleText() -> String {            // a DECISION, not a view\n        switch state { … }                   // b1-16: exhaustive states\n    }\n    func load() async { … }                 // b3/b4: the pipeline lives here\n}\n\n// the view controller shrinks to plumbing:\n// vm.load() on viewDidLoad; render(vm) on changes. That's it.",
+      "underlying": "The split follows one question per line of view-controller code: is this a DECISION (what text, which state, whether to show the button) or a RENDERING (setting label.text, constraint constants)? Decisions move to the ViewModel; renderings stay. What's left of the massive view controller (b2-16's disease) is a thin translator: forward events in, apply state out.\n\nWhy the ViewModel must not import UIKit — three compounding reasons. TESTABILITY, executed: the FeedVM's every state transition and formatted output ran as plain assertions in a CLI process — no simulator, no waiting, milliseconds. REUSE: the same VM drives a UIKit screen today and a SwiftUI one tomorrow (views are the volatile layer; decisions are stable). REASONING: a VM is b1-09 thinking applied to screens — the state enum (b1-16) makes illegal screen-states unrepresentable, and titleText() is a pure function of state you can read like arithmetic.\n\nThe boundaries that keep it honest: the VM exposes STATE (one enum beats five bools), not views; it never holds the view controller (that back-arrow is b1-07's ring — the view OBSERVES the VM, next loop's machinery); and the model layer stays dumb data. The classic drift to police in review: UIColor in a ViewModel means a rendering snuck into the decisions; a network call in a view controller means a decision leaked into the plumbing.",
+      "whyItMatters": "\"Explain MVVM and why\" is the standard architecture interview question, and 'the ViewModel is testable without UIKit' — demonstrated, not recited — is the answer's core. Practically: this is the cure for the 800-line view controller your checkpoint would otherwise grow."
+     },
+     "exercise": {
+      "prompt": "A sorting drill. This 600-line view controller is being split. For each line, verdict — VIEWMODEL, VIEW CONTROLLER, or MODEL — with the deciding question: (1) `if user.isPremium && !hasSeenPromo { show promo }`; (2) `promoLabel.font = .boldSystemFont(ofSize: 17)`; (3) `struct Promo: Codable { let id: Int; let text: String }`; (4) `let days = Calendar.current.dateComponents(…).day; label.text = days > 30 ? \"Expired\" : \"\\(days) days left\"`; (5) `tableView.reloadData()`.",
+      "code": "// 1. if user.isPremium && !hasSeenPromo { show promo }\n// 2. promoLabel.font = .boldSystemFont(ofSize: 17)\n// 3. struct Promo: Codable { … }\n// 4. days calculation + \"Expired\"/\"N days left\" string choice\n// 5. tableView.reloadData()",
+      "solution": "1. VIEWMODEL — a decision (should the promo show?). Expose `var shouldShowPromo: Bool`; the VC just obeys.\n2. VIEW CONTROLLER — pure rendering; fonts are UIKit vocabulary the VM must not speak.\n3. MODEL — dumb data (b1-09, b4-03's contract type).\n4. SPLIT: the days math and the \"Expired\" choice are VIEWMODEL (a testable decision — the exact kind that hides an off-by-one at day 30); the `label.text =` assignment is VIEW CONTROLLER.\n5. VIEW CONTROLLER — reloadData is rendering machinery. (The VM signals 'items changed'; HOW the view refreshes is its own business.)\n\nLine 4 is the exam: one line of old code splits into a decision (test it: day 29, 30, 31) and a rendering — most real lines do.",
+      "explanation": "The deciding question never changes: could this line be WRONG in a way a unit test should catch? Date math and state logic, yes — ViewModel. Font sizes, no — View. When one line contains both, it splits."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what belongs in a ViewModel versus the view controller, and what does the no-UIKit rule buy?",
+      "modelAnswer": "The ViewModel owns the screen's state — ideally one enum making illegal states unrepresentable — and its decisions: what text, which mode, whether to show things; the view controller shrinks to plumbing that forwards events in and renders state out. The ViewModel imports no UIKit, which buys headless unit tests (every transition and formatted string asserted in milliseconds), reuse across view technologies, and reasoning — outputs become pure functions of state. The view observes the ViewModel, never the reverse — the back-reference would be a retain ring and an inverted dependency.",
+      "sets": [
+       [
+        {
+         "q": "The one-question test for whether a line belongs in the ViewModel:",
+         "options": [
+          "Does it touch more than one stored property?",
+          "Is it a decision a unit test could catch being wrong?",
+          "Does it have to run on the main thread?",
+          "Is it longer than a single statement of code?"
+         ],
+         "correct": 1,
+         "explain": "Date math, state transitions, string choices — testably wrong, so VM. Fonts and reloadData can't be 'wrong' in a unit-testable way — they're rendering."
+        },
+        {
+         "q": "Why must the ViewModel not import UIKit?",
+         "options": [
+          "UIKit types can't be stored in classes",
+          "Headless tests, view-tech portability, no rendering words",
+          "Importing UIKit forces @MainActor on everything",
+          "App size grows per import statement"
+         ],
+         "correct": 1,
+         "explain": "Executed: the FeedVM's whole lifecycle ran as CLI assertions. The import line is the tripwire — UIColor in a VM means a rendering snuck into the decisions."
+        },
+        {
+         "q": "The VM exposes one LoadState enum instead of isLoading/hasError/items properties because…",
+         "options": [
+          "enums are cheaper to observe than Bools",
+          "b1-16: 'loading AND error' can't even be constructed",
+          "SwiftUI requires enum-shaped state",
+          "it reduces the VM's memory footprint"
+         ],
+         "correct": 1,
+         "explain": "Three bools have eight states; the screen has four. The enum makes the other four unrepresentable — and the switch in titleText() is audited exhaustively."
+        }
+       ],
+       [
+        {
+         "q": "The ViewModel holding a reference to its view controller is wrong because…",
+         "options": [
+          "view controllers are too large to reference",
+          "it inverts the dependency and risks b1-07's ring",
+          "UIKit forbids external VC references",
+          "it would make the VM main-actor isolated"
+         ],
+         "correct": 1,
+         "explain": "VC owns VM (strong); VM knowing the VC closes the ring AND couples decisions to a renderer. Observation (next loop) is the one-way street that replaces it."
+        },
+        {
+         "q": "`label.text = days > 30 ? \"Expired\" : \"\\(days) days left\"` refactors to…",
+         "options": [
+          "the whole line into the ViewModel",
+          "VM computes the string (test day 30!); VC assigns it",
+          "the whole line stays in the view controller",
+          "a formatter subclass owning both halves"
+         ],
+         "correct": 1,
+         "explain": "The ternary hides an off-by-one a test should catch; the assignment is rendering. Most real lines split exactly like this — decision out, assignment stays."
+        },
+        {
+         "q": "MVVM's honest cost, worth stating in an interview:",
+         "options": [
+          "It makes incremental builds slower via extra modules",
+          "Indirection — simple screens gain ceremony, little safety",
+          "It's incompatible with UIKit navigation controllers",
+          "ViewModels are barred from using async/await"
+         ],
+         "correct": 1,
+         "explain": "A static settings screen doesn't need a VM. The pattern pays where decisions are dense — knowing when NOT to apply architecture is part of the answer."
+        }
+       ]
+      ]
+     },
+     "transfer": "Take your checkpoint's busiest screen (or any VC you've written). For twenty of its lines, play the sorting drill: decision or rendering? Extract JUST the decisions into a VM struct/class and write three headless assertions against it — including one edge the UI can't easily show (day 30 exactly).",
+     "verify": "Executed on this Mac: FeedVM's full lifecycle — idle title, load to .loaded with '3 items', a failing fetch to .failed — as plain assertions in a CLI process, no UIKit imported anywhere. That run IS the pattern's thesis. Reproduce with your own VM.",
+     "goDeeper": "objc.io's \"App Architecture\" book — the MVVM chapter's honest trade-offs. WWDC 2019 \"Data Flow Through SwiftUI\" (same one-way principles, SwiftUI dialect). b1-16 for the state-enum foundation; b5-04 will test these VMs formally."
+    },
+    {
+     "id": "b5-02",
+     "title": "Observation: how the view learns",
+     "concept": {
+      "definition": "Observation is the one-way street from ViewModel to view: the VM changes state, subscribers are told, the view re-renders. With Combine's `@Published` (a b1-17 property wrapper), `$property` projects a publisher and `.sink` subscribes. Three mechanics were executed here: subscribing delivers the CURRENT value immediately ([0] before any change), emissions fire on `willSet` — inside the sink the property still reads the OLD value — and a dropped cancellable is a dead subscription.",
+      "code": "final class CounterVM {\n    @Published var count = 0        // b1-17: wrapper synthesizes storage\n}                                     // $count projects a Publisher\n\nvm.$count\n    .sink { newValue in render(newValue) }\n    .store(in: &cancellables)         // no store = executed: dead sub\n\n// executed truths:\n// subscribe → sink fires with 0 IMMEDIATELY (current value first)\n// vm.count = 5 → sink gets 5, but vm.count INSIDE the sink reads 0!",
+      "underlying": "Each executed fact has a mechanism. INITIAL VALUE: @Published's projected publisher replays the current value to each new subscriber — so the view is correct at subscription time without a manual first render; code that treats the first emission as 'a change' double-handles it. WILLSET TIMING: the wrapper emits before the stored value updates — the sink's parameter is the truth, and reading `vm.count` inside the sink reads the past (executed: 0 while receiving 5). Use the closure's value, never re-read the property; this single gotcha breaks 'sync two properties' code constantly.\n\nCANCELLABLE LIFETIME is b1-02 doing framework work: sink returns an AnyCancellable whose deinit cancels the subscription — unstored, it dies at the semicolon (executed: only the initial value arrived; later emissions never did). The `store(in: &cancellables)` idiom ties subscriptions to the OWNER's lifetime — and mind b1-07: a sink capturing self strongly, stored in self's own bag, is the ring with extra steps ([weak self] in UI-layer sinks).\n\nThe modern alternative: iOS 17's `@Observable` macro inverts the mechanics — instead of publishers per property, views TRACK which properties they read and re-render when those change; less ceremony, no cancellables, SwiftUI-first. The principle is identical (state flows one way; views react), and @Published remains what you'll read in most codebases and what UIKit binding uses today.",
+      "whyItMatters": "The willSet gotcha and the unstored-cancellable bug are two of the most-shipped Combine mistakes — both executed here so you never debug them blind. 'How does @Published work?' is also b1-17's interview question wearing production clothes."
+     },
+     "exercise": {
+      "prompt": "Predict the complete console output, in order. Two traps from the executed mechanics: what fires at subscription time, and what does line A print?",
+      "code": "final class VM { @Published var name = \"anna\" }\nlet vm = VM()\nvar bag = Set<AnyCancellable>()\n\nprint(\"subscribing\")\nvm.$name.sink { value in\n    print(\"sink:\", value, \"| property:\", vm.name)   // ← line A\n}.store(in: &bag)\n\nprint(\"changing\")\nvm.name = \"riya\"\n\nvm.$name.sink { print(\"second sub:\", $0) }          // ← NOT stored\nvm.name = \"zoe\"",
+      "solution": "subscribing\nsink: anna | property: anna     ← initial value replay: fires immediately\nchanging\nsink: riya | property: anna     ← line A: willSet — sink has the NEW, property still the OLD\nsecond sub: riya                 ← its initial replay (current value)\nsink: zoe | property: riya       ← first sink still alive (stored)\n\n'second sub: zoe' NEVER prints — that cancellable was discarded at the semicolon; it lived exactly long enough to receive its initial replay (executed pattern). Every line traces to one of the three mechanics: replay, willSet, lifetime.",
+      "explanation": "Line A is the bug factory: any code that reads the property inside its own sink is reading the past. And the second subscription's one-print life is the unstored-cancellable bug in miniature — it LOOKS alive at subscribe (replay!), then silently never fires again."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what happens when you subscribe to a @Published property, when do emissions fire relative to the write, and what governs a subscription's lifetime?",
+      "modelAnswer": "Subscribing delivers the current value immediately — @Published replays it — so the view is correct without a manual first render. Emissions fire on willSet: the sink receives the new value while the property still holds the old one, so handlers must use the closure's parameter and never re-read the property. The subscription lives exactly as long as its AnyCancellable: unstored, it deallocates and cancels instantly, which is why sinks are stored in a cancellables set tied to the owner — with [weak self] when the sink captures its owner.",
+      "sets": [
+       [
+        {
+         "q": "The very first thing a new sink on $count receives is…",
+         "options": [
+          "nothing until count next changes",
+          "the current value, replayed immediately at subscription",
+          "a completion event establishing the stream",
+          "the property's default, regardless of current value"
+         ],
+         "correct": 1,
+         "explain": "Executed: [0] arrived before any change. The replay makes views correct at bind time — and makes 'first emission = a change' logic double-fire."
+        },
+        {
+         "q": "Executed: inside a sink receiving 5, `vm.count` read 0. Because…",
+         "options": [
+          "the sink runs on a background queue copy",
+          "@Published emits on willSet — the write hasn't landed yet",
+          "Combine batches writes until the next runloop",
+          "the property wrapper caches reads per turn"
+         ],
+         "correct": 1,
+         "explain": "The wrapper announces BEFORE storing (b1-17's setter, mid-flight). The closure parameter is the truth; re-reading the property reads the past."
+        },
+        {
+         "q": "A sink that's never stored in a cancellables bag…",
+         "options": [
+          "leaks — subscriptions require explicit cancel",
+          "dies at the statement's end — replay received, then silence",
+          "lives as long as the publisher does",
+          "is retained by the runloop until idle"
+         ],
+         "correct": 1,
+         "explain": "Executed: one initial print, then silence forever. AnyCancellable cancels in deinit (b1-02) — the store(in:) idiom exists to pin that lifetime to the owner's."
+        }
+       ],
+       [
+        {
+         "q": "A view controller stores sinks that capture self strongly in its own cancellables set. Diagnosis?",
+         "options": [
+          "Fine — Combine weakifies captures internally",
+          "b1-07's ring: self → bag → sink → context → self",
+          "Fine — cancellables don't retain their sinks",
+          "A crash when the publisher completes"
+         ],
+         "correct": 1,
+         "explain": "The bag holds the cancellable, the cancellable holds the sink closure, the closure holds self: closed ring, leaked screen. [weak self] in UI-layer sinks is the b1-07 reflex."
+        },
+        {
+         "q": "iOS 17's @Observable differs from @Published how?",
+         "options": [
+          "It's faster but requires Objective-C classes",
+          "Views track properties they READ — no publishers, no bags",
+          "It only works for value types",
+          "It replays the last five values to subscribers"
+         ],
+         "correct": 1,
+         "explain": "Inverted mechanics, same principle: state flows one way, views react. Access-tracking removes the ceremony; @Published remains the working vocabulary of existing code."
+        },
+        {
+         "q": "The 'sync two properties' bug — sink on A writes B using `self.a` — corrupts because…",
+         "options": [
+          "writing B inside A's sink is reentrant",
+          "self.a inside A's own sink is the OLD value — willSet applied",
+          "two @Published properties share one publisher",
+          "sinks can't write properties on the main actor"
+         ],
+         "correct": 1,
+         "explain": "Executed mechanics composed: the handler should use its closure parameter. Any 'derive B from A' that re-reads A mid-emission derives from stale state."
+        }
+       ]
+      ]
+     },
+     "transfer": "Grep your project (or write your first binding) for `.sink`. Audit each against the three mechanics: does anything treat the replay as a change? does anything read the published property inside its own sink? is every cancellable stored — and does any stored sink capture self strongly? One-line verdict each.",
+     "verify": "Executed on this Mac (Combine, headless): a new sink received the current value immediately; during `count = 5` the sink got 5 while the property read 0 (willSet); an unstored sink received its replay and then nothing — later emissions arrived only at the stored subscription. Reproduce all three in a playground; they're ten lines.",
+     "goDeeper": "b1-17 — @Published is that loop's machinery with a Publisher projection. WWDC 2019 \"Combine in Practice\"; WWDC 2023 \"Discover Observation in SwiftUI\" for the @Observable inversion. Apple docs: AnyCancellable ('cancels on deinit')."
+    },
+    {
+     "id": "b5-03",
+     "title": "Dependency injection: seams you can test through",
+     "concept": {
+      "definition": "Dependency injection is passing an object its collaborators instead of letting it grab them: `init(clock: Clock)` rather than `Date()` buried in a method, `init(transport: Transport)` rather than URLSession.shared inline. Each injected protocol is a SEAM — a line where tests substitute a controlled fake. Executed here: a greeting VM that depends on the time of day was tested for morning AND evening in one run, by injecting a FixedClock.",
+      "code": "protocol Clock { var now: Date { get } }\nstruct SystemClock: Clock { var now: Date { Date() } }   // production\nstruct FixedClock: Clock { let now: Date }                // tests\n\nfinal class GreetingVM {\n    private let clock: Clock\n    init(clock: Clock = SystemClock()) { self.clock = clock }\n    func greeting() -> String { /* morning / afternoon / evening */ }\n}\n// executed: FixedClock(9am) → \"Good morning\";\n//           FixedClock(9pm) → \"Good evening\" — same run, no waiting",
+      "underlying": "The mechanism is b1-14's capability thinking aimed at testability: depend on WHAT you need (a thing that tells time, a thing that sends requests — a protocol), not WHO provides it (Date(), URLSession.shared — concrete grabs). A hidden dependency isn't gone; it's just unswappable: `Date()` inside greeting() makes the morning branch testable only in the morning. The executed run is the argument — both branches of time-dependent logic asserted in milliseconds, at 1am if need be.\n\nWhat earns a seam: the non-deterministic (time, random, UUIDs), the slow-or-flaky (network — b4-09's Transport was this loop's pattern already, disk), the stateful-and-shared (defaults, keychain), the unobservable (analytics — inject a spy that records calls, then assert the recording). What doesn't: value types, formatters, pure functions — injecting Math is ceremony, not seams. The `init(clock: Clock = SystemClock())` default-argument idiom keeps production call sites clean while tests override — injection without the boilerplate tax.\n\nSingletons are the anti-pattern this replaces, precisely: `Analytics.shared` reached from anywhere is a hidden global edge in your object graph (b0-14) — untestable (the real thing fires in tests), order-dependent (who configured it first?), and invisible in signatures. The escalation as apps grow: constructor injection (this loop, right default) → a composition root that wires the graph in one place → DI containers only when the wiring itself becomes the problem. Your checkpoint needs step one only.",
+      "whyItMatters": "\"How would you test this?\" — the interview question that reveals architecture — is answered by pointing at seams. And the untestable-because-it-grabs-Date()/URLSession/shared class is the single most common obstacle when teams finally start writing tests."
+     },
+     "exercise": {
+      "prompt": "A testability review. This VM is correct but nearly untestable. List every hidden dependency (there are four), name each one's seam protocol, and state what its fake enables you to assert.",
+      "code": "final class CheckoutVM {\n    func submitOrder(_ items: [Item]) async throws -> Receipt {\n        let orderID = UUID().uuidString\n        let stamp = Date()\n        Analytics.shared.log(\"checkout_started\")\n        let (data, _) = try await URLSession.shared.data(for:\n            makeRequest(orderID: orderID, items: items, at: stamp))\n        let receipt = try JSONDecoder().decode(Receipt.self, from: data)\n        UserDefaults.standard.set(receipt.id, forKey: \"lastReceipt\")\n        return receipt\n    }\n}",
+      "solution": "1. UUID() — inject `IDGenerator` (fake returns \"test-id-1\"): asserts the ID actually lands in the request, and makes recorded requests comparable.\n2. Date() — inject Clock (executed pattern): asserts the timestamp logic without freezing tests to real time.\n3. Analytics.shared — inject `AnalyticsLogging`, fake = a SPY recording calls: assert \"checkout_started\" was logged exactly once, and nothing fires real analytics from CI.\n4. URLSession.shared — inject b4-09's Transport, fake returns canned Receipt data (or throws): asserts the decode path, the error path, and WHAT request was built — headers, body, the orderID from seam 1.\n(JSONDecoder and UserDefaults are debatable — defaults is shared state worth seaming in bigger apps; the decoder is a pure value, leave it.)\n\nRewritten init: `init(ids: IDGenerator, clock: Clock, analytics: AnalyticsLogging, transport: Transport)` — with production defaults. The method's LOGIC didn't change; it just stopped hiding its edges.",
+      "explanation": "Each grab was an untestable branch: you couldn't assert the ID, freeze the time, observe the log, or fake the network. Four protocols later, submitOrder is a pure orchestration you can put under a microscope — including its failure paths, which the grabbing version could never simulate."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what is dependency injection, what deserves a seam, and why are singletons the opposite?",
+      "modelAnswer": "Injection means an object receives its collaborators — as protocols, through init — instead of grabbing concretes like Date(), UUID(), or URLSession.shared inline; each protocol is a seam where tests substitute fakes. Seams are earned by the non-deterministic (time, IDs), the slow or flaky (network, disk), the shared-stateful (defaults, keychain), and the unobservable (analytics, via spies) — pure values and functions don't need them. A singleton reached from anywhere is a hidden, unswappable global edge in the object graph: invisible in signatures, live in tests, and order-dependent — injection makes the same dependency explicit and substitutable.",
+      "sets": [
+       [
+        {
+         "q": "`Date()` called inside a method makes the logic hard to test because…",
+         "options": [
+          "Date construction is slow in test bundles",
+          "the branch under test occurs when the wall clock allows",
+          "Date isn't Equatable for assertions",
+          "test runners mock Date automatically, hiding bugs"
+         ],
+         "correct": 1,
+         "explain": "Executed contrast: with an injected FixedClock, morning AND evening branches ran in one instant. The hidden grab was an appointment; the seam is a time machine."
+        },
+        {
+         "q": "The default-argument idiom `init(clock: Clock = SystemClock())` exists to…",
+         "options": [
+          "avoid protocol witness-table dispatch in release",
+          "keep production call sites clean while tests override the seam",
+          "let the compiler inline the system clock",
+          "make the property optional without an Optional"
+         ],
+         "correct": 1,
+         "explain": "Injection's usual objection is ceremony; the default kills it. VM() in the app, VM(clock: fixed) in tests — one init, both worlds."
+        },
+        {
+         "q": "For an analytics dependency, the useful fake is a SPY because…",
+         "options": [
+          "spies run faster than real loggers",
+          "logging returns nothing — tests assert on the RECORDING",
+          "analytics protocols can't have stub conformers",
+          "spies prevent retain cycles in sinks"
+         ],
+         "correct": 1,
+         "explain": "There's no return value to check — the effect IS the call. A spy that appends to an array turns 'was checkout_started logged once?' into an assertion."
+        }
+       ],
+       [
+        {
+         "q": "What does NOT deserve a seam?",
+         "options": [
+          "A UUID generator used for order identifiers",
+          "A pure formatting function operating on value types",
+          "The Keychain wrapper storing the auth token",
+          "The network transport behind the API client"
+         ],
+         "correct": 1,
+         "explain": "Pure and deterministic needs no substitute — injecting it is ceremony masquerading as architecture. Seams are for edges: nondeterminism, I/O, shared state, invisibility."
+        },
+        {
+         "q": "Analytics.shared reached from twelve files is architecturally worse than an injected logger because…",
+         "options": [
+          "static properties cost a dispatch per access",
+          "an invisible, unswappable edge — absent from signatures",
+          "singletons are deallocated under memory pressure",
+          "shared instances can't be Sendable"
+         ],
+         "correct": 1,
+         "explain": "b0-14's graph with secret edges: nothing declares the dependency, tests fire live events, and 'who configured it first' becomes a launch-order bug. Injection surfaces the same edge in the init."
+        },
+        {
+         "q": "The escalation path as an app grows:",
+         "options": [
+          "singletons → containers → protocols",
+          "init injection → composition root → containers if wiring hurts",
+          "property injection → method injection → globals",
+          "containers first — retrofitting them is impossible"
+         ],
+         "correct": 1,
+         "explain": "Start with init parameters (your checkpoint's level). One place that builds the object graph comes when inits get deep. Frameworks are a solution to wiring pain, not a starting point."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find the least-testable class in your project — the one grabbing Date()/UUID()/shared things inline. Write its seam inventory (the exercise's format: dependency → protocol → what the fake lets you assert), then actually cut ONE seam and write the test that was impossible before.",
+     "verify": "Executed on this Mac: GreetingVM with an injected FixedClock asserted 'Good morning' at 9am and 'Good evening' at 9pm in the same millisecond run — the branch coverage the Date()-grabbing version could only get by running tests twice a day. The b4-09 fake-transport test is the same seam at the network edge.",
+     "goDeeper": "\"Working Effectively with Legacy Code\" (Feathers) coined 'seams' — chapter 4 is the canon. swift-dependencies (Point-Free) for the container end of the escalation. b1-14 for the protocol thinking; b4-09 for the Transport seam you've already built."
+    },
+    {
+     "id": "b5-04",
+     "title": "Unit tests: assertions with teeth",
+     "concept": {
+      "definition": "A unit test is three steps — ARRANGE state, ACT on it, ASSERT the result — run in isolation: XCTest creates a FRESH test-case instance per test and calls setUp before each, so tests can't contaminate each other. Executed here: a Cart's discount logic under 4 tests including the boundary (99 vs 100 for a minimum-spend code), plus one deliberately failing assertion whose message named both values: `(\"50.0\") is not equal to (\"49.0\") — HALF should apply at exactly 100`.",
+      "code": "final class CartTests: XCTestCase {\n    var cart = Cart()\n    override func setUp() { cart = Cart() }   // fresh state, EVERY test\n\n    func testHalfRequiresMinimumSpend() {\n        cart.add(\"pen\", price: 99)             // ARRANGE — just below\n        let total = cart.total(discountCode: \"HALF\")   // ACT\n        XCTAssertEqual(total, 99, accuracy: 0.001)      // ASSERT: no discount\n    }\n}\n// executed: 7 tests, headless, milliseconds.\n// failure output names values + location + your message.",
+      "underlying": "What tests actually buy: not proof of correctness but a TRIPWIRE around decisions — b5-01's ViewModel logic, b1-09's model math — that fires the moment a change breaks an expectation. That's why WHAT you test matters more than coverage: boundaries (executed: 99 passes, and the author's own 'deliberate failure' at exactly 100 PASSED because 100 ≥ 100 — the boundary caught the test-writer, which is the point of writing it), error paths, and the decisions from b5-01's sorting drill. Getters and glue need no tripwires.\n\nThe isolation machinery is worth knowing precisely: each test method runs on a NEW instance of the test class, with setUp/tearDown bracketing it — shared `var cart` is safe because it's not actually shared across tests. What breaks isolation is external state: UserDefaults, files, singletons (b5-03's whole argument) — the reason seams exist is so tests can inject fakes instead of touching the world. A test that passes alone and fails in the suite has state leaking through one of those.\n\nAssertion craft, from the executed failure: XCTAssertEqual over XCTAssertTrue(a == b) because the failure PRINTS both values; `accuracy:` for floating point (b0-03's Doubles don't compare exactly); the message argument for the WHY. Naming: test + condition + expectation (`testHalfRequiresMinimumSpend`) — the suite's output reads as a spec. And speed is a feature: milliseconds per test (executed) is what makes running them on every save viable; a slow suite is a skipped suite.",
+      "whyItMatters": "\"What would you test first?\" is the interview question — boundaries and error paths, not happy-path getters. And the checkpoint's expense-tracker model layer (b1's project) is explicitly tests-included: this loop is its toolkit."
+     },
+     "exercise": {
+      "prompt": "The discount rule: \"HALF applies only at 100 or above.\" Executed fact: a test asserting HALF-at-exactly-100 gives 50 PASSED — the author expected it to fail. (1) Explain why it passed against the author's intent, and what that reveals. (2) Write (in words) the MINIMAL set of tests that pins this rule down completely. (3) A teammate's suite has one test: add 3 items, apply SAVE10, assert the grand total — 'it covers everything the cart does.' What's wrong?",
+      "code": "// rule: case \"HALF\" where sum >= 100: return sum * 0.5\n// executed: cart(100).total(\"HALF\") == 50 — test PASSED\n//           (author had labeled it 'deliberate failure')\n// teammate's suite: one mega-test — 3 adds + SAVE10 + one assert",
+      "solution": "1. The author misread their own boundary: `>= 100` includes exactly 100, so 50 was CORRECT — the 'failing' test was a passing spec. What it reveals: boundary tests don't just catch code bugs, they catch WRONG MENTAL MODELS — the test forced the author to read `>=` versus `>` precisely. That confusion, unwritten, ships as a support ticket.\n2. Four tests pin the rule: sum 99.99 → no discount (below); sum 100 → 50 (AT the boundary — the executed one); sum 101 → 50.5 (above); and HALF with an empty cart → 0 (degenerate). Optionally: wrong code entirely → full price.\n3. The mega-test is one tripwire for five behaviors: when it fails, WHICH behavior broke? It can't say — you debug the test to find out. And it tests no boundary, no error path, no empty state. One behavior per test is what makes a red test a diagnosis instead of a mystery.",
+      "explanation": "The executed surprise is the loop's best lesson: the test's value wasn't the green checkmark — it was forcing a precise reading of `>=`. Tests are executable questions about your own beliefs; boundaries are where beliefs are usually wrong."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what structure does a good unit test have, how does XCTest isolate tests, and what deserves testing first?",
+      "modelAnswer": "Arrange state, act once, assert the outcome — one behavior per test, named so the suite reads as a spec, using assertion forms that print values on failure (XCTAssertEqual with accuracy for floats, plus a why-message). XCTest runs each test method on a fresh instance of the test class with setUp before each, so instance state can't leak between tests — only external state like defaults, files, or singletons breaks isolation, which is what injection seams prevent. Test boundaries and error paths first: that's where mental models are wrong, as any off-by-one at a >= threshold demonstrates.",
+      "sets": [
+       [
+        {
+         "q": "XCTest guarantees test isolation for instance properties by…",
+         "options": [
+          "deep-copying properties between test methods",
+          "a fresh test-class instance per test, setUp bracketing each",
+          "running tests in separate processes",
+          "requiring all properties to be let constants"
+         ],
+         "correct": 1,
+         "explain": "The `var cart` looked shared; it never was — new instance per test method. What DOES leak is the world outside: defaults, files, singletons (b5-03's seams exist for this)."
+        },
+        {
+         "q": "XCTAssertEqual(a, b) beats XCTAssertTrue(a == b) because…",
+         "options": [
+          "it compiles to a faster comparison",
+          "its failure prints BOTH values, and by how much they differ",
+          "it works on non-Equatable types too",
+          "XCTAssertTrue is deprecated in modern XCTest"
+         ],
+         "correct": 1,
+         "explain": "A failing True says 'false'; a failing Equal says what and by how much, with your message appended. Diagnosis quality is chosen at the assertion."
+        },
+        {
+         "q": "The author's HALF-at-100 test passed against their intent. The lesson?",
+         "options": [
+          "The test was flaky and needs a retry policy",
+          "Boundary tests audit MENTAL MODELS — >= got read precisely",
+          "where-clauses in switches shouldn't be tested",
+          "Doubles can't be trusted at boundaries"
+         ],
+         "correct": 1,
+         "explain": "Executed: 100 ≥ 100, discount applies, 50 was right all along. The green mark corrected the author — that correction, unwritten, would have shipped as a confused bug report."
+        }
+       ],
+       [
+        {
+         "q": "A test passes alone but fails when the full suite runs. The suspect class?",
+         "options": [
+          "The compiler reordered the test methods during builds",
+          "External state leaking through — defaults, files, a singleton",
+          "XCTest's per-test timeout getting exceeded in suites",
+          "Too many assertions packed into a single method"
+         ],
+         "correct": 1,
+         "explain": "Instance state can't leak (fresh instance per test); the WORLD can. Some earlier test wrote something this one reads — the exact contamination seams and fakes exist to prevent."
+        },
+        {
+         "q": "The one-mega-test suite ('it covers everything') fails. The structural problem?",
+         "options": [
+          "Mega-tests simply run too slowly for CI pipelines",
+          "One tripwire, five behaviors — a red test becomes a mystery",
+          "XCTest caps the assertion count per test method",
+          "Coverage tools cannot parse compound test bodies"
+         ],
+         "correct": 1,
+         "explain": "When it reddens, which behavior broke? You debug the TEST to find out. One behavior per test makes failure output read as the diagnosis itself."
+        },
+        {
+         "q": "What deserves a test FIRST, given limited time?",
+         "options": [
+          "Property getters, for baseline coverage numbers",
+          "Boundaries and error paths — where beliefs are wrong",
+          "UI layout code, since users see it",
+          "Whatever the coverage tool flags as red"
+         ],
+         "correct": 1,
+         "explain": "The 99/100/101 triple and the throws-path earn their keep; a getter test is a tripwire in an empty field. Coverage follows value, not vice versa."
+        }
+       ]
+      ]
+     },
+     "transfer": "Take the ViewModel you extracted in b5-01's transfer and write its boundary suite: the exact threshold, one below, one above, the empty/degenerate case, one error path. Watch at least one surprise you — then keep that test forever.",
+     "verify": "Executed on this Mac (swift test, headless SPM package): 7 tests in milliseconds; fresh-instance isolation via setUp; the boundary test at 99; and one assertion failure captured verbatim — XCTAssertEqualWithAccuracy failed: (\"50.0\") is not equal to (\"49.0\") +/- (\"0.001\") - HALF should apply at exactly 100. The package recipe is 3 files; rebuild it in any folder.",
+     "goDeeper": "Apple docs: XCTest — 'Defining Test Cases and Test Methods'. \"Working Effectively with Legacy Code\" ch. 8 on characterization tests. Point-Free's testing episodes for the seams-meet-tests worldview. Swift Testing (the new @Test macros) is the emerging successor — same principles, lighter syntax."
+    },
+    {
+     "id": "b5-05",
+     "title": "Testing async code: await, don't sleep",
+     "concept": {
+      "definition": "Modern async tests are just async functions: declare `func testX() async throws`, await the code under test, assert after — executed here: a PriceLoader awaited through a fake transport asserted both its parse path (9.99) and its error path (garbage input → cannotParseResponse). The banned tool is real time: no Thread.sleep, no 'wait 2 seconds and hope' — determinism comes from b5-03's seams, not from waiting.",
+      "code": "func testLoadPriceParsesResponse() async throws {   // async test: just await\n    let loader = PriceLoader(transport:\n        FakeTransport(responses: [\"/price/42\": \"9.99\"]))\n    let price = try await loader.loadPrice(id: \"42\")\n    XCTAssertEqual(price, 9.99, accuracy: 0.001)      // executed: passes\n}\n\nfunc testGarbageResponseThrows() async {              // the ERROR path\n    let loader = PriceLoader(transport:\n        FakeTransport(responses: [\"/price/1\": \"not-a-number\"]))\n    do { _ = try await loader.loadPrice(id: \"1\"); XCTFail(\"should throw\") }\n    catch { XCTAssertEqual((error as? URLError)?.code, .cannotParseResponse) }\n}",
+      "underlying": "Why async tests can be this clean: the test runner awaits your test function like any other task (b3-04's machinery) — suspension replaces the old callback choreography. The legacy pattern you'll still meet in codebases: `XCTestExpectation` — create an expectation, fulfill() it inside the callback, `wait(for:timeout:)` blocks the test until fulfilled or timed out. It remains the right tool for testing genuinely callback-shaped APIs (delegates, notifications) — and a common bridge is wrapping those in b3-08's continuations so the test can await instead.\n\nThe error-path pattern from the executed run deserves its shape memorized: do { act; XCTFail(\"should throw\") } catch { assert on the error }. The XCTFail is the line everyone forgets — without it, a NON-throwing regression passes silently, because the catch simply never runs. Testing that something fails is as load-bearing as testing that it works (b4-04's whole resilience layer needs exactly these tests).\n\nWhat makes async tests FLAKY, and the cures: real time (sleep-then-assert races the scheduler — inject b5-03's clock instead); real concurrency ordering (asserting mid-flight state of racing tasks — restructure to await completion, then assert); real network (b4-09's fake transport, executed here, is the cure). The rule that summarizes the loop: a good async test AWAITS a deterministic pipeline; every sleep in a test suite is a flake with a timer attached. If the code under test can't be awaited to completion deterministically, that's b5-03 feedback about the code, not a testing problem.",
+      "whyItMatters": "Flaky async tests are why real teams stop trusting their suites — 'rerun it, it's just flaky' is culture rot with a technical root. \"How do you test async code?\" is now standard in iOS interviews, and 'make the test async and await through seams' is the modern answer."
+     },
+     "exercise": {
+      "prompt": "A flaky-test triage. Each test fails ~1 run in 20. Name each one's disease and the deterministic rewrite: (A) starts a download, `Thread.sleep(forTimeInterval: 2)`, asserts the file exists; (B) fires two concurrent cache writes, immediately asserts count == 2; (C) awaits a loader that internally retries with real 1-second backoffs — test times out under load; (D) `do { try await load() } catch { XCTAssertNotNil(error) }` — 'tests the error path' but never fails even after the error handling was deleted.",
+      "code": "// A: start download → sleep(2) → assert file exists\n// B: two concurrent writes → assert count == 2 immediately\n// C: awaits loader with real 1s retry backoffs → CI timeouts\n// D: do { try await load() } catch { XCTAssertNotNil(error) }",
+      "solution": "A: racing the wall clock — 2s usually suffices, sometimes doesn't (CI under load). Rewrite: await the download itself (or its fake); the test finishes when the WORK finishes, in milliseconds with a fake transport.\nB: asserting mid-flight — 'immediately' races the writes (b3-03's timing lottery). Rewrite: await both writes' completion (task group / awaiting both), THEN assert. Completion, then assertion — never 'probably done by now'.\nC: real backoff in tests — the retry ladder (b4-08) sleeps real seconds. Rewrite: inject the delay policy (a seam! base = 0 in tests) — the ladder's LOGIC (attempt counts, 5xx-only) is what needs testing, not the passage of time.\nD: the missing XCTFail — if load() stops throwing, the do-block succeeds, catch never runs, ZERO assertions execute, test passes. Executed pattern's fix: XCTFail(\"should throw\") after the act line. (XCTAssertNotNil(error) inside catch is also vacuous — error is non-nil by construction.)\n\nAll four diseases are the same germ: the test depends on something real — time, scheduling, the absence of an assertion — instead of an awaited, seamed, asserted pipeline.",
+      "explanation": "D is the sneakiest: a test that CANNOT fail is worse than no test — it's confidence with no tripwire. The audit question for any error-path test: 'if I delete the throw, does this redden?' If not, it's decoration."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: how do you test async code deterministically, and what are the classic sources of flaky async tests?",
+      "modelAnswer": "Declare the test itself async and await the code under test through injected seams — fake transports for network, fixed clocks and zero-delay policies for time — then assert after completion; the executed pattern for error paths is act-then-XCTFail inside a do, with assertions on the error in catch. Flakiness comes from depending on reality: sleeping wall-clock time instead of awaiting the work, asserting mid-flight while tasks race, and real backoff delays in retry logic. XCTestExpectation remains for genuinely callback-shaped APIs, though wrapping them in continuations lets tests await instead.",
+      "sets": [
+       [
+        {
+         "q": "The modern shape of an async test:",
+         "options": [
+          "wrap the whole body in DispatchQueue.main.sync",
+          "declare it async throws, await the work, assert after",
+          "poll a flag in a while-loop with short sleeps",
+          "run the code and assert inside a Task handler"
+         ],
+         "correct": 1,
+         "explain": "Executed: two async tests through a fake transport, milliseconds. The runner awaits your test like any task — suspension replaced the callback choreography."
+        },
+        {
+         "q": "In the error-path pattern, the XCTFail after the act line exists because…",
+         "options": [
+          "catch blocks require a preceding failure marker",
+          "without it, a non-throwing regression passes: nothing asserts",
+          "it improves the failure message's formatting",
+          "async catch blocks are skipped by the runner"
+         ],
+         "correct": 1,
+         "explain": "The test's job is 'this MUST throw'. Delete the throw and the do-block completes happily — only the XCTFail makes that a red test instead of a green lie."
+        },
+        {
+         "q": "`Thread.sleep(2)` before an assertion makes a test…",
+         "options": [
+          "deterministic, since 2s exceeds any real work",
+          "a race against the scheduler — flaky under load",
+          "faster than awaiting the actual work",
+          "safe, as long as it runs off the main thread"
+         ],
+         "correct": 1,
+         "explain": "Sleep is a bet about how long reality takes; CI under load calls the bet. Awaiting the (seamed) work finishes exactly when it's done — faster AND deterministic."
+        }
+       ],
+       [
+        {
+         "q": "A retry-ladder's tests take 7 real seconds (backoffs). The fix?",
+         "options": [
+          "raise the CI timeout to a generous 30 seconds",
+          "inject the delay policy — zero in tests; test the LOGIC",
+          "test only the ladder's first attempt for speed",
+          "mark the retry tests as performance tests instead"
+         ],
+         "correct": 1,
+         "explain": "b5-03 aimed at time: attempt counts and 5xx-only rules are logic; the seconds between are policy. Seam the policy, assert the logic, finish in milliseconds."
+        },
+        {
+         "q": "XCTestExpectation still earns its place when…",
+         "options": [
+          "testing anything on the main actor",
+          "the API under test is genuinely callback-shaped",
+          "more than one assertion is needed",
+          "tests must run on iOS 14 simulators"
+         ],
+         "correct": 1,
+         "explain": "fulfill-and-wait matches callback shapes (delegates, NotificationCenter). The alternative: bridge with b3-08's continuation and await — same coverage, straighter test."
+        },
+        {
+         "q": "The audit question for any error-path test:",
+         "options": [
+          "does it run in under a millisecond?",
+          "if I delete the throw from the code, does this test turn red?",
+          "does it assert the error's localizedDescription?",
+          "does it cover all URLError codes?"
+         ],
+         "correct": 1,
+         "explain": "A test that can't fail is decoration — worse, it's confidence without a tripwire. Mutation-test your own error tests once by hand; the vacuous ones reveal themselves."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find (or write) one async test in your checkpoint. Run the two audits: is there any sleep or timing bet in it (replace with awaited seams)? If it tests an error path, delete the throw temporarily — does the test redden? Fix whichever audit fails.",
+     "verify": "Executed on this Mac (swift test): async test functions awaited a PriceLoader through a fake transport — parse path asserted 9.99, error path threw cannotParseResponse with the XCTFail guard in place; total runtime milliseconds. Rebuild from the 3-file package recipe and try audit D: delete the loader's throw and watch which tests notice.",
+     "goDeeper": "WWDC 2021 \"Meet async/await in Swift\" (test section) + WWDC 2023 \"Go further with Swift Testing\" for the successor framework. b3-08 for bridging callback APIs so tests can await. Point-Free's 'Reliably testing async code' episodes are the deep end."
+    },
+    {
+     "id": "b5-06",
+     "title": "Time Profiler: measure, then believe",
+     "concept": {
+      "definition": "Performance work has one rule: measure before believing. Executed here: a 'slow screen' with three suspects timed at loadTitles 0.001s, formatWell 0.001s, decorate 0.001s — and formatBadly at 0.133s, a 100× culprit (O(n²) string rebuilding, b0-11's geometry) that intuition alone would rarely convict. Instruments' Time Profiler industrializes this: it samples every thread's call stack thousands of times per second, and the stacks that appear most often are where time actually goes.",
+      "code": "// the executed experiment — three innocents, one culprit:\n// loadTitles       0.001s\n// formatBadly      0.133s   ← out = out + t + \", \"  (O(n²) copies)\n// formatWell       0.001s   ← titles.joined(separator: \", \")\n// decorate         0.001s\n\n// XCTest's measure{} — a regression tripwire, executed:\nfunc testPerformanceOfTotal() {\n    measure { _ = bigCart.total(discountCode: \"SAVE10\") }\n}\n// → average: 0.002s, 10 runs, RSD 37%, 'prefers smaller',\n//   fails the test if a future change regresses past the baseline",
+      "underlying": "How a sampling profiler works — and what that implies. Thousands of times per second, Time Profiler snapshots every thread's call stack (b0-07's frames, read live); functions are charged by how often they appear. SELF weight = samples where the function itself was executing (the work is IN it — formatBadly's string copies); TOTAL weight = self plus everything it called (high total, low self = an orchestrator; the culprit is below it). Reading the inverted call tree by self-weight is the fastest route to the formatBadly of any real app.\n\nThe discipline around the tool matters as much: profile RELEASE builds (debug disables b1-11's specialization and inlining — debug-build profiles convict the wrong functions), on a real device when it's UI (simulator perf is a Mac cosplaying), and follow the loop: measure → hypothesize → change ONE thing → measure again. The executed fix was one line (joined instead of +=) found by timing, not by cleverness — b2-01's 16ms budget gives the pass/fail bar for anything on the main thread, and Instruments' hang detection flags main-thread stacks that overstay it.\n\nXCTest's `measure {}` (executed: 10 runs, average, relative standard deviation, baseline comparison) is the CI-side companion: set a baseline in Xcode and future regressions FAIL the test — b5-04's tripwire philosophy applied to speed. High RSD (executed: 37%) is itself information: variance that big means caching or warmup effects — first-iteration cost differs from steady state, worth knowing which one you're shipping.",
+      "whyItMatters": "\"The app is slow — walk me through what you'd do\" is a standard interview scenario, and 'open Time Profiler, sort by self weight in release build' beats any amount of guessing aloud. The measure-first habit also kills the classic time-sink: optimizing the innocent function you SUSPECTED while the 100× culprit ships."
+     },
+     "exercise": {
+      "prompt": "A profiling session, on paper. The feed screen janks on scroll. Time Profiler (release build, on-device, during scroll) shows this inverted call tree by SELF weight. Answer: (1) which function do you fix first and why NOT the top total-weight one; (2) what does row 3 tell you given b2-12; (3) after fixing, scroll is smooth but launch is now reported slow — same tool session or new one, and why?",
+      "code": "// SELF weight   TOTAL    function                    thread\n// 42%           42%      String.append (via format)  main\n// 18%           18%      JSONDecoder.decode          main\n// 12%           12%      UIImage(data:)              main\n//  3%           71%      cellForRowAt                main\n//  …\n// (during scroll; 16ms budget frequently exceeded)",
+      "solution": "1. String.append at 42% SELF — the work is IN it (the executed formatBadly pattern). cellForRowAt's 71% TOTAL with 3% self says it's the orchestrator: fixing IT means fixing what it CALLS — and the biggest callee is the string work. Total weight finds the neighborhood; self weight names the resident.\n2. Rows 2–3: decoding and image work ON MAIN during scroll — b2-12's decode-off-main rule violated inside the scroll path. Even after the string fix, 30% of main-thread scroll time is work that belongs on the pool (b3-04), hopping home only to assign.\n3. NEW session — launch is a different workload with different stacks (and Instruments has a dedicated App Launch template). Profiles answer the question you asked; scroll samples say nothing about launch. Measure the thing itself.\n\nBonus reading: the three fixes are one-liners-ish (joined; decode off main; pre-decoded images) — profiler findings usually are. Finding them without measuring: nearly impossible; the suspects LOOKED innocent.",
+      "explanation": "Self-vs-total is the entire reading skill: orchestrators have big totals, culprits have big selfs. And question 3 is the discipline: a profile is an answer to ONE question — new question, new measurement."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: how does a sampling profiler attribute time, what's self vs total weight, and what's the discipline around profiling?",
+      "modelAnswer": "It snapshots every thread's call stack thousands of times per second and charges functions by how often they appear in samples — no instrumentation of your code, just statistics over stacks. Self weight counts samples where the function itself was on top (the work is in it); total weight adds everything it called — orchestrators show high total and low self, and sorting the inverted tree by self weight names the actual culprit. The discipline: profile release builds on real devices, change one thing per measurement, and use measure{} baselines in CI so regressions fail tests instead of shipping.",
+      "sets": [
+       [
+        {
+         "q": "A sampling profiler knows where time goes because…",
+         "options": [
+          "the compiler inserts timing counters per function",
+          "it snapshots all thread stacks constantly — frequency IS time",
+          "functions self-report durations to the runtime",
+          "it replays the app twice and diffs the logs"
+         ],
+         "correct": 1,
+         "explain": "Statistics over b0-07's live frames: appear in 40% of samples, own ~40% of the time. No code changes, tiny overhead — and why very short runs give noisy answers."
+        },
+        {
+         "q": "cellForRowAt: 71% TOTAL, 3% SELF. Verdict?",
+         "options": [
+          "It's the culprit — fix its 71% first",
+          "An orchestrator — its callees own the time; sort by SELF",
+          "The profiler mis-attributed its samples",
+          "It should be moved off the main thread whole"
+         ],
+         "correct": 1,
+         "explain": "High total + low self = a manager, not a worker. The executed experiment's formatBadly pattern: the 42%-self string append below it is where the milliseconds live."
+        },
+        {
+         "q": "Why must performance profiles come from RELEASE builds?",
+         "options": [
+          "Debug builds refuse to attach Instruments",
+          "Debug disables inlining — the profile convicts the innocent",
+          "Release builds sample at a higher frequency",
+          "App Review requires release-build traces"
+         ],
+         "correct": 1,
+         "explain": "b1-11's optimizations reshape the code entirely: a generic call that's free in release is a real call in debug. Profile the artifact you ship, on the hardware users hold."
+        }
+       ],
+       [
+        {
+         "q": "Executed: measure{} reported average 0.002s with RSD 37%. The RSD tells you…",
+         "options": [
+          "the test machine was briefly overloaded — just rerun",
+          "high variance — warmup/caching; cold and warm costs differ",
+          "the measurement is formally invalid above ten percent",
+          "the measured function allocates far too much memory"
+         ],
+         "correct": 1,
+         "explain": "Variance is information, not noise: which cost do you ship — cold or warm? measure{}'s 10 iterations expose the difference; a baseline turns future regressions into red tests."
+        },
+        {
+         "q": "The classic failure mode this loop's rule prevents:",
+         "options": [
+          "profiling for too long and filling the disk",
+          "optimizing the SUSPECTED function while the culprit ships",
+          "setting baselines before the code is finished",
+          "measuring on too many device types"
+         ],
+         "correct": 1,
+         "explain": "Executed: three innocent-looking suspects, one at 0.001s each — and one at 0.133s that intuition wouldn't convict. Belief without measurement optimizes the innocent."
+        },
+        {
+         "q": "Scroll is fixed; now launch is slow. The right move?",
+         "options": [
+          "extend the scroll profile — the data's already there",
+          "a NEW measurement — profiles answer only the question asked",
+          "assume the same culprit and apply the same fix",
+          "skip profiling; launch is always network-bound"
+         ],
+         "correct": 1,
+         "explain": "Different workload, different stacks, different template (App Launch). A profile is one experiment's data — new question, new experiment. Measure the thing itself, always."
+        }
+       ]
+      ]
+     },
+     "transfer": "Profile something real this week: your checkpoint app scrolling (Time Profiler, release scheme, device if possible). Read the inverted tree by self weight, name the top resident, and write one sentence: is it yours or the framework's, and does b2-12 or b0-11 explain it? Then add ONE measure{} test with a baseline to the model layer.",
+     "verify": "Executed on this Mac: the four-suspect timing experiment (0.001/0.133/0.001/0.001 — the O(n²) string rebuild convicted by measurement); XCTest measure{} with 10 iterations, average 0.002s, RSD 37%, baseline machinery in the output. Instruments' sampling itself is Xcode-side: run the Time Profiler template on any app and find the inverted call tree.",
+     "goDeeper": "WWDC 2019 \"Getting Started with Instruments\" — the canonical Time Profiler tour. WWDC 2023 \"Analyze hangs with Instruments\" for the main-thread 16ms enforcement. b0-11/b2-01 for the cost models the profiler keeps confirming."
+    },
+    {
+     "id": "b5-07",
+     "title": "Allocations and Leaks: reading memory like a ledger",
+     "concept": {
+      "definition": "Two Instruments answer two different memory questions. ALLOCATIONS: where does memory GO — every allocation attributed to its call stack, growth over time, generation diffing between checkpoints. LEAKS: what can never be freed — and it was executed here: five b1-03 rings compiled into a binary and the real `leaks` tool convicted them by name: '20 leaks for 82400 total leaked bytes… ROOT CYCLE: <Node>… __strong next --> CYCLE BACK TO' — the ring, drawn by the tool. The clean control objects never appeared.",
+      "code": "// executed — the leaks tool on 5 deliberate rings:\n// Process: 20 leaks for 82400 total leaked bytes.\n// STACK OF 5 INSTANCES OF 'ROOT CYCLE: <Node>':\n//   Node.__allocating_init() + 36        ← WHERE they were born\n//   ROOT CYCLE: <Node 0x…4f0>\n//     __strong next --> ROOT CYCLE: <Node 0x…520>\n//       __strong next --> CYCLE BACK TO <Node 0x…4f0>   ← the ring\n\n// CLI version (works on any macOS binary):\n//   leaks --atExit -- ./yourBinary",
+      "underlying": "A leak, precisely, is UNREACHABLE-but-alive memory (b1-03): no path from any root, count never zero. The Leaks instrument finds these by doing what ARC never does — TRACING from the roots (b0-14's graph walk) and flagging allocations no path reaches; the executed output shows its receipts: birth stack (which init), the ownership arrows, and the cycle closing. It runs the same detection the Memory Graph Debugger draws interactively.\n\nAllocations answers the sneakier question: growth that ISN'T leaks. Memory that climbs forever while Leaks stays clean means reachable-but-unwanted — caches without eviction, arrays that only append, notification observers accumulating (abandoned memory, not leaked). The workflow is GENERATION DIFFING: mark a generation, perform the suspect action (open screen → close screen), mark again — the diff lists every allocation that survived; for a fully-dismissed screen, that list should be near-empty, and each survivor's call stack names the keeper. Repeat the action: linear survivor growth = a per-action accumulation.\n\nThe triage table: memory climbs + Leaks red = rings (b1-03/07 — fix arrows). Climbs + Leaks clean = abandonment (fix eviction/lifecycle). Spikes then settles = churn (b0-04 — transient allocation pressure; Allocations' transient view shows it). And the executed CLI (`leaks --atExit`) belongs in your toolkit: it turns 'I think I fixed the leak' into a scriptable yes/no.",
+      "whyItMatters": "\"How would you find a memory leak?\" is a standard interview question whose best answer names both tools AND the reachable-but-growing case most candidates miss. The executed ring-conviction is b1-03's promise kept: the tool literally draws the diagram you learned to draw."
+     },
+     "exercise": {
+      "prompt": "Memory triage. Three reports from the same app — for each, name the diagnosis category, the tool+workflow that confirms it, and the likely fix family: (A) memory climbs 2MB every time a detail screen is opened and closed; Leaks: clean. (B) Leaks flags 40 objects after a chat session; their birth stacks all point at MessageCell's closure property. (C) memory spikes 300MB during photo import, then returns to baseline; users on older devices crash mid-import.",
+      "code": "// A: +2MB per open/close cycle, Leaks clean\n// B: Leaks: 40 objects, birth stack = MessageCell closure setup\n// C: +300MB spike during import, settles after; OOM on old devices",
+      "solution": "A: ABANDONMENT (reachable, unwanted). Tool: Allocations with generation diffing — mark, open+close, mark; the survivors' stacks name the keeper (a cache, an observer, a coordinator holding dismissed VCs). Fix family: lifecycle — remove observers, evict on dismiss, weak parent links.\nB: RINGS (unreachable, alive). Leaks already convicted; the birth stack (executed output's format) points at cell closure wiring — almost certainly a closure capturing the cell that the cell stores (b1-07 verbatim). Fix: [weak self/cell] in the capture list; confirm with a leaks re-run — scriptable via leaks --atExit.\nC: CHURN (transient pressure). Nothing leaks or abandons — the import holds too much AT ONCE. Tool: Allocations' transient/persistent split during the spike. Fix family: streaming — process images one at a time, autoreleasepool per iteration, downsample before decode (b2-12's decode discipline).\n\nThree climbing graphs, three different diseases — the Leaks-clean-or-not fork is the first question, spike-vs-plateau the second.",
+      "explanation": "The triage order matters because the fixes don't transfer: weakifying arrows does nothing for a cache that eats forever, and eviction does nothing for a ring. Diagnose with the ledger (Allocations) and the verdict (Leaks) before touching code."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what's the difference between what Leaks and Allocations detect, and how does generation diffing work?",
+      "modelAnswer": "Leaks finds unreachable-but-alive memory by tracing from the roots — the detection ARC never performs — and reports each leaked allocation's birth stack and ownership cycle, as its ROOT CYCLE output shows for retain rings. Allocations is the ledger for everything else: memory that grows while remaining reachable — caches, accumulating observers — which no leak detector can flag. Generation diffing is Allocations' workflow: mark, perform the suspect action, mark again; the survivors of a supposedly-completed action are the abandonment, with call stacks naming the keeper.",
+      "sets": [
+       [
+        {
+         "q": "Leaks can find rings because it does what ARC doesn't:",
+         "options": [
+          "counts references with higher precision",
+          "TRACES reachability from roots, flagging the unreached",
+          "watches deinit calls for missing ones",
+          "compares allocation and free counts per type"
+         ],
+         "correct": 1,
+         "explain": "b1-03's counting-vs-tracing distinction, weaponized: the tool walks b0-14's graph and finds the islands. Executed: five rings, named, with the CYCLE BACK TO arrow drawn."
+        },
+        {
+         "q": "Memory climbs steadily; Leaks reports nothing. The diagnosis category?",
+         "options": [
+          "a false negative — rerun Leaks with a longer session",
+          "abandonment: reachable-but-unwanted growth (caches, observers)",
+          "progressive fragmentation of the heap allocator",
+          "ARC batching its releases until memory pressure"
+         ],
+         "correct": 1,
+         "explain": "Reachable memory is invisible to leak detection BY DEFINITION — something still points at it. Allocations' generation diff is the tool; the survivor stacks name the keeper."
+        },
+        {
+         "q": "Generation diffing's core move:",
+         "options": [
+          "diffing two builds' binary sizes",
+          "mark → act → mark; the 'completed' action's survivors",
+          "sampling stacks during allocation spikes",
+          "comparing debug and release heap layouts"
+         ],
+         "correct": 1,
+         "explain": "Open-then-close a screen should net near zero; every survivor has a call stack and a keeper. Repeat the action — linear survivor growth is the per-action accumulation signature."
+        }
+       ],
+       [
+        {
+         "q": "The executed leaks output's 'Node.__allocating_init() + 36' line gives you…",
+         "options": [
+          "the deallocation site that never ran",
+          "the BIRTH stack — where the leaked objects began",
+          "the memory address to free manually",
+          "the retain count at process exit"
+         ],
+         "correct": 1,
+         "explain": "Leaks tells you where leaked things were BORN, and the ownership arrows show why they can't die. Birth site + cycle diagram = the fix's coordinates."
+        },
+        {
+         "q": "A 300MB spike that settles (no leak, no growth) crashes old devices. The fix family?",
+         "options": [
+          "weakify all of the import pipeline's delegates",
+          "streaming: incremental work, pool per item, downsample early",
+          "increase the app's memory entitlement in the plist",
+          "move the whole import onto a background queue"
+         ],
+         "correct": 1,
+         "explain": "Churn is a PEAK problem: nothing is wrong except everything at once. Holding less simultaneously — one item, one pool drain, decoded-at-need — lowers the mountain, not the ledger."
+        },
+        {
+         "q": "The scriptable regression check for a fixed leak:",
+         "options": [
+          "a unit test asserting deinit fires (b1-02 prints)",
+          "leaks --atExit -- ./binary in CI — executed here: it names rings verbatim",
+          "both of these, at different layers",
+          "neither is possible without Instruments' GUI"
+         ],
+         "correct": 2,
+         "explain": "Both, and they complement: the deinit-fires test (b1-02's print, formalized as XCTest with weak-ref assertion) guards one object; the leaks CLI sweeps the whole process. Belt and suspenders, both automatable."
+        }
+       ]
+      ]
+     },
+     "transfer": "Run `leaks --atExit` against your checkpoint binary (or reproduce the Node-ring demo first). Then do one generation-diff session in Instruments: mark, open and close your heaviest screen, mark — and write down each survivor's keeper. Zero survivors is an achievement worth a screenshot.",
+     "verify": "Executed on this Mac: `leaks --atExit -- ./leaky` convicted 5 deliberate rings — '20 leaks for 82400 total leaked bytes', birth stack at Node.__allocating_init, ownership arrows closing with 'CYCLE BACK TO' — while the clean control objects never appeared. The Allocations workflows are Instruments-side: one generation-diff session makes them permanent.",
+     "goDeeper": "WWDC 2018 \"iOS Memory Deep Dive\" — the definitive memory-triage talk (footprint, churn, the triage table). WWDC 2021 \"Detect and diagnose memory issues\". b1-03/b1-07 for the rings; b0-14 for the graph the tools walk."
+    },
+    {
+     "id": "b5-08",
+     "title": "API design: access levels are promises",
+     "concept": {
+      "definition": "Access control is API design enforced by the compiler: `private` (this declaration), `fileprivate` (this file), `internal` (this module — the default), `public` (visible outside), and `open` (public AND subclassable/overridable outside). Both boundary walls were executed across a real two-module package: subclassing a public-not-open class errored 'cannot inherit from non-open class Renderer outside of its defining module', and touching an internal property errored ''timeout' is inaccessible due to 'internal' protection level'.",
+      "code": "// module Lib:\npublic class Renderer { public init() {}; public func draw() {} }\nopen  class Widget   { public init() {}; open func render() {} }\npublic struct Config {\n    public init() {}\n    var timeout = 30            // internal: exists, but not for outsiders\n    public var isValid: Bool { timeout > 0 }\n}\n\n// module Cli — executed errors:\nclass MyRenderer: Renderer {}   // ✗ cannot inherit from non-open class\nprint(Config().timeout)         // ✗ inaccessible due to 'internal' level",
+      "underlying": "The levels encode WHO you're making promises to. Everything visible is a commitment: public API is forever-ish (renaming it breaks every consumer), while internal can be refactored on a whim — so the default posture is MINIMAL EXPOSURE: start private, widen only under demand. The executed Config shows the pattern: one public init, one public computed property, and the stored `timeout` kept internal — outsiders get behavior, not layout, and the layout can change tomorrow.\n\npublic-vs-open is the subtle one, executed: public means callable outside, open means EXTENSIBLE outside. A public class refusing external subclassing isn't stinginess — it's b1-14's fragile-base-class defense (nobody outside can depend on your override points) AND b1-10's performance fact (the compiler can devirtualize what provably can't be overridden externally). open is a bigger promise than public: you're committing to your class's internal call sequence as API. Apple ships UIView as open deliberately and most of its types as final or public — the same deliberateness applies to you.\n\nAt module scale this becomes architecture: a target's public surface IS its API document, and `internal` is what lets a module refactor freely inside. Two working footnotes: `private(set) var x` — read-public, write-private — is the everyday idiom for observable-but-owned state (b5-01's VMs use it); and `@testable import` lifts internal (not private) into test targets, which is why the checkpoint's tests can reach model internals without publicizing them.",
+      "whyItMatters": "\"What's the difference between public and open?\" is a precise-knowledge interview question, both errors executed here. And minimal-exposure is the habit that separates a codebase where refactoring is routine from one where every change is an archaeology dig into who-uses-this."
+     },
+     "exercise": {
+      "prompt": "An API review of a module's surface. For each declaration, verdict — RIGHT LEVEL or WRONG (with the correct one and why): (1) `public var cache: [String: Data]` on the API client; (2) `open class JSONParser` with three open methods, no subclasses anywhere; (3) `private func formatPrice()` needed by tests, currently copy-pasted into the test file; (4) `public struct User` with all-public stored properties, decoded from the server; (5) `private(set) public var state: LoadState` on a ViewModel.",
+      "code": "// 1. public var cache: [String: Data]     (API client's internals)\n// 2. open class JSONParser                 (no subclasses exist)\n// 3. private func formatPrice()            (tests copy-paste it)\n// 4. public struct User { public let id…}  (server contract type)\n// 5. private(set) public var state         (ViewModel)",
+      "solution": "1. WRONG — the cache dictionary is implementation, now frozen as API: outsiders can mutate it, and you can never change its type. internal (or private) + public methods for the behaviors outsiders actually need.\n2. WRONG — open with no subclasses is a promise nobody asked for: external override points you must now support forever, and devirtualization (b1-10) surrendered. public (or final) until subclassing is a real requirement; executed: public already blocks outside inheritance.\n3. WRONG-ish — copy-pasted logic in tests drifts from reality. internal + @testable import reaches it without publicizing; if it's genuinely private to one type, test through the type's public behavior instead.\n4. RIGHT — a contract type (b4-03) IS its fields; all-public-let on a decoded struct is honest. (public let, not var — and the memberwise init needs explicit public if outsiders construct it.)\n5. RIGHT — the b5-01 idiom exactly: the world may READ state (and observe it), only the VM may write it. The compiler enforces the one-way street.\n\nThe review's single principle: every widened level is a promise — make each one on purpose.",
+      "explanation": "1 and 2 are the classic over-exposures: internals frozen into API, and extensibility granted by default. The executed errors are what RIGHT looks like from outside — the compiler saying 'that wasn't promised to you.'"
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: what do Swift's access levels mean, what's the public/open distinction, and what's the design posture?",
+      "modelAnswer": "private scopes to the declaration, fileprivate to the file, internal to the module (the default), public makes it visible outside, and open additionally allows external subclassing and overriding. Public-not-open classes can be used but not inherited across modules — executed as 'cannot inherit from non-open class' — which defends against fragile-base-class coupling and preserves devirtualization. The posture is minimal exposure: start private, widen under real demand, because every visible declaration is a compatibility promise — with private(set) for read-only-outside state and @testable import for reaching internals in tests.",
+      "sets": [
+       [
+        {
+         "q": "Executed: subclassing a PUBLIC class from another module fails because…",
+         "options": [
+          "public classes are implicitly final everywhere",
+          "public grants use, not extension — subclassing needs open",
+          "cross-module inheritance requires @objc",
+          "the subclass's module lacked an entitlement"
+         ],
+         "correct": 1,
+         "explain": "'cannot inherit from non-open class… outside of its defining module', verbatim. Callable and extensible are separate promises — open is the bigger one."
+        },
+        {
+         "q": "Declaring a class open commits you to…",
+         "options": [
+          "nothing beyond public; it's purely a style marker",
+          "supporting external overrides — your call order becomes API",
+          "shipping the class's full source code for inlining",
+          "keeping the class fully Objective-C compatible"
+         ],
+         "correct": 1,
+         "explain": "Subclassers outside depend on when and how your methods call each other (b1-14's fragile base). Plus b1-10: externally-overridable can't be devirtualized."
+        },
+        {
+         "q": "The default posture for a new declaration:",
+         "options": [
+          "public — collaborators shouldn't be blocked",
+          "as private as possible; widen only under real demand",
+          "internal always — the language default is the policy",
+          "match whatever the file's other members use"
+         ],
+         "correct": 1,
+         "explain": "Every visible name is a promise someone can start depending on. Narrow is reversible in one keystroke; widening back after adoption is a breaking change."
+        }
+       ],
+       [
+        {
+         "q": "`private(set) public var state` on a ViewModel encodes…",
+         "options": [
+          "a performance hint aimed at the observation system",
+          "world-readable, owner-writable — a compiler-kept one-way street",
+          "guaranteed thread-safety for the state property",
+          "that state gets excluded from the module's public API"
+         ],
+         "correct": 1,
+         "explain": "b5-01's boundary as a language feature: views read and observe; only the VM mutates. Asymmetric access is the idiom for owned-but-observable state."
+        },
+        {
+         "q": "Tests need an internal helper. The right mechanism?",
+         "options": [
+          "make the helper public with a // for tests comment",
+          "@testable import — internal becomes visible to the test target",
+          "copy the helper into the test file",
+          "reflection via Mirror to reach it"
+         ],
+         "correct": 1,
+         "explain": "@testable lifts internal (not private) for tests only — no production surface widened, no drift-prone copies. Genuinely private logic gets tested through public behavior."
+        },
+        {
+         "q": "A public stored `var cache: [String: Data]` on your API client costs you…",
+         "options": [
+          "a guaranteed retain cycle with every consumer module",
+          "the freedom to change or guard it — internals frozen as API",
+          "witness-table dispatch on every property access",
+          "nothing at all; collections are safe to expose freely"
+         ],
+         "correct": 1,
+         "explain": "Outsiders can now mutate it, iterate it, depend on its exact type. Behavior methods over exposed storage — the executed Config's internal timeout is the pattern."
+        }
+       ]
+      ]
+     },
+     "transfer": "Audit one file of your checkpoint: for every declaration, ask 'who actually needs this visible?' and tighten everything unclaimed. Then find one public stored property and replace it with private(set) or a method — feel how the compiler immediately shows you every outside toucher.",
+     "verify": "Executed on this Mac (two-module SPM package): subclassing public-not-open Renderer errored verbatim; reading internal `timeout` cross-module errored verbatim; the open Widget subclass with override compiled clean. The package recipe is in the scratchpad pattern — rebuild and try widening/narrowing levels.",
+     "goDeeper": "The Swift book: \"Access Control\" — the five levels' exact rules. SE-0117 (the public/open split) — the design rationale is a masterclass in API promises. b1-10 (devirtualization) and b1-14 (fragile base) for why open costs what it costs."
+    },
+    {
+     "id": "b5-09",
+     "title": "Logging: evidence for your future self",
+     "concept": {
+      "definition": "Production logging is os.Logger — executed here: a Logger with a subsystem and category writing .info, .error, and .debug entries. Its design answers logging's three tensions: LEVELS decide persistence (debug evaporates unless captured live; error persists), CATEGORIES make streams filterable (subsystem + category is your query key), and PRIVACY is per-value — interpolated data is REDACTED by default (`<private>` in the log) unless you mark it `privacy: .public`, so logging can't accidentally become a data breach.",
+      "code": "import os\nlet log = Logger(subsystem: \"com.app.main\", category: \"networking\")\n\nlog.debug(\"cache checked\")                      // cheap; not persisted\nlog.info(\"request started\")                      // persisted briefly\nlog.error(\"status \\(code) from \\(endpoint)\")     // persisted; investigate\nlog.fault(\"invariant broken\")                    // persisted; page someone\n\nlog.info(\"user \\(userID, privacy: .private)\")    // → shows as <private>\nlog.info(\"status \\(status, privacy: .public)\")   // → visible in logs",
+      "underlying": "Why Logger beats print in every dimension that matters at 2am. STRUCTURE: subsystem/category turn a firehose into queryable streams (`log show --predicate 'subsystem == \"com.app.main\"'` — the Console.app filter bar speaks the same language). COST: string interpolations in log calls are compiled to defer work — a .debug message that nothing is capturing costs near zero, so leaving instrumentation in shipping code is the DESIGN, not a leak (print, by contrast, always formats and always writes). PERSISTENCE BY LEVEL: debug/info are ephemeral-ish (ring buffers, captured when streaming); error/fault persist to disk and survive until collected — the level you choose IS the retention policy.\n\nPrivacy deserves its own paragraph: interpolated values are redacted by default because logs LEAVE devices — sysdiagnoses travel to Apple, users email them, screenshots of Console circulate. `.private` values show as `<private>` in collected logs (visible live during debugging with the device attached); `.public` is an explicit decision per value. The discipline: identifiers, tokens, emails, names — never public; status codes, counts, states — safely public. (The redaction behavior is Apple-documented; the Logger API itself executed here.)\n\nWhat to log, learned from b4-09's funnel: transitions and failures with EVIDENCE — which endpoint, what status, which layer (the funnel's one logging point sees everything); state-machine transitions (b1-16 enums log beautifully); and drop counters (b4-04's lossy decoder). What not to log: loops' per-iteration chatter (that's the profiler's job — b5-06), success-path noise that buries the signal, and anything you'd redact in a screenshot.",
+      "whyItMatters": "The bug you can't reproduce is diagnosed entirely from logs — their quality was decided weeks earlier, by you. And 'what would you log, at what level, with what privacy?' is quietly becoming an interview question because teams keep shipping user data into sysdiagnoses."
+     },
+     "exercise": {
+      "prompt": "A log-review drill. For each line, verdict — level right? privacy right? should it exist? — with the fix: (1) `print(\"got here 3\")` shipped in release; (2) `log.info(\"login ok for \\(email, privacy: .public)\")`; (3) `log.debug(\"decode failed: \\(error)\")` — the team's only record of b4-04 drops; (4) `log.error(\"tapped settings\")`; (5) a loop logging `.info(\"processed row \\(i)\")` 10,000 times during import.",
+      "code": "// 1. print(\"got here 3\")                      — in release\n// 2. .info: \"login ok for \\(email, privacy: .public)\"\n// 3. .debug: \"decode failed: \\(error)\"         — only drop record\n// 4. .error: \"tapped settings\"\n// 5. .info in a 10,000-iteration import loop",
+      "solution": "1. DELETE (or convert): print always pays formatting cost, lands unqueryably in stdout, says nothing. If the location matters, it's a .debug with a category; if not, it's noise.\n2. PRIVACY WRONG: an email marked .public ships PII into every sysdiagnose. Default redaction exists for exactly this — drop the .public (or hash it if correlation is needed). Level is fine.\n3. LEVEL WRONG: debug evaporates — the team's only record of data loss is a log nobody will ever have. Failures with consequences are .error, with evidence (which key, which type — b4-03's DecodingError has it all).\n4. LEVEL WRONG, existence dubious: a tap is not an error — crying wolf at .error means real errors drown. If navigation matters, .debug/.info under an 'ui' category; more likely it's analytics' job, not the log's.\n5. EXISTENCE WRONG: 10,000 infos bury every signal in the stream (and per-iteration progress is b5-06's territory). Log the TRANSITIONS: import started (count), import finished (duration, failures) — two lines carrying more information than ten thousand.\n\nThe drill's rubric: level = retention + urgency; privacy = would you screenshot it; existence = transition or evidence, not narration.",
+      "explanation": "Line 3 is the costly one in real life: the failure-record that self-destructs. Retention follows level — choosing .debug for anything you'd want during a postmortem is choosing to not have it."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 3 sentences: why os.Logger over print, how do levels and privacy work, and what's worth logging?",
+      "modelAnswer": "Logger gives structured, queryable streams (subsystem and category), near-zero cost for uncaptured levels since interpolation is deferred — so instrumentation can ship — and per-value privacy: interpolated data is redacted by default and must be explicitly marked public, keeping PII out of sysdiagnoses. Levels encode retention and urgency: debug evaporates, info persists briefly, error and fault persist for investigation. Worth logging: state transitions and failures with evidence — endpoint, status, layer, drop counts — at the funnel and state-machine boundaries; not worth it: per-iteration narration and success noise that bury the signal.",
+      "sets": [
+       [
+        {
+         "q": "A .debug log that nothing is capturing costs almost nothing because…",
+         "options": [
+          "debug strings are interned at compile time",
+          "the interpolation is deferred — work only if someone listens",
+          "the log daemon batches debug writes hourly",
+          "debug calls compile out of release builds entirely"
+         ],
+         "correct": 1,
+         "explain": "The design lets instrumentation LIVE in shipped code. print is the opposite: always formats, always writes, never queryable — its cost is unconditional."
+        },
+        {
+         "q": "By default, `log.info(\"user \\(userID)\")` records userID as…",
+         "options": [
+          "the value, visible in any collected log",
+          "<private> — redacted unless explicitly marked .public",
+          "a salted hash for correlation",
+          "nothing; the line fails to compile"
+         ],
+         "correct": 1,
+         "explain": "Redaction-by-default exists because logs leave devices — sysdiagnoses, support emails, screenshots. .public is a per-value decision you make consciously, or not at all."
+        },
+        {
+         "q": "The practical meaning of choosing a level is…",
+         "options": [
+          "the highlight color the message gets in Console",
+          "retention and urgency — debug evaporates, error persists",
+          "which background thread the log write happens on",
+          "the message's relative position in the stream"
+         ],
+         "correct": 1,
+         "explain": "Level IS the retention policy: the postmortem only contains what persisted. A failure recorded at .debug is a record you chose not to keep."
+        }
+       ],
+       [
+        {
+         "q": "b4-04's lossy decoder should report its drops via…",
+         "options": [
+          ".debug — decoder drops are purely developer detail",
+          ".error with evidence — data loss must survive to postmortem",
+          "print statements, so they're visible inside Xcode",
+          "a .fault entry, since user data was actually lost"
+         ],
+         "correct": 1,
+         "explain": "Silent lossiness was b4-04's one rule; a self-destructing record breaks it. Error persists; fault says 'invariant broken, page someone' — a tolerated drop isn't that."
+        },
+        {
+         "q": "Everything logged at .error 'to be safe' costs you…",
+         "options": [
+          "disk space on the device, primarily",
+          "signal — real errors drown, and error monitoring goes blind",
+          "runtime cost, since error formatting is eager",
+          "nothing much; over-logging is essentially harmless"
+         ],
+         "correct": 1,
+         "explain": "Levels are a triage contract with future-you: if everything's an error, nothing is. The taxonomy only works if it's honest."
+        },
+        {
+         "q": "The highest-value log lines in a b4-09-style app are at…",
+         "options": [
+          "every function's entry and exit points",
+          "the funnel and state transitions — one point sees everything",
+          "the UI layer, where users actually experience bugs",
+          "the third-party SDK boundaries, and only those"
+         ],
+         "correct": 1,
+         "explain": "b4-09's centralization pays again: one funnel logging point captures endpoint, layer, and evidence for EVERY call. State-machine transitions (b1-16 enums) are the app-side equivalent."
+        }
+       ]
+      ]
+     },
+     "transfer": "Instrument your checkpoint's network funnel with Logger: one category ('networking'), transitions at .info, failures at .error with endpoint+status (status .public, any identifiers default-private), drops counted. Then open Console.app, filter to your subsystem, and watch a session — is the story readable?",
+     "verify": "Executed on this Mac: os.Logger with subsystem/category wrote .debug/.info/.error entries from a compiled binary. The redaction and retention semantics are Apple-documented — observe them in Xcode's console (live, private values visible) versus `log show` after the fact (`<private>`), which is exactly the difference the design protects.",
+     "goDeeper": "WWDC 2020 \"Explore logging in Swift\" — the Logger design talk, including deferred interpolation. Apple docs: 'Generating Log Messages from Your Code' (privacy specifiers). b4-09 for the funnel these lines belong in."
+    },
+    {
+     "id": "b5-10",
+     "title": "Capstone: the craft loop",
+     "concept": {
+      "definition": "Block 5 is one repeating loop: STRUCTURE code so decisions are isolated (MVVM), make its edges SUBSTITUTABLE (DI seams), prove decisions with TESTS (sync and async, boundaries first), MEASURE instead of believing (profiler, memory tools), and leave EVIDENCE for the future (access levels as promises, logs as records). Every piece was executed this block — headless VMs, seamed clocks, verbatim test failures, a 100× hot spot, tool-convicted rings, compile-fenced APIs.",
+      "code": "// THE CRAFT CHECKLIST — for any feature you build:\n// 1. Decisions in a testable type; views render state   (b5-01, b5-02)\n// 2. Edges injected: time, network, storage, analytics  (b5-03)\n// 3. Tests on boundaries + error paths; async awaited,\n//    never slept                                         (b5-04, b5-05)\n// 4. Perf/memory claims MEASURED: profiler, generations,\n//    leaks --atExit                                      (b5-06, b5-07)\n// 5. Surface minimal (private→public on demand);\n//    failures logged with evidence                       (b5-08, b5-09)",
+      "underlying": "The loop's pieces reinforce each other — that's why it's a loop. MVVM (1) creates the testable surface that tests (3) need; seams (2) are what make async tests deterministic; the profiler (4) finds the hot spot, and the measure{} baseline turns the fix into a test (3) again; access levels (5) keep the refactor surface small so all of the above stays changeable; logs (5) are the production-side assertion — evidence when tests couldn't have caught it. Skip one station and the neighbors weaken: untestable structure makes tests theater; unseamed edges make them flaky; unmeasured performance work optimizes the innocent.\n\nNotice what this block did NOT teach: patterns for their own sake. Every practice traced to a failure mode you've now seen executed — the boundary that fooled its own author (b5-04), the green test that couldn't fail (b5-05), the innocent-looking 0.133s function (b5-06), the ring the tool drew (b5-07), the cache frozen into API (b5-08), the failure record that self-destructed (b5-09). Craft is pattern-matching against failure modes, not decoration.\n\nThe capstone project ships it: the App Store capstone (the roadmap's endgame) is this checklist applied under real constraints — and the interview version is being able to NARRATE the loop: 'here's how I'd structure it, test it, measure it, and know it's healthy in production.' You can now say each clause with an executed example behind it.",
+      "whyItMatters": "Senior-engineer interviews are exactly this narration: not 'do you know MVVM' but 'walk me through building this feature responsibly.' The checklist is the walk — and every station of it has a story you've run, not read."
+     },
+     "exercise": {
+      "prompt": "The final exam — a design narration under review. You're building 'export expenses as CSV, uploaded to the user's cloud drive.' Walk the five checklist stations: name (1) what type owns the decisions and one decision it makes; (2) the seams and each fake's job; (3) the three most valuable tests; (4) what you'd measure and with which tool; (5) the access surface and the two log lines that matter. Be concrete — this is the interview answer.",
+      "code": "// Feature: export all expenses as CSV → upload to cloud drive\n// Stations: structure / seams / tests / measurement / surface+evidence",
+      "solution": "1. ExportVM (or ExportService): decisions include CSV escaping (fields with commas/quotes — a boundary factory), empty-expense-list behavior, and state (idle/exporting/uploaded/failed — b1-16 enum).\n2. Seams: Clock (timestamped filenames — FixedClock in tests), Transport/Uploader (b4-09's fake: assert the upload request; throw to test failure paths), ExpenseStore (canned expenses; empty; huge), and an analytics spy if tracked.\n3. Tests: CSV escaping boundary (a note containing `\",\"` — the test most likely to catch a real bug); the empty-list decision (error? empty file? — pins the spec); the upload-failure path (fake throws → state == .failed, with the XCTFail-guard pattern). All async-awaited, zero sleeps.\n4. Measure: export time on a 10,000-expense dataset — measure{} with a baseline (regression tripwire); memory during CSV building via Allocations if the naive string-append shows up hot (b5-06's exact executed culprit — 0.133s says build with joined/reserveCapacity).\n5. Surface: the module exposes ExportService.export() and the state enum — everything else internal; private(set) state. Logs: `.info(\"export started, \\(count) expenses\")` and `.error(\"upload failed: \\(status) at \\(endpoint)\")` — status public, nothing private leaked; the CSV content NEVER logged (it's the user's financial data — b5-09's screenshot test).\n\nEvery station answered concretely = the interview passed. The CSV-escaping test finding a real bug within the month = the loop working.",
+      "explanation": "The narration's power is its specificity: not 'I'd add tests' but WHICH three and why those; not 'I'd profile' but what dataset, which tool, what baseline. Concreteness is what distinguishes practiced craft from recited vocabulary — and each specific here traces to something you executed this block."
+     },
+     "assess": {
+      "explainPrompt": "Final articulation, interviewer-ready, 4 sentences max: you're handed a feature to build. Narrate how you'd structure, test, measure, and productionize it responsibly.",
+      "modelAnswer": "I'd isolate the feature's decisions in a plain testable type with an explicit state enum, views rendering that state one-way, and every edge — time, network, storage — injected behind protocols with production defaults. Tests target the boundaries and error paths first, async tests awaiting through fakes with no timing bets, plus a measure baseline on anything performance-relevant. Performance and memory claims come from tools — Time Profiler's self-weights, Allocations generations, a leaks pass — never from intuition, since the culprits are reliably the innocent-looking lines. The module exposes a minimal surface with access levels as deliberate promises, and failures log with evidence — layer, status, counts, no user data — so the bug I can't reproduce next month is still diagnosable.",
+      "sets": [
+       [
+        {
+         "q": "The checklist's stations reinforce each other. The clearest example pair?",
+         "options": [
+          "good logging enables noticeably faster profiling",
+          "seams make async tests deterministic — no seams, flaky suite",
+          "tight access control speeds up test compilation",
+          "MVVM measurably reduces memory allocations"
+         ],
+         "correct": 1,
+         "explain": "b5-05's whole disease list — sleeps, real time, real network — is cured by b5-03's fakes. Skip the seams and the tests turn to timing bets; the loop is a loop."
+        },
+        {
+         "q": "In the export feature, the single most valuable test is CSV escaping because…",
+         "options": [
+          "string tests run fastest in CI",
+          "it's a boundary factory — real commas corrupt silently",
+          "CSV is harder to test than upload",
+          "Apple requires escaping tests for exports"
+         ],
+         "correct": 1,
+         "explain": "b5-04's rubric applied: the likeliest-to-be-wrong decision with the quietest failure mode (a corrupted export opens fine… in most spreadsheets). Boundaries first, always."
+        },
+        {
+         "q": "'The naive CSV builder might be slow' — the responsible next step is…",
+         "options": [
+          "rewrite it with reserveCapacity preemptively",
+          "measure it on a realistic dataset — convict by timing",
+          "move it off the main thread and move on",
+          "cap exports at 1,000 expenses"
+         ],
+         "correct": 1,
+         "explain": "The 0.133s culprit LOOKED innocent; the innocents looked guilty. measure{} with 10k rows answers in seconds — and becomes the regression baseline for free."
+        }
+       ],
+       [
+        {
+         "q": "The CSV content never appears in logs because…",
+         "options": [
+          "log messages carry a strict length cap per entry",
+          "it's user financial data — redact-in-screenshot rule applies",
+          "CSV commas would break the unified log format",
+          "only error-level entries may carry data payloads"
+         ],
+         "correct": 1,
+         "explain": "Logs leave devices. Status codes and counts are evidence; the user's expenses are a breach in waiting. Privacy is a per-value decision made at the log line."
+        },
+        {
+         "q": "What separates a practiced answer from recited vocabulary in the design narration?",
+         "options": [
+          "naming more design patterns per sentence",
+          "specificity — WHICH tests, WHAT dataset, WHAT baseline, and why",
+          "quoting Apple's documentation nearly verbatim",
+          "proposing the newest framework Apple has available"
+         ],
+         "correct": 1,
+         "explain": "'I'd add tests' is vocabulary; 'the comma-escaping boundary, because it corrupts silently' is craft. Interviewers probe one level down — practiced answers have the level."
+        },
+        {
+         "q": "Block 5's exit skill, in one sentence:",
+         "options": [
+          "knowing every Instruments template by name",
+          "features whose correctness and health are demonstrable",
+          "achieving 100% code coverage",
+          "never shipping a class without a protocol"
+         ],
+         "correct": 1,
+         "explain": "Structure → seams → tests → measurement → evidence: at every station, 'I believe' became 'I can show you.' That's the difference the App Store capstone now gets to prove."
+        }
+       ]
+      ]
+     },
+     "transfer": "Run the exercise's narration for YOUR capstone app's next feature — out loud, all five stations, concrete at each. Then build it that way. When the boundary test catches its first real bug, you'll have closed the block's loop in production.",
+     "verify": "Every station's claims carry their own executed verification in b5-01..09's verify fields — headless VM assertions, the FixedClock run, the verbatim test failure, the 0.133s conviction, the leaks-tool ring diagram, the two access-control errors. This loop adds none because it IS the index. Re-run any one before the capstone.",
+     "goDeeper": "objc.io's \"App Architecture\" for the structure station at depth; \"Working Effectively with Legacy Code\" for seams; WWDC 2018 \"iOS Memory Deep Dive\" + 2019 \"Getting Started with Instruments\" for measurement. Then: the App Store capstone. Block 6 (system design) is the same craft at architecture scale."
+    }
+   ]
+  },
+  {
+   "id": "b6",
+   "name": "Designing the Whole Machine",
+   "tagline": "Mobile system design — feeds, sync, caches, and scale",
+   "loops": [
+    {
+     "id": "b6-01",
+     "title": "Design an image feed: the interview classic",
+     "concept": {
+      "definition": "\"Design an infinitely scrolling image feed\" is THE mobile system-design interview question because it composes everything: cell reuse (b2-11), cancellation (b3-05), pagination (b4-08), caching tiers, and one number that governs the whole design — executed here: a 12-megapixel photo DECODED is 45MB (width × height × 4 bytes), while the 300×200 thumbnail a cell actually needs is 234KB. A feed that decodes originals dies; the design is arranging for cells to only ever meet small images.",
+      "code": "// THE FEED PIPELINE, per cell appearance:\n// 1. cellForRowAt: dequeue (b2-11) → cancel the OLD image task\n// 2. memory cache hit? → set image, done          (~0ms)\n// 3. disk cache hit?   → decode DOWNSAMPLED, hop  (~10ms)\n// 4. network: fetch (b4-08 retry) → downsample →\n//    cache both tiers → guard staleness → set     (~100ms+)\n//\n// executed math: 4000×3000×4 = 45MB decoded.\n// 300×200×4 = 234KB. The design exists for this 192× ratio.",
+      "underlying": "The memory budget drives everything. A screen shows ~10 cells; at originals that's 450MB — dead on arrival (b5-07's churn crash) — at thumbnails, 2.3MB. So downsampling is not an optimization, it's the load-bearing wall: decode at TARGET size (ImageIO's thumbnail API decodes directly to small — never UIImage-then-resize, which pays the 45MB to produce the 234KB), off-main (b2-12), before the cache stores it.\n\nThe scroll path composes verified pieces. Reuse means a cell is a stage (b2-11): each appearance cancels the previous image task — b3-05's cancellation flowing into b4-01's transfers — and guards staleness at completion anyway (belt and suspenders, because networks reorder). Fast scrolling generates requests for cells already gone: cancellation converts that from wasted bandwidth into freed capacity; prefetching (UITableViewDataSourcePrefetching) inverts it — start fetches for cells about to appear, cancel if scrolling reverses.\n\nThe cache is two-tier by design: memory (NSCache — executed: countLimit eviction keeping the newest under pressure; it also empties itself on memory warnings) holds decoded UIImages for instant re-scroll; disk holds ENCODED bytes (small on disk, decoded on read) surviving relaunch. URLCache (b4-05) is deliberately not the image cache — HTTP semantics don't know about downsampled variants; the purpose-built tiers key on url+size. Every interview follow-up maps to a block you've done: 'what if the user scrolls fast?' (cancellation), 'device is old?' (smaller memory cap — NSCache limits), 'same image twice on screen?' (in-flight task dedup, b3-06's cache actor).",
+      "whyItMatters": "This question appears in nearly every senior mobile interview because it has no trick — just composition under a budget. Your b3 checkpoint (image feed with async loading + cancellation) is this loop as a project; the interview version adds narrating WHY each piece exists."
+     },
+     "exercise": {
+      "prompt": "Interview follow-ups, rapid fire — answer each with the mechanism and the block it comes from: (1) user scrolls to row 500 then flicks back to the top — what makes the top images appear instantly? (2) memory warning arrives mid-scroll — what happens, and what must NOT happen? (3) two visible cells show the same URL — how many network requests? (4) the feed janks every time new images arrive — name the two usual suspects; (5) images sometimes appear on the wrong cell for a frame — the two-layer fix?",
+      "code": "// 1. scroll far, flick back — instant top images: why?\n// 2. memory warning mid-scroll: what happens / must not happen?\n// 3. duplicate URL in two visible cells: request count?\n// 4. jank on image arrival: two suspects?\n// 5. wrong-cell flash: the two-layer fix?",
+      "solution": "1. Memory-cache hits: decoded thumbnails (234KB each, executed math) still resident in NSCache — tier 2 (disk) backs it if evicted. No decode, no network: ~0ms per cell.\n2. NSCache evicts (executed: it honors limits; it also purges on warnings) — the app sheds decoded images and re-loads from disk on demand. What must NOT happen: the disk tier or in-flight tasks being wiped too — degrade to slower, never to broken.\n3. ONE — the in-flight registry (b3-06's actor cache pattern: store the Task, not the result) dedupes; the second cell awaits the same task's value.\n4. Decoding on main (b2-12 — decode belongs off-main, and downsampled), and cache writes/layout on arrival exceeding the 16ms turn (b2-01). Profile with b5-06 rather than guessing which.\n5. Layer one: cancel the cell's task in prepareForReuse (b2-11 + b3-05). Layer two: staleness guard at completion — compare the captured identity to the cell's current one before assigning (b1-06's capture pinning the request's identity).\n\nEvery answer is a previous loop wearing feed clothes — which is the interview's actual test: do the pieces compose in your head?",
+      "explanation": "Rapid-fire follow-ups are how interviewers probe depth: each one has a one-mechanism answer if the architecture is real in your head, and a hand-wave if it isn't. Five for five here means the b3 checkpoint is ready to build."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 4 sentences max: design an image feed — walk the pipeline and name the number that drives the design.",
+      "modelAnswer": "The driving number is decoded size — width times height times four bytes, so a 12MP original is 45MB while the thumbnail a cell needs is a few hundred KB — meaning every image is downsampled at decode time, off the main thread, to the cell's target size. Each cell appearance checks a two-tier cache: NSCache for decoded images (instant re-scroll, evicts under pressure), disk for encoded bytes surviving relaunch, then network with retry and cursor pagination. Reuse makes cells stages, so each reuse cancels the previous image task and completions guard against staleness before assigning. An in-flight task registry dedupes concurrent requests for the same URL, and prefetching warms cells about to appear.",
+      "sets": [
+       [
+        {
+         "q": "The executed arithmetic: a 4000×3000 photo decoded in memory costs…",
+         "options": [
+          "about 4MB — decoded size tracks file size",
+          "45MB — width × height × 4 bytes, regardless of file size",
+          "12MB — one byte per pixel",
+          "whatever the JPEG compressed to, plus overhead"
+         ],
+         "correct": 1,
+         "explain": "Decoded bitmaps pay per PIXEL, not per compressed byte: 4000×3000×4 = 45MB. Ten visible cells at originals = 450MB = dead. This one multiplication is the whole design's why."
+        },
+        {
+         "q": "Downsampling must happen AT DECODE (ImageIO thumbnail) rather than decode-then-resize because…",
+         "options": [
+          "resized UIImages lose color accuracy",
+          "decode-then-resize pays the 45MB to produce the 234KB",
+          "UIImage resizing is main-thread-only",
+          "disk caches can't store resized images"
+         ],
+         "correct": 1,
+         "explain": "The naive path materializes the giant bitmap first — the exact allocation the design exists to avoid. Decoding directly to target size never touches the 45MB."
+        },
+        {
+         "q": "Executed: NSCache with countLimit 3 received 5 objects and kept [3,4,5]. As the feed's memory tier this means…",
+         "options": [
+          "the cache is broken and needs immediate replacing",
+          "eviction is the FEATURE — bounded memory, disk backs misses",
+          "count limits should always be removed for feeds",
+          "the insertion order requires manual management"
+         ],
+         "correct": 1,
+         "explain": "A memory cache that never evicts is b5-07's abandonment. NSCache honors limits and purges on warnings by design — the disk tier turns eviction into 'slower', not 'gone'."
+        }
+       ],
+       [
+        {
+         "q": "Fast scrolling floods requests for cells already off-screen. The design's answer:",
+         "options": [
+          "a request queue capped at 3 concurrent",
+          "cancellation in prepareForReuse — b3-05 aborts transfers",
+          "debouncing the scroll delegate's callbacks",
+          "smaller page sizes from the API"
+         ],
+         "correct": 1,
+         "explain": "Reuse cancels the outgoing cell's task; cancelled URLSession transfers abort (b4-01). Wasted bandwidth becomes freed capacity — and the staleness guard covers what cancellation misses."
+        },
+        {
+         "q": "Two visible cells request the same URL. One network call, because…",
+         "options": [
+          "URLCache dedupes identical in-flight requests",
+          "the in-flight registry stores the TASK; caller two awaits it",
+          "the server coalesces duplicate requests",
+          "cells share image views for identical content"
+         ],
+         "correct": 1,
+         "explain": "b3-06's dedup-cache pattern verbatim: store Task<UIImage, Error> keyed by URL, inserted before any suspension. URLCache can't help — the first response hasn't arrived to cache."
+        },
+        {
+         "q": "Why is URLCache (b4-05) NOT the feed's image cache?",
+         "options": [
+          "URLCache is capped at 4MB on iOS",
+          "it follows HTTP rules — it knows nothing of decoded variants",
+          "images bypass URLCache entirely by default",
+          "URLCache evicts too aggressively for images"
+         ],
+         "correct": 1,
+         "explain": "The feed's tiers key on url+SIZE and store decoded (memory) and encoded (disk) forms — semantics HTTP caching doesn't have. b4-05's own rule: purpose-built artifacts want purpose-built caches."
+        }
+       ]
+      ]
+     },
+     "transfer": "Before building the b3 checkpoint (this exact feed): write the pipeline from memory — the numbered steps, the two tiers, where cancellation and the staleness guard live, and the 45MB arithmetic. Then build it and measure: Allocations during a long scroll should show a flat ceiling, not a climb.",
+     "verify": "Executed on this Mac: decoded-size arithmetic (4000×3000×4 = 45MB vs 234KB thumbnail); NSCache countLimit eviction (5 in, [3,4,5] kept). The pipeline's other pieces carry their verification in their home loops — b2-11 (dequeue), b3-05 (cancellation), b4-08 (pagination+retry), b3-06 (task dedup).",
+     "goDeeper": "WWDC 2018 \"Image and Graphics Best Practices\" — the downsampling talk; the 45MB math is its opening argument. WWDC 2018 \"A Tour of UICollectionView\" for prefetching. Your b3 checkpoint spec IS this loop — build it next."
+    },
+    {
+     "id": "b6-02",
+     "title": "Offline-first: the queue that survives airplane mode",
+     "concept": {
+      "definition": "Offline-first means the local store is the source of truth the UI reads, writes land locally FIRST, and a durable queue of pending operations replays to the server when connectivity returns. The hard part is conflicts — the same data edited in two places — and the core mechanics were executed here: device A's offline edits replayed against a server where device B had already written; last-writer-wins by logical clock applied A's amount, REJECTED A's stale title, and a second replay was a no-op (idempotent by design).",
+      "code": "// executed — the offline sync simulation:\n// A edits offline:  title@clock1, amount@clock2   (queued locally)\n// B edits online:   title@clock3                   (server applied)\n// A reconnects, replays queue:\n//   amount@2 → APPLIED  (no newer write exists)\n//   title@1  → REJECTED (server's clock3 wins)\n// replaying A's queue AGAIN: no-op — idempotent\n\nstruct Op: Codable {        // the queue element: durable, replayable\n    let id: UUID            // idempotency key (b4-08)\n    let field: String; let value: String\n    let clock: Int          // who wins conflicts\n}",
+      "underlying": "The architecture has four stations. LOCAL TRUTH: the UI reads the local store (b4-06's database rung), never the network — screens render instantly and airplane mode is a non-event, not an error state. DURABLE QUEUE: every mutation becomes an operation persisted BEFORE the optimistic local apply — process death (b2-13's silent kill) must not lose user edits; the queue is disk, not memory. REPLAY: on reconnect, operations post in order with b4-08's discipline — idempotency keys (executed: the second replay changed nothing) because networks deliver twice, and retry with backoff because they also fail.\n\nCONFLICTS are the station that earns the design its reputation. The executed policy — last-writer-wins on a clock, per FIELD — is the honest default: simple, convergent, and lossy in exactly one known way (concurrent edits to the same field: latest clock survives). Field-level granularity matters (executed: A's amount survived B's title edit — a record-level LWW would have destroyed it). The escalation ladder when LWW's loss is unacceptable: keep-both (duplicate and let the user merge), domain merges (counters add, sets union), and CRDTs at the far end (structures whose merges are mathematically conflict-free). The interview answer names the ladder and picks per-field: profile names → LWW; a shared shopping list → set-union; money → never merge silently (b4-08's idempotency + server arbitration).\n\nTwo honest costs: clocks — device wall-time lies (skew, timezones), so real systems use server-assigned versions or logical clocks (the executed `clock` is one); and DELETES — a deleted item must leave a tombstone in the queue, or the replay resurrects it. Every 'my deleted item came back' bug is a missing tombstone.",
+      "whyItMatters": "\"Design offline support for X\" is the second-most-common mobile system-design question, and the four stations plus the conflict ladder IS the answer's skeleton. Practically: notes, expenses, habits — every checkpoint-shaped app meets airplane mode in week one of real use."
+     },
+     "exercise": {
+      "prompt": "Design review of an offline expense tracker. For each report, name the missing station and the fix: (1) edits made offline vanish if the app is force-quit before reconnecting; (2) a deleted expense reappears after sync; (3) two devices renamed the same expense; the FIRST rename (by wall clock) won; (4) replaying a flaky sync created three copies of one new expense; (5) editing the amount on device A and the category on device B — syncing lost the category.",
+      "code": "// 1. force-quit before reconnect → offline edits gone\n// 2. deleted expense returns after sync\n// 3. first-by-wall-clock rename won (expected: last)\n// 4. flaky replay → triplicate expense\n// 5. A: amount, B: category → category lost after sync",
+      "solution": "1. Queue not DURABLE — pending ops lived in memory; b2-13's silent kill ate them. Fix: persist the op before (or atomically with) the optimistic local apply.\n2. Missing TOMBSTONE — the delete wasn't an operation, so the server's copy (or another device's queue) resurrected it. Fix: deletes enqueue as tombstone ops that replicate like any write.\n3. Wall-clock skew — device clocks disagree, so 'last' by timestamp was actually first. Fix: logical clocks or server-assigned versions (the executed sim's `clock` is the shape).\n4. No IDEMPOTENCY KEY — each retry of the create posted a new expense (b4-08's double-charged POST, wearing expenses). Fix: client-generated UUID per op; server dedupes on it (executed: replay was a no-op).\n5. Record-level LWW — the whole expense was one conflict unit, so B's older record lost entirely, category included. Fix: field-level resolution (executed: amount and title resolved independently).\n\nFive bugs, four stations and one granularity decision — the design review of every real sync system reads like this list.",
+      "explanation": "Each report is a station skipped: durability, tombstones, honest clocks, idempotency, granularity. The executed simulation contained the cures for 3, 4, and 5 — thirty lines of Swift that answer three interview follow-ups."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 4 sentences max: design offline-first sync — the stations, the conflict policy, and the two classic bugs.",
+      "modelAnswer": "The local store is the source of truth the UI reads; every mutation applies locally and enqueues a durable operation — persisted before acknowledging, so process death can't lose edits. On reconnect the queue replays in order with idempotency keys and backoff, so redelivery and retries are no-ops rather than duplicates. Conflicts resolve per FIELD by default with last-writer-wins on server-assigned or logical clocks — wall clocks skew — escalating to keep-both or domain merges where silent loss is unacceptable. The classic bugs: missing tombstones resurrecting deletes, and missing idempotency keys turning flaky replays into duplicates.",
+      "sets": [
+       [
+        {
+         "q": "In offline-first, the UI reads from…",
+         "options": [
+          "the network, falling back to cache offline",
+          "the local store, always — the network updates IT",
+          "whichever source responded most recently",
+          "a merged view computed per read"
+         ],
+         "correct": 1,
+         "explain": "That inversion IS the pattern: screens are instant, airplane mode is a non-event, and the sync engine's job is reconciling the store — not painting pixels."
+        },
+        {
+         "q": "The pending-operation queue must be persisted to disk because…",
+         "options": [
+          "memory queues can't preserve operation order",
+          "b2-13's silent kill must not eat the user's edits",
+          "the replay API requires file URLs",
+          "disk queues survive server outages better"
+         ],
+         "correct": 1,
+         "explain": "The queue's whole promise is durability across the gap — and the gap includes process death without warning. Op persisted, THEN acknowledged; anything else is bug report #1."
+        },
+        {
+         "q": "Executed: replaying device A's queue twice changed nothing. The mechanism?",
+         "options": [
+          "the server ignores repeated connections",
+          "idempotent operations — keys/clocks make redelivery a no-op",
+          "the queue empties itself after first replay",
+          "clocks pause during replay sessions"
+         ],
+         "correct": 1,
+         "explain": "Networks deliver twice and retries re-send (b4-08); the design makes 'apply again' harmless by construction. The triplicate-expense bug is this property's absence."
+        }
+       ],
+       [
+        {
+         "q": "Executed: A's amount survived while A's title lost. Why does FIELD-level resolution matter?",
+         "options": [
+          "field ops compress better in the queue",
+          "record-level LWW destroys ALL of the older record's edits",
+          "servers can only diff at field granularity",
+          "it avoids clock comparisons entirely"
+         ],
+         "correct": 1,
+         "explain": "Two devices editing DIFFERENT fields isn't really a conflict — unless your unit is the record, which turns disjoint edits into data loss. Granularity is the design decision hiding inside 'LWW'."
+        },
+        {
+         "q": "A deleted item reappears after sync. The missing piece?",
+         "options": [
+          "a faster reconnect handler",
+          "a tombstone — deletion as a replicating operation",
+          "server-side garbage collection",
+          "a longer conflict-resolution window"
+         ],
+         "correct": 1,
+         "explain": "Absence can't replicate — another replica's copy re-syncs in. The tombstone makes 'deleted' a fact with a clock that wins arguments, like any write."
+        },
+        {
+         "q": "Why do real systems avoid device wall-clock time for conflict resolution?",
+         "options": [
+          "reading the clock costs a syscall per op",
+          "skew makes 'last' lie — logical/server versions instead",
+          "wall time can't be stored in Codable",
+          "Apple rejects apps comparing device clocks"
+         ],
+         "correct": 1,
+         "explain": "A device five minutes fast wins every argument for five minutes. Monotonic logical clocks (the executed sim's integers) or server versions make ordering honest."
+        }
+       ]
+      ]
+     },
+     "transfer": "Spec the offline story for your expense tracker in one page: what's in an Op, where the queue persists, the per-field conflict policy (name which fields could ever conflict), tombstones for deletes, and the idempotency key. Then implement JUST the queue-and-replay in plain Swift — the executed simulation is your 30-line skeleton.",
+     "verify": "Executed on this Mac: the full conflict simulation — offline queue replayed against newer server state; LWW-by-clock applied the amount, rejected the stale title (field-level); second replay idempotent no-op. Extend it yourself: add a tombstone op and watch resurrection become impossible.",
+     "goDeeper": "The Dropbox and Figma engineering blogs' sync posts are the industry references. \"Designing Data-Intensive Applications\" ch. 5 (replication conflicts) for the theory. CRDTs: Automerge's docs for the far end of the ladder. b4-08 for the idempotency machinery."
+    },
+    {
+     "id": "b6-03",
+     "title": "Caching strategy: freshness is a policy, not a hope",
+     "concept": {
+      "definition": "Every cache answers four questions — WHERE (memory / disk / HTTP layer), WHAT (raw bytes / decoded artifacts / query results), HOW LONG (TTL / version-tagged / until-evicted), and WHEN WRONG (staleness tolerance and invalidation). A caching STRATEGY is answering them per data type instead of once globally: the executed evidence across this curriculum — URLCache's 3-requests-1-hit (b4-05), NSCache's bounded eviction (b6-01), the two-tier feed — are all instances of one decision table.",
+      "code": "// THE DECISION TABLE — per data type, not per app:\n//               WHERE      WHAT        HOW LONG      WHEN WRONG\n// avatars       mem+disk   decoded/enc until evict   stale OK (days)\n// feed page 1   disk       JSON bytes  TTL 5min      stale-while-refresh\n// prices        none/mem   decoded     TTL 30s       NEVER stale → short\n// user profile  disk       decoded     version-tag   invalidate on edit\n// auth token    Keychain   —           til rotation  b4-07, not a cache\n//\n// the golden pattern: SHOW stale instantly, REFRESH behind,\n// reconcile — perceived speed without lying forever",
+      "underlying": "The stack you already own, by tier: URLCache (b4-05) speaks HTTP — right for transport-level reuse, controlled by server headers, wrong for anything the server didn't describe. NSCache (b6-01, executed eviction) is the memory tier for EXPENSIVE-TO-RECREATE artifacts — decoded images, parsed models — bounded and warning-aware. Disk (b4-06's files) survives relaunch for cheap-to-store forms. The layering rule from b6-01 generalizes: cache the form closest to what the consumer needs, in the tier matching its recreation cost — decoded in memory (expensive to redo), encoded on disk (cheap to store), and never cache what you can't afford to be wrong about.\n\nINVALIDATION is the famously hard part, and the strategies rank by honesty: TTL (\"stale after N\") is a confession that you don't know when data changes — right when change is unpredictable and tolerance is known (prices: 30s). VERSION/ETag tags (b4-05's revalidation) let the server say 'unchanged' cheaply — right when reads dominate writes. EVENT-driven invalidation ('user edited profile → drop the entry') is exact but only covers changes YOU cause — remote edits still need TTL or push (b6-05) as backstop. The stale-while-revalidate pattern composes them: render the cached copy instantly, fetch behind, reconcile — the perceived-performance king, with one obligation: the UI must tolerate the reconciliation (diffable updates, no jarring jumps).\n\nThe failure modes are the interview's real probes: caching AUTH-adjacent data (a cached 'is premium' outliving a subscription change — entitlements want short TTL + event invalidation); caching at the WRONG layer (b4-05's ?t= vandalism was this — fixing staleness by destroying transport caching); and the unbounded cache — b5-07's abandonment wearing a helpful mask. Every cache needs its eviction story told at design time.",
+      "whyItMatters": "\"How would you cache this?\" follows every design question, and the four-question table converts it from vibes to engineering. The two costliest production bugs in this space — stale entitlements and unbounded caches — are both design-time decisions someone skipped."
+     },
+     "exercise": {
+      "prompt": "Fill the decision table for a podcast app — for each data type give WHERE / WHAT / HOW LONG / WHEN WRONG, with one clause of reasoning: (1) episode artwork; (2) the user's subscription list; (3) episode audio files; (4) the search index of all podcasts; (5) playback position per episode. Then the trap question: the app caches 'is user premium' for 24h — a user cancels, and support tickets arrive. Redesign that entry.",
+      "code": "// 1. episode artwork\n// 2. subscription list (user edits it)\n// 3. audio files (users download for offline)\n// 4. global search index\n// 5. playback position\n// trap: isPremium cached 24h → cancelled users keep premium for a day",
+      "solution": "1. Artwork: mem(decoded, NSCache)+disk(encoded) / until-evict / stale fine for days — b6-01's tiers verbatim; artwork rarely changes and wrongness is cosmetic.\n2. Subscriptions: disk, decoded / version-tagged / event-invalidated on every local edit (it's the user's own data — b6-02's local truth, not really a 'cache') + server reconcile on sync.\n3. Audio: disk only, raw files / explicit user-managed retention (downloads are a FEATURE, not a cache — user deletes, storage-pressure UI) / never silently evicted: evicting a downloaded episode on a plane is a betrayal.\n4. Search index: disk, compact form / TTL hours-to-daily refresh / stale-while-revalidate — global data, no user writes, tolerance high.\n5. Playback position: local truth (b6-02) with sync — never a cache; losing it is data loss, not staleness.\nTRAP: entitlements gate MONEY — 24h TTL is a policy choice nobody made consciously. Redesign: short TTL (minutes) as backstop + event invalidation (purchase/cancel flows drop the entry) + server push (b6-05) for remote changes + fail CLOSED on expiry-critical screens (re-verify before gating paid content). The general rule surfaced: cache lifetime must be shorter than the cost of being wrong.",
+      "explanation": "Items 2, 3, and 5 are the deeper lesson: half of what apps call 'caches' are actually the user's DATA (local truth, downloads, progress) — and eviction policies that are fine for caches are betrayals for data. Naming which one you're building is the strategy."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 4 sentences max: what questions define a caching strategy, and what are the classic failure modes?",
+      "modelAnswer": "Per data type, four questions: where (memory for expensive-to-recreate artifacts, disk for relaunch survival, HTTP layer for transport reuse), what form (decoded near the consumer, encoded near storage), how long (TTL when change is unpredictable, version tags when the server can cheaply confirm, event invalidation for changes you cause), and what happens when it's wrong (staleness tolerance, with stale-while-revalidate as the perceived-speed default). The failure modes: caching entitlement-like data longer than the cost of being wrong, fixing staleness at the wrong layer, unbounded caches that are abandonment in disguise, and treating user data — downloads, progress — as evictable cache when it's actually local truth.",
+      "sets": [
+       [
+        {
+         "q": "Decoded images belong in memory (NSCache) while encoded bytes belong on disk because…",
+         "options": [
+          "disk storage can't hold decoded bitmap formats",
+          "tier matches recreation cost — expensive-to-redo sits nearest",
+          "NSCache refuses to store plain Data objects",
+          "encoded bytes can't live in memory tiers safely"
+         ],
+         "correct": 1,
+         "explain": "b6-01's 45MB math makes decode the expensive step — so its RESULT is what memory holds; disk holds the compact form and pays a decode on promotion. Form follows tier follows cost."
+        },
+        {
+         "q": "TTL-based expiry is, honestly stated…",
+         "options": [
+          "the most precise invalidation mechanism available",
+          "a confession of not knowing when data changes — a bounded bet",
+          "deprecated in favor of ETag validation everywhere",
+          "only genuinely correct for static image assets"
+         ],
+         "correct": 1,
+         "explain": "TTL trades knowledge for a guarantee: 'wrong for at most N'. Right when change is unpredictable and tolerance known; the trap is setting N by habit instead of by the cost of wrongness."
+        },
+        {
+         "q": "Stale-while-revalidate's obligation on the UI:",
+         "options": [
+          "showing a spinner over the stale content",
+          "tolerating reconciliation when the fresh copy lands",
+          "blocking interaction until refresh completes",
+          "displaying the cache timestamp to users"
+         ],
+         "correct": 1,
+         "explain": "Instant render + background refresh is the perceived-speed king, but the fresh copy WILL arrive mid-interaction. Diffable application (no jumps, no lost scroll) is the pattern's other half."
+        }
+       ],
+       [
+        {
+         "q": "The cancelled-user-keeps-premium bug is, at root…",
+         "options": [
+          "a Keychain access-policy mistake",
+          "cache lifetime exceeding the cost of being wrong",
+          "a missing retry on the entitlement fetch",
+          "client clocks disagreeing with the server"
+         ],
+         "correct": 1,
+         "explain": "Money-gating data wanted minutes + event invalidation + fail-closed. TTLs are policy: every cached bit deserves the question 'what does being wrong cost, for how long?'"
+        },
+        {
+         "q": "Downloaded podcast episodes are NOT a cache because…",
+         "options": [
+          "audio files exceed the system's cache size limits",
+          "they're user data — silent eviction betrays; retention is a feature",
+          "disk caches can't hold streaming media formats",
+          "downloaded audio never becomes stale in practice"
+         ],
+         "correct": 1,
+         "explain": "The cache/data distinction: caches may vanish (a slower reload); data may not (a betrayal at 30,000 feet). Downloads, progress, drafts — local truth with UI, never LRU fodder."
+        },
+        {
+         "q": "Event-driven invalidation ('drop entry on edit') needs a backstop because…",
+         "options": [
+          "the events fire before the cache write ever lands",
+          "it only covers changes YOU cause — remote edits need a backstop",
+          "dropping entries fragments the cache's storage",
+          "user edits are far too frequent to track reliably"
+         ],
+         "correct": 1,
+         "explain": "Your own writes are the easy invalidations. The other device, the admin panel, the server job — their changes arrive only via TTL expiry or push (b6-05). Exact + backstop is the composition."
+        }
+       ]
+      ]
+     },
+     "transfer": "Build the decision table for YOUR app: every remotely-fetched data type as a row, the four questions as columns. Two audits while you fill it: which rows are secretly user DATA (never evict), and which row has the highest cost-of-being-wrong (does its lifetime match?). The table is one page and worth more than any caching library.",
+     "verify": "This loop's table generalizes executed evidence: URLCache's 3-requests-1-hit (b4-05), NSCache's bounded eviction keeping [3,4,5] (b6-01), the two-tier feed, and b4-06's persistence ladder. Each row of your own table should name which executed mechanism serves it.",
+     "goDeeper": "b4-05 (HTTP tier), b6-01 (tiered artifacts), b5-07 (the unbounded-cache failure mode). \"Designing Data-Intensive Applications\" ch. 11 on derived data — a cache is derived data with an attitude. The HTTP stale-while-revalidate RFC (5861) for the pattern's origin."
+    },
+    {
+     "id": "b6-04",
+     "title": "Design a chat: realtime is a held-open connection",
+     "concept": {
+      "definition": "Realtime means the SERVER can speak first — which requires a connection held open (WebSocket, or streamed HTTP) instead of b4-01's ask-and-answer. Executed here: a server streamed three events over one response, received live at t+33ms, t+337ms, t+641ms by `for await bytes.lines` (b3-10's machinery). The client side of chat is three disciplines, all executed: optimistic send (show pending instantly), server-sequence ordering (the server's clock is the truth), and dedup by client ID (the duplicate echo confirmed, not duplicated).",
+      "code": "// executed — a live stream, consumed as an AsyncSequence:\nlet (bytes, _) = try await URLSession.shared.bytes(from: url)\nfor try await line in bytes.lines {        // b3-10, production clothes\n    handle(parse(line))                     // t+33ms, t+337ms, t+641ms\n}\n\n// executed — the chat client's three disciplines:\noptimisticSend(\"hey\")        // transcript: [hey…]   pending, instant\nserverEcho(clientID, seq: 7) // transcript: [hey[7]] CONFIRMED, ordered\nserverEcho(clientID, seq: 7) // duplicate delivery → still 1 message",
+      "underlying": "The transport ladder, cheapest first: POLLING (b4-01 requests on a timer — simple, latency = interval, battery cost per empty poll); LONG-POLLING (server holds the request until it has news — better latency, still reconnect-per-message); STREAMING/SSE (executed: one response that never ends, server writes when it wants — one-directional); WEBSOCKET (URLSessionWebSocketTask — full duplex, the chat default). The interview answer is choosing BY REQUIREMENT: notifications-ish freshness → polling is honestly fine; chat → socket; and everything above needs the RECONNECT story, because mobile connections die constantly: exponential backoff (b4-08), then a catch-up fetch ('give me everything after seq N' — b4-08's cursor, reused) so the gap never shows.\n\nThe executed client disciplines carry the correctness. OPTIMISTIC SEND: the message renders instantly with pending state (the … every chat shows) — b1-16's enum again (sending/sent/failed per message). SERVER SEQUENCE: your device clock doesn't order a group chat (b6-02's skew lesson); the transcript sorts by the server's sequence numbers, and 'pending' means 'not yet assigned one'. DEDUP: the echo of your own send and network redelivery (b4-08) both arrive as duplicates — matching by client-generated ID converts them into confirmations (executed: count stayed 1).\n\nOffline chat is b6-02 wearing speech bubbles: unsent messages are the durable queue, the catch-up fetch is the replay, and 'delivered/read' receipts are just more server events on the same stream. One connection per APP (multiplexed), not per screen — connections are the scarce resource, and the socket's lifecycle belongs with b2-13's app lifecycle (background = close politely, foreground = reconnect + catch up).",
+      "whyItMatters": "\"Design a chat app\" is the third classic mobile system-design question, and the answer's skeleton — transport ladder, reconnect+catch-up, optimistic/ordered/deduped transcript — is exactly this loop. The executed pieces mean you can sketch it in code, not just boxes."
+     },
+     "exercise": {
+      "prompt": "Chat design review, five incidents: (1) messages appear in different orders on different devices; (2) after subway rides, users miss messages sent while offline until they relaunch; (3) sent messages occasionally show twice; (4) the socket reconnects every 30s all day, draining battery — logs show HTTP 200s each time; (5) messages typed offline vanish on force-quit. Name each mechanism and fix.",
+      "code": "// 1. cross-device ordering disagreement\n// 2. subway gap: missed messages until relaunch\n// 3. occasional duplicate sends\n// 4. 30s reconnect loop, 200s in logs\n// 5. offline-typed messages lost on force-quit",
+      "solution": "1. Ordering by DEVICE timestamps — b6-02's skew: each device sorts by its own clock. Fix: server-assigned sequence numbers are the one truth (executed: transcript sorts by seq).\n2. Reconnect without CATCH-UP — the socket resumes but the gap's messages were never fetched. Fix: on reconnect, fetch-after-cursor ('everything after seq N') before resuming live events.\n3. Missing client-ID dedup — the server echo (or a b4-08 redelivery) appended instead of confirming. Fix: executed pattern — match by clientID, assign the seq, never append a known ID.\n4. That's not failure — something is CLOSING the connection: an idle timeout (proxy or server) with no heartbeat. Fix: ping/pong keepalives at an interval below the timeout; the 200s show reconnects succeeding, masking the real question (why disconnect at all?).\n5. The outbox wasn't DURABLE — b6-02's station 2 verbatim: pending messages lived in memory. Fix: persist the outbox before rendering the optimistic bubble.\n\nAll five are the loop's disciplines, absent: sequence, catch-up, dedup, keepalive, durable queue.",
+      "explanation": "Incident 4 is the interview differentiator: the logs LOOK healthy (200s!) because reconnection works — the skill is asking why disconnection happens. Heartbeats aren't decoration; they're how both ends distinguish 'quiet' from 'gone'."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 4 sentences max: design chat — transport choice, the reconnect story, and the transcript's three disciplines.",
+      "modelAnswer": "Chat wants a full-duplex WebSocket — one per app, multiplexed — with the transport ladder (polling, long-polling, streaming) available when requirements are gentler. Mobile connections die constantly, so the reconnect story is load-bearing: exponential backoff, then a catch-up fetch by server sequence cursor before resuming live events, with heartbeats distinguishing quiet from gone. The transcript keeps three disciplines: optimistic sends render instantly in a pending state, ordering follows server-assigned sequence numbers — never device clocks — and client-generated IDs turn echoes and redeliveries into confirmations instead of duplicates. Offline messages sit in a durable outbox that replays like any offline-first queue.",
+      "sets": [
+       [
+        {
+         "q": "What separates realtime transports from b4-01's request/response?",
+         "options": [
+          "binary encoding instead of JSON",
+          "a held-open connection — the server speaks first",
+          "TLS session resumption between calls",
+          "server-side request batching"
+         ],
+         "correct": 1,
+         "explain": "Executed: three events arrived over ONE response at the server's chosen moments. Ask-and-answer can only ever poll; realtime inverts who initiates."
+        },
+        {
+         "q": "Group-chat ordering must come from server sequence numbers because…",
+         "options": [
+          "device clocks are precise but drift under load",
+          "device clocks skew — each phone would sort its own truth (b6-02)",
+          "sequence numbers compress better than dates",
+          "Apple requires server ordering for messaging"
+         ],
+         "correct": 1,
+         "explain": "The same clock lesson as sync: 'last' by local time is a lie told differently on every device. One authority assigns order; pending = 'no seq yet' (executed)."
+        },
+        {
+         "q": "Executed: the duplicate server echo left the transcript at 1 message. The mechanism?",
+         "options": [
+          "the transport suppressed the duplicate frame",
+          "client IDs — a known ID means CONFIRM, never append",
+          "value semantics deduplicated the structs",
+          "the server tracked which echoes it sent"
+         ],
+         "correct": 1,
+         "explain": "Your own echo and b4-08's redelivery both arrive as 'new' messages. The client ID converts them into acks — the same idempotency idea as the sync queue's op IDs."
+        }
+       ],
+       [
+        {
+         "q": "After every reconnect, the correct FIRST move is…",
+         "options": [
+          "resubscribing to the live event stream immediately",
+          "a catch-up fetch — everything after my last seq — THEN live events",
+          "clearing the local transcript to avoid conflicts",
+          "sending queued messages before reading"
+         ],
+         "correct": 1,
+         "explain": "The gap between disconnect and reconnect holds messages the stream will never replay. Cursor-fetch the gap (b4-08's pagination, reused), then go live — order preserved, nothing missed."
+        },
+        {
+         "q": "Heartbeats (ping/pong) on a socket exist to…",
+         "options": [
+          "measure the round-trip latency shown in the UI",
+          "distinguishing 'quiet' from 'gone' — and beating idle timeouts",
+          "keep the cellular radio powered for lower latency",
+          "re-authenticate the connection on a fixed period"
+         ],
+         "correct": 1,
+         "explain": "A silent connection is ambiguous: no news, or dead pipe? Periodic pings resolve it and keep idle-timeout proxies from axing healthy connections — incident 4's whole story."
+        },
+        {
+         "q": "The offline outbox for chat is architecturally…",
+         "options": [
+          "a special case needing its own design",
+          "b6-02's durable queue wearing speech bubbles",
+          "unnecessary — sockets buffer unsent data",
+          "a server-side concern, not the client's"
+         ],
+         "correct": 1,
+         "explain": "Unsent messages ARE pending operations: durable before rendering (force-quit safe), replayed with IDs on reconnect. One pattern, two features — that reuse is the design skill."
+        }
+       ]
+      ]
+     },
+     "transfer": "Sketch the chat message's state machine (b1-16 enum: composing → queued → sent(seq) → delivered → failed) and the reconnect sequence diagram (backoff → catch-up fetch → live stream). Then rebuild the executed transcript logic — 25 lines — and extend it with a 'failed, tap to retry' state.",
+     "verify": "Executed on this Mac: an SSE stream consumed live via URLSession.bytes.lines (t+33/337/641ms — server-initiated delivery over one connection); the transcript disciplines — optimistic pending, seq assignment on echo, dedup holding at 1 message on duplicate delivery. WebSocket specifics (URLSessionWebSocketTask, ping/pong) are API-documented; the architecture is what you executed.",
+     "goDeeper": "Apple docs: URLSessionWebSocketTask. The WhatsApp and Discord engineering blogs on connection management at scale. b3-10 (the consuming machinery), b6-02 (the queue you're reusing), b4-08 (the cursor)."
+    },
+    {
+     "id": "b6-05",
+     "title": "Push notifications: the message you don't control",
+     "concept": {
+      "definition": "Push is the only channel that reaches your app when it isn't running — and you don't own any link of it: your server asks APNs (Apple's service), APNs decides delivery, the OS decides presentation. The architecture is a token flow (device registers → OS returns a per-app-per-device token → your server stores it → sends via APNs), and the design constraint is the channel's honesty: delivery is BEST-EFFORT, payloads are capped (~4KB), and silent pushes are throttled at the OS's discretion. Push is a doorbell, not a data pipe.",
+      "code": "// THE TOKEN FLOW:\n// app: registerForRemoteNotifications()\n//   → OS/APNs: device token (per app, per device, CAN CHANGE)\n//   → didRegisterForRemoteNotifications: send token to YOUR server\n//   → server: stores token per user/device; sends via APNs API\n\n// THE PAYLOAD (~4KB cap):\n// { \"aps\": { \"alert\": {\"title\": \"Riya\", \"body\": \"hey\"},\n//            \"badge\": 3, \"sound\": \"default\" },\n//   \"chatID\": \"c42\" }        ← YOUR routing data: IDs, never content\n\n// silent push: \"aps\": {\"content-available\": 1} — a wake-up, throttled",
+      "underlying": "Design around three honesties. BEST-EFFORT: APNs coalesces (newest replaces undelivered older), drops when devices are long-offline, and never guarantees timing — so push must never be the only path for data: the pattern is 'push says CHECK, the app fetches truth' (b6-04's catch-up fetch triggered by a doorbell instead of a reconnect). Any design where missing one push corrupts state has already failed the review.\n\nTOKENS ARE VOLATILE: they change on restore, reinstall, and OS whim — the app re-sends its token on every launch, and the server prunes tokens APNs reports dead (the feedback about uninstalled apps). The classic silent failure — pushes stopping after a phone migration — is a stale token nobody refreshed. Tokens also aren't identity: map token→user server-side, and remove the mapping on logout, or the phone's next owner gets the last user's messages.\n\nPAYLOADS ARE ROUTING, NOT CARGO: 4KB, visible to APNs, potentially logged — carry IDs (chatID, messageID) and let the app fetch content over your authenticated channel (b4-07's token, b4-01's funnel). The variants map to intent: alert push = user-facing (OS presents it; your app may be dead); silent push (content-available) = background wake for a fetch — explicitly throttled, a hint not a schedule; and rich extensions (Notification Service Extension) run YOUR code briefly to decrypt or attach media before display — the E2E-chat pattern. Foreground pushes route to your delegate instead of the banner — the in-app experience is yours to build.",
+      "whyItMatters": "\"How do notifications work end-to-end?\" is a standard interview question where most candidates hand-wave the token flow — and 'push triggers fetch, never carries truth' is the design principle that separates working chat apps from support-ticket factories. This loop is documented-architecture rather than executed — APNs has no localhost."
+     },
+     "exercise": {
+      "prompt": "Push design review, five findings: (1) the chat app sends message CONTENT in push payloads; users report seeing messages in banners that never appear in the app; (2) after phone-to-phone migration, a user gets no pushes until reinstalling; (3) badge counts drift from reality over weeks; (4) the app relies on silent pushes every 15 minutes to sync, and syncs grow stale on many devices; (5) after logout, the next login on a shared iPad shows the previous user's notification banners.",
+      "code": "// 1. content in payload; banner shows what app lacks\n// 2. post-migration: no pushes until reinstall\n// 3. badge drift over weeks\n// 4. silent-push-every-15min sync goes stale\n// 5. logged-out user's notifications reach the next user",
+      "solution": "1. Push-as-data-pipe: the banner rendered the payload, but the app's fetch failed/never ran — two sources of truth diverged. Fix: payload carries IDs; banner text is fine, but the APP renders only fetched truth (push says check).\n2. Stale token: migration minted a new token; the app only sent it on first install. Fix: re-register and upload the token EVERY launch; server prunes APNs-reported dead tokens.\n3. Client-computed badges: each push set badge from a counter that drifted from server truth (missed pushes — best-effort!). Fix: the server computes the badge into each payload from its own unread count.\n4. Silent pushes are THROTTLED — the OS delivers them at its discretion (battery, usage patterns); 15-minute reliance was never a contract. Fix: silent push as opportunistic hint + foreground catch-up fetch + BGAppRefresh as backstop — sync must survive zero pushes.\n5. Token still mapped to the old user server-side. Fix: logout unregisters — delete the token→user mapping (and locally, UNUserNotificationCenter clears delivered notifications).\n\nEvery finding is one of the three honesties ignored: best-effort (3,4), volatile tokens (2,5), routing-not-cargo (1).",
+      "explanation": "Finding 4 is the one that ships most: a sync architecture whose correctness depends on delivery of throttled, best-effort wakeups. The review question for any push design: 'what happens if NO pushes arrive for a week?' — the answer must be 'everything still works, later.'"
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 4 sentences max: walk the push architecture end-to-end and name the three constraints that shape the design.",
+      "modelAnswer": "The app registers with the OS and receives a per-app-per-device token, uploads it to your server on every launch, and your server sends payloads through APNs, which delivers at its discretion. Three constraints shape everything: delivery is best-effort — coalesced, droppable, untimed — so push triggers fetches rather than carrying truth; tokens are volatile — they change on migration and reinstall, must be re-uploaded each launch, pruned when dead, and unmapped on logout; payloads are small and visible — IDs for routing, content fetched over your authenticated channel. Silent pushes are throttled hints for background work, never a schedule, so sync needs foreground and background-refresh backstops.",
+      "sets": [
+       [
+        {
+         "q": "The device token is best described as…",
+         "options": [
+          "a stable device identifier suitable for analytics",
+          "a volatile per-app-per-device address, re-sent every launch",
+          "the user's personal push-payload encryption key",
+          "a one-time registration receipt kept for records"
+         ],
+         "correct": 1,
+         "explain": "It changes on restore, reinstall, and OS whim — and it addresses a DEVICE, not a person. The stale-token and wrong-user bugs are both mismanaged lifecycle."
+        },
+        {
+         "q": "'Push says check, fetch says what' exists because…",
+         "options": [
+          "payloads can't legally contain user content",
+          "delivery is best-effort — payloads can't be sources of truth",
+          "fetching is cheaper than parsing payloads",
+          "APNs strips custom keys over 1KB"
+         ],
+         "correct": 1,
+         "explain": "Newest-replaces-older coalescing plus offline drops means SOME pushes never arrive. A design that stays correct with zero deliveries is the bar — the doorbell, not the package."
+        },
+        {
+         "q": "Silent pushes (content-available) are correctly treated as…",
+         "options": [
+          "a reliable 15-minute background scheduler",
+          "throttled, opportunistic wake-up hints — with backstops",
+          "guaranteed delivery without user permission",
+          "alert pushes minus the banner"
+         ],
+         "correct": 1,
+         "explain": "The OS budgets them by battery and usage — reliance on their cadence is the stale-sync bug. Hint + backstop is the honest architecture."
+        }
+       ],
+       [
+        {
+         "q": "Badge counts should be computed…",
+         "options": [
+          "by the client, incrementing per push received",
+          "by the server, set absolutely from its own unread truth",
+          "by the OS, from notification center contents",
+          "by the app on each foreground, only"
+         ],
+         "correct": 1,
+         "explain": "Client increments compound every missed push (best-effort!) into drift. The server states the absolute number it knows — self-healing on every delivery."
+        },
+        {
+         "q": "A Notification Service Extension is the tool when…",
+         "options": [
+          "pushes must arrive faster than normal",
+          "the payload needs YOUR code before display — E2E, media",
+          "the app wants pushes without user permission",
+          "banners need custom fonts and layouts"
+         ],
+         "correct": 1,
+         "explain": "It's a brief code window between delivery and display — how E2E chats show decrypted previews from encrypted payloads. (Layout customization is its sibling, the Content Extension.)"
+        },
+        {
+         "q": "The review question that catches most push-architecture flaws:",
+         "options": [
+          "\"how many pushes per second can our servers send?\"",
+          "\"what if no pushes arrive for a week?\" — all must still work",
+          "\"do our payloads stay under 2KB on average?\"",
+          "\"do we update the badge on every single message?\""
+         ],
+         "correct": 1,
+         "explain": "Best-effort means the zero-delivery week WILL happen for someone. If state corrupts or sync dies, push was load-bearing — redesign until it's acceleration, not foundation."
+        }
+       ]
+      ]
+     },
+     "transfer": "Design the push story for your chat sketch (b6-04): the payload (IDs only — write it), the token lifecycle (launch upload, logout unmap), badge source, and the zero-pushes-for-a-week answer. One page; every line maps to one of the three honesties.",
+     "verify": "This loop is documented architecture — APNs has no localhost, so claims trace to Apple's contracts rather than execution: 'Sending notification requests to APNs' (coalescing, best-effort), 'Pushing background updates' (the throttling language is explicit), UNUserNotificationCenter docs. Observe the token flow live: didRegisterForRemoteNotifications prints in any real app.",
+     "goDeeper": "Apple docs: 'Sending notification requests to APNs' + 'Pushing background updates to your App'. WWDC 2020 'The Push Notifications primer'. b6-04's catch-up fetch is what the doorbell triggers; b4-07 holds the auth for it."
+    },
+    {
+     "id": "b6-06",
+     "title": "Modularization: drawing the lines that scale",
+     "concept": {
+      "definition": "Modularization splits an app into targets/packages with ENFORCED boundaries: b5-08's access control graduates from types to architecture — internal means invisible across modules, and the dependency graph becomes explicit and compiler-checked. Executed here: SPM flatly refused a cycle — 'cyclic dependency declaration found: Core -> Features -> Core' — which is the point: the layering (Features depend on Services depend on Core, never upward or sideways) stops being a convention and becomes a build error.",
+      "code": "// THE CLASSIC LAYERING (arrows = 'depends on', one direction):\n//   FeatureFeed   FeatureChat   FeatureProfile     ← screens\n//        ↓             ↓              ↓\n//   Services: APIClient(b4-09) · Persistence · Auth ← capabilities\n//        ↓             ↓              ↓\n//   Core: Models · Extensions · DesignSystem        ← shared vocabulary\n//\n// executed — SPM enforcing the shape:\n//   Core -> Features -> Core\n//   error: cyclic dependency declaration found",
+      "underlying": "What the boundaries buy, concretely. COMPILE-CHECKED ARCHITECTURE: 'features shouldn't know about each other' is a wish in a monolith and a build error across modules — the executed cycle rejection is the compiler holding the line, and b5-08's executed 'inaccessible due to internal protection level' is what keeps each module's guts private by default. TEST SPEED AND FOCUS: each module tests alone (b5-04's SPM machinery IS this), with its dependencies faked at the seams (b5-03) — the APIClient module's tests never build the UI. BUILD PARALLELISM and incremental builds: unchanged modules don't recompile; independent ones compile concurrently. And OWNERSHIP: at team scale, module = code review boundary = area of responsibility.\n\nWHERE to cut is the craft. By LAYER first (the diagram): Core holds the shared vocabulary (models, extensions — no dependencies), Services hold capabilities (each wrapping its domain: network, persistence, auth), Features hold screens (depending down, never sideways). Feature-to-feature communication is the design test: they talk through shared SERVICES or navigation interfaces, never imports of each other — the moment FeatureChat imports FeatureProfile, the graph is growing knots. Common failure modes: the 'Common' dumping-ground module that everything imports and no one owns (a monolith wearing a trenchcoat); premature fragmentation (40 modules for a 3-screen app — b5-01's ceremony warning at architecture scale); and utility modules that secretly depend UP (executed: the compiler catches the honest version of this; the dishonest version is Core containing feature knowledge by copy-paste).\n\nThe migration path for a real app: extract Core (models — usually painless), then ONE service (the b4-09 APIClient is the natural first — its protocol seam already exists), then features as they stabilize. Each extraction's forcing function is the same: the module boundary reveals every hidden dependency as a compile error you then decide about consciously.",
+      "whyItMatters": "\"How would you structure a growing app / scale a team?\" is the staff-level interview question, and layered modules with compiler-enforced direction is the expected answer. Practically: the executed cycle error is the cheapest architecture review you'll ever get — the build refuses the knot before the team ties it."
+     },
+     "exercise": {
+      "prompt": "Architecture review of a 5-module app. The graph: Core→(nothing); Networking→Core; FeatureFeed→Networking,Core; FeatureChat→Networking,Core,FeatureProfile; FeatureProfile→Networking,Core; Common→Core,Networking,FeatureFeed. Find the three structural problems, explain each one's future cost, and propose the fix.",
+      "code": "// Core           → (nothing)          ✓?\n// Networking     → Core                ✓?\n// FeatureFeed    → Networking, Core\n// FeatureChat    → Networking, Core, FeatureProfile   ← ?\n// FeatureProfile → Networking, Core\n// Common         → Core, Networking, FeatureFeed      ← ?\n// (also: what happens if FeatureProfile ever needs Common?)",
+      "solution": "1. FeatureChat → FeatureProfile: a sideways feature import. Cost: the features now version, build, and break together — extracting either later means untangling chat's knowledge of profile internals. Fix: whatever chat needs (showing a profile? user models?) moves DOWN — user models to Core, profile-opening to a navigation interface both depend on.\n2. Common → FeatureFeed: a 'shared' module depending UP into a feature — Common isn't common, it's a knot. Cost: everything importing Common transitively builds FeatureFeed; incremental builds die. Fix: whatever Common needed from FeatureFeed either descends to Core/Services or reveals that code was misfiled in FeatureFeed all along.\n3. Common itself: the dumping-ground smell — it imports half the graph, meaning it's an upside-down layer. Cost: it becomes the module everything touches, so every change rebuilds the world and no one owns it. Fix: dissolve it — contents sort into Core (pure/shared), the owning Service, or the single feature that actually uses each piece.\nThe parenthetical trap: FeatureProfile → Common → FeatureFeed → … fine, but if Common ALSO ever imports FeatureProfile, the cycle closes — and the executed SPM error fires. The graph was one import away from unbuildable.",
+      "explanation": "All three problems are one rule violated: dependencies point DOWN. The compiler catches cycles (executed); the review's job is catching the legal-but-rotten edges — sideways feature imports and upward 'shared' modules — before they're load-bearing."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 4 sentences max: how do you modularize a growing iOS app — the layers, the rules, and what the boundaries actually buy?",
+      "modelAnswer": "Three layers with one-directional dependencies: Core holds shared vocabulary with no dependencies, Services wrap capabilities like networking and persistence, Features hold screens depending down — never on each other; cross-feature needs route through shared services or navigation interfaces. The boundaries are compiler-enforced: internal hides each module's guts, and SPM rejects dependency cycles outright. They buy compile-checked architecture, isolated fast tests per module with seams faked, incremental and parallel builds, and ownership lines at team scale. Migration is incremental: extract Core, then one service — the API client with its existing protocol seam — then features as they stabilize.",
+      "sets": [
+       [
+        {
+         "q": "Executed: SPM met Core→Features→Core and…",
+         "options": [
+          "built both with a warning about layering",
+          "refused: 'cyclic dependency declaration found'",
+          "merged the two into one target silently",
+          "built them in dependency-discovery order"
+         ],
+         "correct": 1,
+         "explain": "Verbatim error. A cycle means neither can build first — and architecturally, that the 'layers' were fiction. The refusal is the cheapest design review available."
+        },
+        {
+         "q": "FeatureChat importing FeatureProfile is legal but wrong because…",
+         "options": [
+          "feature modules compile slower than services",
+          "features now version and break together — needs belong DOWN",
+          "SPM limits import depth across features",
+          "it makes FeatureProfile's tests run twice"
+         ],
+         "correct": 1,
+         "explain": "Sideways edges knot the graph the compiler can't refuse (it's not a cycle — yet). Shared models descend to Core; 'open profile' becomes a navigation interface both depend on."
+        },
+        {
+         "q": "b5-08's access control relates to modularization how?",
+         "options": [
+          "module boundaries make access levels unnecessary",
+          "internal-by-default makes the boundary REAL — guts invisible",
+          "public is required on every module-level type",
+          "access levels only matter inside binary frameworks"
+         ],
+         "correct": 1,
+         "explain": "A module whose every type is public is a folder, not a boundary. The executed 'inaccessible due to internal protection' error is the wall doing its job at architecture scale."
+        }
+       ],
+       [
+        {
+         "q": "The 'Common' module smell is…",
+         "options": [
+          "any module containing fewer than ten source files",
+          "a dumping ground all import and none own — a hidden monolith",
+          "sharing any code between exactly two feature modules",
+          "utility helpers living anywhere outside of Core"
+         ],
+         "correct": 1,
+         "explain": "Its contents belong in Core (pure/shared), a Service (capability), or the one feature using them. 'Common' postpones the sorting — and becomes the rebuild-the-world module."
+        },
+        {
+         "q": "The first extraction for a real monolith should be…",
+         "options": [
+          "every feature at once, over one dedicated sprint",
+          "Core (models), then one service — the API client's seam exists",
+          "the design system first, for visual consistency",
+          "whichever module the newest teammate prefers"
+         ],
+         "correct": 1,
+         "explain": "Models rarely depend on anything (painless); b4-09's client already has its protocol boundary. Each extraction's compile errors are hidden dependencies surfacing for conscious decisions."
+        },
+        {
+         "q": "Premature modularization's cost, honestly stated:",
+         "options": [
+          "none — more boundaries are always better",
+          "ceremony without benefit — b5-01's warning at scale",
+          "SPM overhead of ~1s per module",
+          "the inability to ever merge modules back"
+         ],
+         "correct": 1,
+         "explain": "Boundaries pay when they separate things that change independently. A tiny app's forced layers are indirection tax — the skill is cutting when seams appear, not before."
+        }
+       ]
+      ]
+     },
+     "transfer": "Draw your checkpoint app's dependency graph as-is (files/folders count as proto-modules). Mark every sideways or upward edge. Then do ONE real extraction: Core as an SPM package — and let its compile errors show you every hidden dependency you'd been carrying.",
+     "verify": "Executed on this Mac: SPM rejected the Core↔Features cycle verbatim; b5-08's two-module package demonstrated internal invisibility and the public/open wall across a real boundary. The layering's benefits (parallel/incremental builds) verify themselves the first time you change Core and watch what does — and doesn't — recompile.",
+     "goDeeper": "Apple docs: 'Organizing your code with Swift packages'. The 'Modular Architecture' talks from Point-Free and objc.io. b5-08 (the walls), b4-09 (the first seam worth extracting), b5-03 (why module tests stay fast)."
+    },
+    {
+     "id": "b6-07",
+     "title": "Launch performance: the race to first frame",
+     "concept": {
+      "definition": "Launch is everything between tap and usable UI, and it splits at main(): PRE-MAIN — dyld loading your binary and frameworks, running initializers — then MAIN-TO-FIRST-FRAME: your app-delegate/scene work, first layout, first render commit (b2-01's first turn). The design rule is one sentence: nothing runs before first frame that the first frame doesn't need. Executed here: Swift helps by default — a global in another file initialized lazily at FIRST ACCESS, not at process start; and a binary doing its heavy work before 'first frame' measurably lost to one deferring it.",
+      "code": "// TAP ──────────────────── pre-main ──────────────── main() ── first frame\n//      dyld: load app + frameworks    your code: didFinishLaunching,\n//      fixups, ObjC +load,            root VC, first layout pass,\n//      static initializers            first render commit (b2-01)\n//\n// executed — Swift globals are launch-friendly by default:\n// main started — was the other file's global built?\n// doing unrelated work…\n//   (expensiveTable initializer running NOW)   ← first ACCESS, once\n\n// the rule: defer everything the first frame doesn't need",
+      "underlying": "Pre-main is work you shape indirectly: every dynamic framework is dyld loading and fixing up another binary (fewer/merged dylibs = faster cold start — one reason SPM's static linking default helps); Objective-C +load methods and C++ static initializers run HERE, before any of your code — while Swift globals, executed above, wait for first access (swift_once per global, exactly once). That laziness is a gift with one edge: an expensive global's cost lands at first ACCESS — if that's mid-scroll, you moved jank, not removed it. Know when your lazies fire.\n\nMain-to-first-frame is where most apps bleed, and the pattern is the executed comparison: everything synchronous before showing UI (parse config, warm caches, init SDKs, check entitlements…) delays the frame by exactly that work's cost; the deferred variant shows UI first and does the rest behind it (b3-05's structured tasks, b2-01's later turns). The audit is brutal and effective: list every line that runs before the first render commit and demand each one justify 'the first frame needs me.' Third-party SDK inits are the classic squatters — most tolerate deferred start.\n\nMeasurement closes the loop (b5-06's discipline applied to launch): Instruments' App Launch template shows both phases with stacks; MetricKit reports real users' launch times from the field; and the honest lab setup is a COLD launch (app not resident) on a real device in release. One more production fact: the OS watchdog kills apps that block too long at launch (the 0x8badf00d crash family) — a hung didFinishLaunching isn't just slow, it's terminal.",
+      "whyItMatters": "Launch time is the first impression users and App Store reviews actually feel, and 'how would you speed up a 4-second launch?' is a standard performance interview. The two-phase model plus the first-frame audit is the answer's skeleton — with the watchdog as the stick."
+     },
+     "exercise": {
+      "prompt": "A launch audit. This didFinishLaunching takes 3.1s on a device. For each line, verdict: KEEP (first frame needs it), DEFER (after first frame), or LAZY (at first use) — and name the mechanism: (1) window + root VC setup; (2) analyticsSDK.start() — 400ms; (3) decoding a 2MB cached feed JSON so the feed shows instantly — 600ms; (4) building a search index over all local data — 1.2s; (5) Keychain read of the auth token to decide login vs main screen; (6) warming 40 image thumbnails — 700ms.",
+      "code": "// didFinishLaunching, 3.1s total:\n// 1. window + root VC                        (fast)\n// 2. analyticsSDK.start()                    400ms\n// 3. decode cached feed (2MB JSON)           600ms\n// 4. build search index                      1200ms\n// 5. Keychain token read → route login/main  (fast)\n// 6. warm 40 thumbnails                      700ms",
+      "solution": "1. KEEP — the first frame IS the window and root VC.\n2. DEFER — analytics tolerates late start (queue events until ready); 400ms of SDK init before UI is the classic squatter.\n3. SPLIT — the feed screen wants SOMETHING instantly, but 600ms of blocking decode isn't it: show cached-lite (titles from a small store) or skeleton, decode the 2MB off-main (b2-12) in a structured task, reconcile (b6-03's stale-while-revalidate shape). If product insists feed-at-frame-one, decode less: page 1 only (b4-08).\n4. LAZY — the index serves SEARCH; build it at first search intent (or deferred+background). 1.2s before first frame for a feature maybe-used-later is the audit's biggest win.\n5. KEEP — routing needs it, it's fast, and b4-07 says it's a quick read. (Mind accessibility: AfterFirstUnlock if launch can happen pre-unlock via background.)\n6. DEFER/kill — b6-01's cache warms itself on scroll; pre-warming 40 images trades certain launch cost for speculative scroll savings. Prefetch the first screenful at most, after first frame.\nResult: ~3.1s → roughly the cost of 1+5 (+ a skeleton) — first frame in a few hundred ms, everything else behind it.",
+      "explanation": "Line 3 is the design lesson: 'the feed should show instantly' argues for LESS work before the frame, not more — a skeleton at 300ms beats real content at 3s, and stale-while-revalidate makes the reconciliation invisible. Every deferred line lands in b3-05's tree, cancellable if the user navigates away."
+     },
+     "assess": {
+      "explainPrompt": "Interview-style, 4 sentences max: what happens between tap and first frame, where do apps typically lose time, and how do you fix a slow launch?",
+      "modelAnswer": "Pre-main, dyld loads the binary and its frameworks and runs static initializers — shaped by linking fewer dynamic libraries and avoiding eager initializers, with Swift globals lazy by default. Main-to-first-frame is the app's own setup: window, root controller, first layout and render — and it's where apps bleed, by front-loading SDK inits, cache decodes, and index builds the first frame never needed. The fix is the audit: every pre-frame line must justify itself; everything else defers into structured tasks behind a fast first frame, with heavy screens showing skeletons and reconciling. Measure with the App Launch template and MetricKit field data, cold-launch, release build, real device — and remember the watchdog kills launches that block too long.",
+      "sets": [
+       [
+        {
+         "q": "Executed: a Swift global in another file printed its initializer AFTER unrelated main-code ran. Because…",
+         "options": [
+          "the optimizer reordered the print statements",
+          "Swift globals initialize lazily at first access, once",
+          "cross-file globals load on a background thread",
+          "print buffering delayed the output order"
+         ],
+         "correct": 1,
+         "explain": "swift_once per global: a launch-friendly default (C++ statics and ObjC +load run pre-main instead). The edge: the cost lands at first ACCESS — know when your lazies fire."
+        },
+        {
+         "q": "The one-sentence launch rule:",
+         "options": [
+          "move everything to background threads at start",
+          "nothing runs pre-frame that the frame doesn't need",
+          "initialize all SDKs before any UI exists",
+          "cache everything the app might ever show"
+         ],
+         "correct": 1,
+         "explain": "The audit form: each pre-frame line justifies 'the first frame needs me' or defers. Executed: the deferring binary beat the eager one by the moved work's cost."
+        },
+        {
+         "q": "Every additional dynamic framework costs launch time because…",
+         "options": [
+          "each adds a code-signing check per launch",
+          "dyld must load and fix up another binary before main runs",
+          "frameworks force extra render passes",
+          "the watchdog budgets time per library"
+         ],
+         "correct": 1,
+         "explain": "Pre-main is dyld's phase: load, bind, fix up, per image. Fewer/merged/static-linked dependencies shrink work you can't otherwise reach from code."
+        }
+       ],
+       [
+        {
+         "q": "'The feed must show instantly' — the launch-honest interpretation is…",
+         "options": [
+          "decode the full cached feed before the first frame",
+          "a fast skeleton first; full decode deferred, reconciled",
+          "block until page 1 downloads fresh",
+          "keep the app resident so launch never happens"
+         ],
+         "correct": 1,
+         "explain": "Instant means FRAME-one-fast, not content-complete: 300ms skeleton beats 3s of blocking decode, and stale-while-revalidate (b6-03) makes the reconcile invisible."
+        },
+        {
+         "q": "The watchdog (0x8badf00d family) matters at launch because…",
+         "options": [
+          "it throttles background pushes during startup",
+          "a launch that blocks too long isn't slow — it's killed",
+          "it enforces a maximum binary size at load",
+          "it downgrades slow apps in App Store rank"
+         ],
+         "correct": 1,
+         "explain": "A synchronous network call or lock-wait in didFinishLaunching can convert 'sluggish' into a startup crash for your slowest users. The deferral pattern is also crash prevention."
+        },
+        {
+         "q": "The honest launch measurement setup:",
+         "options": [
+          "warm launches in the simulator, debug build",
+          "cold launch, release build, device — plus MetricKit",
+          "averaging Xcode's console timestamps",
+          "profiling only the slowest beta tester's device"
+         ],
+         "correct": 1,
+         "explain": "Warm launches skip dyld's real work; debug builds lie (b5-06); simulators are Macs. The App Launch template shows the phases; MetricKit tells you what USERS actually experience."
+        }
+       ]
+      ]
+     },
+     "transfer": "Audit your checkpoint app's launch: list every line before the first frame and stamp each KEEP/DEFER/LAZY. Then measure before and after with the App Launch template (cold, release, device). Even shaving 200ms teaches the full workflow — and the audit habit is permanent.",
+     "verify": "Executed on this Mac: the cross-file Swift global initialized at first access, once, after unrelated work ran (lazy by default); the eager-work binary measurably lost to the deferring one. Pre-main specifics (dyld phases, watchdog) are Apple-documented — observe them in Instruments' App Launch template on any real app.",
+     "goDeeper": "WWDC 2019 \"Optimizing App Launch\" — the canonical two-phase talk. WWDC 2022 \"Link fast: Improve build and launch times\" for the dyld side. MetricKit docs for field data. b2-01 (the first turn), b3-05 (where deferred work lives)."
+    },
+    {
+     "id": "b6-08",
+     "title": "Capstone: the design interview, whole",
+     "concept": {
+      "definition": "Every mobile system-design question is answered with the same walk: REQUIREMENTS (what, for whom, at what scale, offline?) → DATA MODEL (the types — b1-09/16 thinking) → API CONTRACT (endpoints, pagination, push — Block 4's vocabulary) → CLIENT ARCHITECTURE (local truth, cache tiers, sync queue, connection — b6-01..04 composed) → FAILURE MODES (the honest enumeration: offline, conflicts, duplicates, staleness) → MEASUREMENT (what proves it works — Block 5's tools). Six stations, spoken in order, each with the trade-offs said OUT LOUD — that narration is the interview.",
+      "code": "// THE DESIGN WALK — for any \"design X\" question:\n// 1. REQUIREMENTS  scale? offline? realtime? — decide what you're building\n// 2. DATA MODEL    entities, state enums, what's data vs entity (b1-09/16)\n// 3. API CONTRACT  endpoints, cursors (b4-08), what pushes (b6-05)\n// 4. CLIENT        local truth (b6-02) · cache table (b6-03)\n//                  · connection (b6-04) · funnel (b4-09)\n// 5. FAILURE MODES offline / conflict / duplicate / stale / killed (b2-13)\n// 6. MEASUREMENT   launch (b6-07) · jank (b5-06) · memory (b5-07)\n//                  · field metrics — 'how do we KNOW it works?'",
+      "underlying": "Why this walk wins interviews: it front-loads the DECISIONS. Requirements first because every later answer depends on them — a 100-user internal tool and a 10M-user feed share no correct designs; saying 'I'll assume X — tell me if wrong' is itself the skill being tested. The middle stations are this curriculum: the data model is Block 1's data-vs-entity and illegal-states thinking; the API contract is Block 4 spoken aloud (cursors because feeds insert, idempotency keys because networks redeliver); the client is Block 6's parts COMPOSED — and the composition rule is reuse: the sync queue is the chat outbox is the export retry (one pattern, three features).\n\nFailure modes are where seniority shows: enumerate them UNPROMPTED — offline (b6-02's stations), conflicts (the per-field ladder), duplicates (client IDs), staleness (the cache table's WHEN-WRONG column), process death (b2-13's silent kill), and the zero-pushes week (b6-05). Each has a one-line answer BECAUSE each was a loop; the interviewer's follow-ups are the curriculum's exercise sections. And measurement last because 'how do we know?' is the question that separates architecture from aspiration — name the metric per requirement (first-frame time, scroll hitch rate, sync lag, crash-free rate) and the tool that reads it.\n\nThe meta-skill, honestly: the walk is a CHECKLIST against nervousness. Interviews reward structured thinking under ambiguity, and six rehearsed stations mean you always know the next sentence. You've now built every station's content from the machine up — b0's bytes to b6's systems — and the walk is just this curriculum, spoken in forty-five minutes.",
+      "whyItMatters": "This IS the senior/staff mobile interview format, nearly verbatim. And it's the App Store capstone's design doc template: run the walk on paper before writing code, and the project starts with its decisions made instead of discovered."
+     },
+     "exercise": {
+      "prompt": "The final exam of the curriculum. Run the full six-station walk for: 'Design a collaborative habit tracker — friends see each other's check-ins, works offline, 100K users.' Write one tight paragraph per station. Then grade yourself with the rubric: did you state assumptions? name the conflict policy? enumerate failures unprompted? give each requirement a metric?",
+      "code": "// \"Design a collaborative habit tracker\"\n// — friends see each other's check-ins (near-realtime)\n// — works offline\n// — 100K users\n// Six stations. One paragraph each. Rubric at the end.",
+      "solution": "1. REQUIREMENTS: check-ins are tiny and frequent; feed of friends' activity wants freshness-in-minutes (not chat-grade realtime — assumption stated); offline check-in is sacred (it's the product's core loop); 100K users = boring-tech scale, no exotic infra.\n2. DATA MODEL: Habit (entity, id), CheckIn (data: habitID, date, clock — b1-09), FriendActivity (server-derived feed items). CheckIn state enum: local/syncing/synced/failed (b1-16 — no bool pairs).\n3. API: POST /checkins with idempotency key (b4-08 — offline replay WILL redeliver); GET /feed?cursor= (b4-08); silent push as feed-freshness hint with pull backstop (b6-05's week-of-no-pushes test passes).\n4. CLIENT: local store is truth (b6-02) — check-ins apply locally, durable queue replays; feed cached stale-while-revalidate (b6-03 table: WHERE disk, HOW-LONG minutes, WRONG = stale check-in counts, tolerable); no held connection (assumption: minutes-freshness — polling on foreground + push hint suffices; b6-04's ladder, bottom rung, justified); b4-09 funnel underneath.\n5. FAILURES, unprompted: offline (station 4 handles); conflict — can two devices check in the same habit same day? YES (user's own two devices): resolve by idempotent same-key or server dedupe by (habit, date) — a DOMAIN merge, not LWW (b6-02's ladder, chosen consciously); duplicates (keys); process death (durable queue, b2-13); deleted habit with queued check-ins (tombstone precedence — the subtle one).\n6. MEASUREMENT: first frame < 500ms (b6-07, App Launch template); check-in tap-to-visible < 100ms (it's local — b6-02's whole point); sync lag p95 < 1min on reconnect (field metric); crash-free > 99.9% (MetricKit); feed scroll hitch rate (b5-06).\nRUBRIC: assumptions stated (freshness grade, scale) ✓; conflict policy NAMED and chosen from the ladder ✓; failures enumerated before being asked ✓; every requirement has a metric and a tool ✓.",
+      "explanation": "Notice the walk made two DECISIONS that a pattern-matcher would miss: no WebSocket (the ladder's bottom rung, justified by requirements — over-engineering named and declined) and domain-merge instead of LWW for same-day check-ins (the conflict ladder applied, not recited). That's the difference the whole curriculum was for: choosing machinery because you know what it costs."
+     },
+     "assess": {
+      "explainPrompt": "The curriculum's final articulation, interviewer-ready: you're asked to design a mobile system. Name your six stations in order and say why requirements come first and measurement comes last.",
+      "modelAnswer": "Requirements, data model, API contract, client architecture, failure modes, measurement. Requirements come first because every later decision is downstream of scale, offline needs, and freshness grade — stating assumptions out loud is part of the answer. Then the model as types with illegal states unrepresentable, the API with cursors and idempotency, and the client composed from local truth, a cache decision table, the right rung of the connection ladder, and one network funnel. Failure modes get enumerated unprompted — offline, conflicts with a named policy, duplicates, staleness, process death — and measurement closes because 'how do we know it works' needs a metric and a tool per requirement, or the design is aspiration.",
+      "sets": [
+       [
+        {
+         "q": "Requirements come first in the walk because…",
+         "options": [
+          "interviewers grade the opening hardest",
+          "every later decision is downstream of scale and freshness",
+          "they're the fastest station to clear",
+          "the data model can't be drawn without wireframes"
+         ],
+         "correct": 1,
+         "explain": "A 100-user tool and a 10M feed share no correct design. 'I'll assume minutes-freshness — correct me' is the skill being tested, not a hedge."
+        },
+        {
+         "q": "The habit tracker chose polling + push-hint over a WebSocket. The reasoning shape?",
+         "options": [
+          "WebSockets fail at 100K users",
+          "minutes-freshness means the ladder's bottom rung suffices",
+          "push notifications replace realtime entirely",
+          "polling is always the safer default"
+         ],
+         "correct": 1,
+         "explain": "b6-04's ladder is chosen BY requirement, and naming the over-engineering you declined scores as highly as machinery you added. Cost-aware omission is design."
+        },
+        {
+         "q": "Same-day check-ins from two of the user's own devices resolve by domain rules (dedupe per habit+date), not LWW, because…",
+         "options": [
+          "LWW requires server clocks this API never provides",
+          "the DOMAIN says both mean one check-in — a semantic merge",
+          "same-user conflicts can't ever happen while offline",
+          "LWW resolution only works on string-typed fields"
+         ],
+         "correct": 1,
+         "explain": "b6-02's ladder applied, not recited: LWW would arbitrarily drop one; the domain's truth is 'checked in that day', so the merge is idempotent identity. Conflict policy is a per-field, per-meaning choice."
+        }
+       ],
+       [
+        {
+         "q": "Enumerating failure modes UNPROMPTED matters because…",
+         "options": [
+          "it fills time while planning the next station",
+          "seniority shows in follow-ups preempted before being asked",
+          "interviewers deduct for questions asked",
+          "failures are worth double the other stations"
+         ],
+         "correct": 1,
+         "explain": "Offline, conflicts, duplicates, staleness, silent kill, the zero-push week: each was a loop, so each is a one-liner — delivered before being asked, they're the strongest signal you've built real systems."
+        },
+        {
+         "q": "'How do we know it works?' closes the walk with…",
+         "options": [
+          "a working demo plan for the project stakeholders",
+          "a metric and a tool per requirement — ms, p95s, crash rate",
+          "the agreed test-coverage percentage target",
+          "a full load-test simulating all 100K users at once"
+         ],
+         "correct": 1,
+         "explain": "Block 5's discipline at system scale: every requirement measurable, every metric owning a tool (App Launch template, MetricKit, hitch rate). Unmeasured architecture is aspiration."
+        },
+        {
+         "q": "The curriculum's final claim, in one sentence:",
+         "options": [
+          "frameworks change far too fast to learn deeply",
+          "every design choice traces to machinery you can execute and cost",
+          "system design is memorizing the six stations by heart",
+          "senior interviews are mostly about communication"
+         ],
+         "correct": 1,
+         "explain": "The walk works because its every clause is backed by a loop you ran: the 45MB decode, the 28,360 lost increments, the ring the tool drew. Choosing machinery because you know what it costs — that was the whole point."
+        }
+       ]
+      ]
+     },
+     "transfer": "The curriculum's last assignment: run the six-station walk, on paper, for YOUR App Store capstone app — before writing its first line. Then build it with Block 5's craft loop, measure it with station six, and ship it. Every loop in this app was preparation for exactly that.",
+     "verify": "This loop indexes the executed curriculum: the walk's every clause carries verification in its home loop — from b0-01's bytes to b6-07's lazy globals. The final verification is the capstone app itself: designed by the walk, built by the craft loop, measured by the tools, shipped to the App Store. Zero AI. Go.",
+     "goDeeper": "Re-read your own History tab, block by block — it's the walk's supporting evidence, 92 loops deep. \"Designing Data-Intensive Applications\" when you want the server side of these stories. And the App Store capstone: the only goDeeper that ships."
+    }
+   ]
+  }
+ ]
+};
