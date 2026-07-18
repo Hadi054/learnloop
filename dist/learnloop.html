@@ -9231,6 +9231,101 @@ const CUR = {
      "transfer": "Pull two git revisions of one of the work app's `.proto` files and diff them. Classify every change with this loop's verdicts — SAFE / BREAKS / LANDMINE — and check `reserved` discipline on anything deleted. If history contains a renumber or retype, trace what actually happened downstream; that archaeology is the best compatibility lesson your codebase can offer.",
      "verify": "// paste under b7-01's varint/key/hex helpers:\nfunc lenField(_ f: UInt64, _ s: String) -> [UInt8] { key(f, 2) + varint(UInt64(s.utf8.count)) + Array(s.utf8) }\n// 1. old decoder (knows only field 1) walks a message with new fields 3 + 4:\n//    executed → id=300, unknown fields skipped=2, no error\n// 2. v1 bytes with name at field 2, decoder expecting field 7:\n//    executed → name stays \"\" — silent loss\nfunc zigzagDecode(_ n: UInt64) -> Int64 { Int64(n >> 1) ^ -Int64(n & 1) }\nprint(zigzagDecode(1))          // -1 — int32-encoded 1 misread by a sint32 decoder (executed)\nprint(varint(15 << 3 | 0))      // [120]    — fields 1–15: one-byte key (executed)\nprint(varint(16 << 3 | 0))      // [128, 1] — field 16+: two bytes (executed)\n// count:0 vs absent — both serialize to zero bytes (executed, b7-01's omission rule)\n// UNRECOGNIZED enums + unknownFields re-serialization: documented SwiftProtobuf behavior",
      "goDeeper": "proto3 Language Guide: \"Updating a Message Type\" and \"Reserved\" — the canonical rules this loop compresses. The protobuf Encoding chapter's wire-type table. SwiftProtobuf documentation on `unknownFields` and enum `UNRECOGNIZED`. Google's AIP-180 (Backwards compatibility) for how an API org turns these rules into written policy."
+    },
+    {
+     "id": "b7-03",
+     "title": "HTTP/2: frames, streams, multiplexing",
+     "concept": {
+      "definition": "HTTP/2 replaces HTTP/1's text lines with a binary protocol: every message is cut into frames — typed chunks, each led by a 9-byte header — and every request/response conversation is a stream, a numbered lane on one shared TCP connection. Because each frame carries its stream's id, frames from different conversations interleave freely, so a single connection carries many concurrent requests — the thing HTTP/1.1 fundamentally could not do.",
+      "code": "// executed: the raw bytes curl sent to a local socket server\n// PRI * HTTP/2.0\\r\\n\\r\\nSM\\r\\n\\r\\n      ← 24-byte connection preface\n//\n// 00 00 12 04 00 00 00 00 00          SETTINGS       stream 0\n// 00 00 04 08 00 00 00 00 00          WINDOW_UPDATE  stream 0\n// 00 00 1e 01 05 00 00 00 01          HEADERS        stream 1\n// └len=30┘ │  │  └─ stream id ─┘\n//        type  flags (0x05 = END_HEADERS | END_STREAM)\n//\n// HEADERS payload: 82 86 41 8a …      ← HPACK, 30 bytes for ALL headers:\n//   82 = :method GET    86 = :scheme http    (static-table indexes)\n// the same request as HTTP/1.1 text: 77 bytes (executed)",
+      "underlying": "The frame header reads with b0-16's operators: a 24-bit big-endian length, 8-bit type, 8-bit flags, and a 32-bit stream id whose top bit is reserved (mask with `& 0x7FFFFFFF`). Executed above: SETTINGS and WINDOW_UPDATE (flow control — b7-06's subject) arrive on stream 0, the connection's own lane; the request's HEADERS rides stream 1. Other types: DATA, PING, RST_STREAM, GOAWAY. The preface is a deliberately broken HTTP/1 request line — `PRI * HTTP/2.0` — so a server that doesn't speak h2 fails immediately instead of misparsing. This 9-byte header is HTTP/2 doing exactly what b4-11 said every protocol must do: painting its own boundaries onto TCP's seamless byte pipe.\n\nA stream is nothing more than the id its frames share. Clients open odd-numbered streams (executed: 1, then 3 on the re-used connection; a third request would be 5), servers even. Since every frame is self-describing, HEADERS for stream 3 can hit the wire before stream 1's response DATA finishes — requests no longer queue behind each other, which was HTTP/1.1's head-of-line problem and the reason browsers opened six parallel connections. The honest asterisk: it's still ONE ordered byte pipe underneath, so a single lost TCP packet stalls every stream until retransmission — transport-level head-of-line blocking survives, and removing it is why HTTP/3 left TCP entirely.\n\nHPACK compresses headers against tables both ends keep in sync: a fixed 61-entry static table (`:method: GET` is entry 2, so it travels as the single byte `82` — executed in the capture) plus a per-connection dynamic table that indexes fields as they're first sent, so a repeated authority or user-agent costs about a byte on every later request (documented, RFC 7541). Pseudo-headers — `:method`, `:path`, `:scheme`, `:authority` — replace HTTP/1's request line so that everything is a header and everything compresses. And this trio is precisely why gRPC requires h2 (preview b7-04): streams give it concurrent calls on one channel, DATA frames carry its length-prefixed messages, and trailers — a HEADERS frame sent AFTER the body — carry `grpc-status`; the `te: trailers` request header is the client declaring it can receive them, which HTTP/1 in practice cannot.",
+      "whyItMatters": "Your work app's dozens of in-flight gRPC calls ride one TCP connection as interleaved streams — that's why Charles shows a single connection with many exchanges. \"Why does gRPC require HTTP/2?\" is simultaneously an interview classic and the literal architecture of your day job."
+     },
+     "exercise": {
+      "prompt": "Parse each captured frame header below: length, type, flags meaning if any, stream id. Then answer: whose conversation does each frame belong to — and may frame B reach the server before frame C is fully delivered?",
+      "code": "// types: 0=DATA 1=HEADERS 4=SETTINGS 6=PING 8=WINDOW_UPDATE\n// header layout: [3B length][1B type][1B flags][4B stream id]\n\n// A: 00 00 08 06 00 00 00 00 00\n// B: 00 00 1e 01 05 00 00 00 05\n// C: 00 01 00 00 00 00 00 00 01",
+      "solution": "A: length 8, type 6 = PING, stream 0 — the connection's own lane. Liveness probing made protocol: b4-11 showed a dead connection stays silent, so h2 built the heartbeat in.\n\nB: length 0x1e = 30, type 1 = HEADERS, flags 0x05 (END_HEADERS | END_STREAM), stream 5 — a THIRD client request opening (client streams go 1, 3, 5…), with no body to follow.\n\nC: length 0x000100 = 256, type 0 = DATA, stream 1 — 256 body bytes belonging to the FIRST conversation.\n\nAnd yes: B may absolutely arrive before C finishes — that is multiplexing. Stream 5's opening interleaves between stream 1's DATA frames on the one pipe. HTTP/1.1 would have queued request three behind the entire body transfer.",
+      "explanation": "Notice PING, SETTINGS, and WINDOW_UPDATE all ride stream 0: the connection itself is a conversation with its own lane. And length 0x000100 = 256 is a 24-bit big-endian integer — you just hand-parsed the protocol Apple's networking stack parses under every URLSession request you have ever made."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what are frames and streams in HTTP/2, and why can one connection serve many concurrent requests when HTTP/1.1 browsers needed six?",
+      "modelAnswer": "HTTP/2 cuts every message into binary frames, each led by a 9-byte header carrying its length, type, flags, and stream id — and a stream is the numbered sequence of frames forming one request/response conversation. Because every frame is self-describing, frames from different streams interleave freely on one TCP connection: requests never queue behind each other's bodies, which is the head-of-line problem that made HTTP/1.1 browsers open six connections to fake concurrency. Headers travel HPACK-compressed against shared static and dynamic tables, so `:method: GET` is one byte and repeated headers cost about a byte after their first appearance. That machinery — streams for concurrency, frames for framing, trailers after the body — is exactly what gRPC is built on.",
+      "sets": [
+       [
+        {
+         "q": "The 9-byte header on every HTTP/2 frame carries…",
+         "options": [
+          "the HTTP method, the path, and the response status code",
+          "length, type, flags, and the stream id the frame belongs to",
+          "a checksum, a sequence number, and the sender's window size",
+          "the header-compression table both endpoints agreed to use"
+         ],
+         "correct": 1,
+         "explain": "Executed capture: `00 00 1e 01 05 00 00 00 01` = 30 bytes, HEADERS, END_HEADERS|END_STREAM, stream 1. Self-describing frames are what let different conversations share one pipe."
+        },
+        {
+         "q": "Client-opened streams are odd-numbered (1, 3, 5…) because…",
+         "options": [
+          "either end can then open streams with no id collisions",
+          "odd parity marks frames that carry request data",
+          "the odd cap limits how many requests run at once",
+          "retransmitted frames must be distinguishable from their originals"
+         ],
+         "correct": 0,
+         "explain": "Clients take odd, servers (push) take even — two id spaces, zero coordination needed. Executed: curl's two requests opened streams 1 and 3 on the same connection."
+        },
+        {
+         "q": "HTTP/2 fixes HTTP-level head-of-line blocking. What blocking remains?",
+         "options": [
+          "none — multiplexing removes every form of queueing",
+          "slow servers still process the streams strictly in id order",
+          "HPACK forces each request to wait for the previous table update",
+          "TCP's: one lost packet stalls every stream until retransmit"
+         ],
+         "correct": 3,
+         "explain": "b4-11's pipe is still one ordered byte stream — the lanes are painted on it, not laid separately. Removing that last stall is why HTTP/3 abandoned TCP for QUIC."
+        }
+       ],
+       [
+        {
+         "q": "Charles shows the app's 30 concurrent gRPC calls on ONE connection. What makes that work?",
+         "options": [
+          "a connection pool rotating sockets faster than Charles samples",
+          "the client batching all 30 calls into a single large request",
+          "each call is an h2 stream; its frames interleave on the shared pipe",
+          "Charles visually merging what are actually 30 separate short-lived connections"
+         ],
+         "correct": 2,
+         "explain": "One channel, many streams — each call opens the next odd id and its HEADERS/DATA frames weave between the others'. This is b7's whole performance story in one Charles window."
+        },
+        {
+         "q": "Request #1 sends a 60-byte user-agent. On request #2 over the same connection it costs about one byte. Why?",
+         "options": [
+          "gzip compresses the repeated header text across requests",
+          "both ends added it to the connection's dynamic HPACK table, so an index suffices",
+          "the client simply omits it and the server assumes repetition",
+          "URLSession detects and strips redundant repeated headers before they ever reach the wire"
+         ],
+         "correct": 1,
+         "explain": "HPACK's dynamic table grows as fields are first sent; after that, a field is a table reference. Documented in RFC 7541 — and the reason long tokens hurt far less than they look."
+        },
+        {
+         "q": "Every gRPC request carries `te: trailers`. What is it declaring?",
+         "options": [
+          "the client accepts headers that arrive AFTER the body — where grpc-status lives",
+          "the connection should negotiate the trailing edge of TLS",
+          "transfer-encoding compression is enabled for this call",
+          "the request's final DATA frame must echo the opening headers back to the server verbatim"
+         ],
+         "correct": 0,
+         "explain": "A trailer is a HEADERS frame after the DATA — h2 makes it first-class, HTTP/1 practically can't deliver it. gRPC puts the call's real status there, which b7-04 dissects."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open Charles while the work app runs through a normal session: find the gRPC host, confirm the many exchanges share one connection, and watch the exchange numbering climb — those are streams opening 1, 3, 5… Then check the app's gRPC channel config for a keepalive interval and connect it to what you now know PING frames are for.",
+     "verify": "// Terminal 1 — raw capture server (python socket bound to 9903) printing each\n// 9-byte frame header it receives; Terminal 2:\n//   curl -s --http2-prior-knowledge http://127.0.0.1:9903/\n// EXECUTED on this Mac 2026-07-18:\n//   preface b'PRI * HTTP/2.0\\r\\n\\r\\nSM\\r\\n\\r\\n'\n//   00 00 12 04 … SETTINGS stream 0 · 00 00 04 08 … WINDOW_UPDATE stream 0\n//   00 00 1e 01 05 00 00 00 01 HEADERS stream 1 — HPACK payload starts 82 86 41 8a\n//   (82 = :method GET, 86 = :scheme http — static-table hits)\n//   same request as HTTP/1.1 text: 77 bytes vs 30 bytes of HPACK\n// curl -sv --http2 https://example.com https://example.com/other → EXECUTED:\n//   'ALPN: server accepted h2' · '[HTTP/2] [1] OPENED' then '[3] OPENED'\n//   · 'Re-using existing connection'\n// dynamic-table byte-costs on repeat requests: documented, RFC 7541 §2.3",
+     "goDeeper": "RFC 9113 (HTTP/2): §4 for framing, §5 for stream states — shorter than its reputation. RFC 7541 (HPACK), Appendix A is the static table the captured 82/86 bytes index into. WWDC 2018 \"Optimizing Your App for Today's Internet\" for URLSession's h2 behavior. Then b7-04: one gRPC call mapped frame by frame onto exactly this machinery."
     }
    ]
   }
