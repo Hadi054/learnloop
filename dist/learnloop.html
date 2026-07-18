@@ -1487,6 +1487,101 @@ const CUR = {
        ]
       ]
      }
+    },
+    {
+     "id": "b0-16",
+     "title": "Bits, hex, and the operators that move them",
+     "concept": {
+      "definition": "An integer is nothing but a row of bits, and the bitwise operators work on that row directly: `<<` and `>>` slide the bits left or right, `&` keeps only the bits where a mask has a 1, and `|` merges two patterns. Hex is the human shorthand for those rows — one hex digit is exactly four bits, so one byte is always exactly two hex digits.",
+      "code": "let key = (5 << 3) | 2        // pack two numbers into one:\nprint(key)                    // 42\nprint(String(key, radix: 2))  // 101010 — 5 slid left, 2 in the gap\nprint(key >> 3, key & 0b111)  // 5 2    — unpacked again\n\nprint(String(300, radix: 16)) // 12c — hex: four bits per digit\nprint(0xFF & 300)             // 44  — mask: keep only the low byte\n\nlet v: UInt32 = 0x1122_3344\nwithUnsafeBytes(of: v) { print($0.map { String($0, radix: 16) }) }\n// [\"44\", \"33\", \"22\", \"11\"] — little-endian: lowest byte stored first",
+      "underlying": "b0-01 said a variable is a box of bytes; this loop looks inside the byte. Shifting left by n multiplies by 2ⁿ because each bit position is worth twice its neighbor: `5 << 3` turns `101` into `101000` (40), and OR-ing in `2` (`010`) fills the vacated low positions — 42 is `101010`, executed above. Nothing magical was 'packed': the two numbers simply occupy disjoint bit positions of one integer, which is why `>> 3` and `& 0b111` recover them exactly. Masking works because of AND's truth table — `1 & x` passes x through, `0 & x` clears it — so `0b111` keeps three low bits, `0x7F` keeps seven, `0xFF` keeps a byte. Executed: `0xFF & 300` = 44, the low byte of `1 0010 1100`. Masks SELECT bits; setting them is OR's job.\n\nHex earns its place because the translation to bits is positional, digit by digit: `A` is `1010` wherever it stands, so `0xAC` reads as `1010 1100` on sight, while the same value as decimal 172 hides its bits behind long division. Four bits per digit means two digits per byte — that's why memory dumps, wire captures, and crash addresses all arrive in hex pairs.\n\nLast: the bytes of a multi-byte integer sit in the box in an ORDER. ARM (and x86) is little-endian — least-significant byte first — executed: `0x1122_3344` lives in memory as `44 33 22 11`. Inside Swift you never notice, because the value is just the value; the order becomes real the moment bytes cross a boundary — a file, a socket, `withUnsafeBytes`. That's why every wire format declares an order up front (preview: Block 7's protobuf sends its fixed-width numbers little-endian, while classic TCP/IP headers are big-endian, 'network byte order').",
+      "whyItMatters": "UIKit hands you bit rows constantly — every OptionSet like `[.flexibleWidth, .flexibleHeight]` is single bits merged with `|` — and Block 7's wire format is shifts and masks end to end (preview: a protobuf key is `(field << 3) | type`). Quick bit questions are also a favorite interview screen for machine fluency."
+     },
+     "exercise": {
+      "prompt": "Predict every line of output. Then answer in one sentence each: which bits does `& 0x7F` keep — and why do the last two prints produce the same number?",
+      "code": "print((3 << 3) | 0)          // ?\nprint(24 >> 3, 24 & 7)       // ?\nprint(1 << 7)                // ?\nprint(0xFF & 300)            // ?\nlet b: UInt8 = 0b1010_1100   // 0xAC\nprint(b & 0x7F)              // ?",
+      "solution": "24 — 3 slid three positions left (×8), low bits left empty.\n3 0 — shift and mask run the packing backwards.\n128 — a single 1 standing at position 7.\n44 — 300 is `1 0010 1100`; the byte mask keeps `0010 1100`.\n44 — `0x7F` is `0111 1111`: it keeps seven bits and clears 0xAC's top bit, leaving `010 1100`.\n\n`& 0x7F` keeps the low seven bits. The results match because 300 and 0xAC share the same low seven bits (`0101100` = 44) under different high bits — and each mask throws the high bits away.",
+      "explanation": "That coincidence is engineered: 0xAC is exactly the first varint byte of 300 in Block 7's wire format (preview) — seven payload bits under a continuation flag. `& 0x7F` strips the flag and the payload falls out; nearly every binary protocol you will ever read is this one move, repeated."
+     },
+     "assess": {
+      "explainPrompt": "In your own words (3–4 sentences, interviewer-ready): what do `<<`, `&`, and `|` physically do to an integer's bits, and why do programmers read bytes in hex rather than decimal?",
+      "modelAnswer": "An integer is a row of bits, and the operators act on positions: `<<` slides every bit left — each step doubles the value because each position is worth twice its neighbor — `&` keeps only the bits where the mask has a 1, and `|` merges two patterns. Together they pack and unpack numbers inside one integer: `(field << 3) | type` going in, `>> 3` and `& 0b111` coming out. We read bytes in hex because each hex digit is exactly four bits, so a byte is always two digits and the translation is positional — `0xAC` is `1010 1100` on sight, while decimal 172 hides its bits.",
+      "sets": [
+       [
+        {
+         "q": "What does `x << 3` physically do?",
+         "options": [
+          "slides every bit three positions left, multiplying by 8",
+          "rotates the top three bits around to the bottom end",
+          "sets the lowest three bits of x to one, keeping the rest",
+          "drops the highest three bits and pads the top with zeros"
+         ],
+         "correct": 0,
+         "explain": "Each position is worth twice its neighbor, so three left-steps are ×2×2×2. The vacated low positions fill with zeros — which is exactly the gap `| type` fills in a packed key."
+        },
+        {
+         "q": "Why is hex the standard way to display bytes?",
+         "options": [
+          "each hex digit is exactly four bits, so a byte is always two digits",
+          "hex numbers occupy less memory than their decimal equivalents",
+          "CPUs carry out their arithmetic natively in base sixteen",
+          "hex display sidesteps the byte-order problem that decimal numbers suffer from"
+         ],
+         "correct": 0,
+         "explain": "The translation is positional: `A` is `1010` wherever it stands, so bits read straight off each digit. Decimal has no such alignment — 172 gives no hint of `10101100`."
+        },
+        {
+         "q": "`n & 0x7F` gives you…",
+         "options": [
+          "n with its low seven bits forced to one",
+          "the low seven bits of n, everything above cleared",
+          "a Boolean: true when n is less than 127, false otherwise",
+          "the bits of n shifted right by seven positions"
+         ],
+         "correct": 1,
+         "explain": "AND keeps a bit only where the mask has a 1, and 0x7F is `0111 1111`. Masks select bits; they never set them — setting is OR's job."
+        }
+       ],
+       [
+        {
+         "q": "`UIView.AutoresizingMask` stores `[.flexibleWidth, .flexibleHeight]` in ONE integer. What makes that work?",
+         "options": [
+          "each option owns a distinct single bit; OR merges them, AND tests them",
+          "the array of chosen options is boxed on the heap and referenced by the view",
+          "UIKit hashes the option list into one unique lookup number",
+          "each chosen option appends a byte to a growing bit string"
+         ],
+         "correct": 0,
+         "explain": "Executed: width = 1<<0, height = 1<<1, together rawValue 3 (`11`), and `contains` is one AND. Every OptionSet in UIKit — animation options, edge sets, autoresizing — is this pattern."
+        },
+        {
+         "q": "Block 7 preview: a wire key byte is `(field << 3) | type`, and you read `0x12` (18). Field and type?",
+         "options": [
+          "field 1, type 2 — the two hex digits map straight across",
+          "field 2, type 2 — 18 >> 3 is 2, and 18 & 7 is 2",
+          "field 3, type 6 — split the high nibble from the low nibble",
+          "field 18, type 0 — the whole byte belongs to the field"
+         ],
+         "correct": 1,
+         "explain": "Unpacking runs the pack backwards: shift recovers the high part, mask the low. Reading the hex digits separately (option a) is the classic trap — the split sits at bit 3, not bit 4."
+        },
+        {
+         "q": "You write `UInt32(0x3B9ACA00)` to a file on an iPhone and hexdump it. The first byte on disk?",
+         "options": [
+          "3B — bytes keep the order the hex literal was written in",
+          "00 — ARM is little-endian, least-significant byte first",
+          "CA — middle bytes are stored ahead of the two ends",
+          "unknowable — it varies build to build unless you set an order"
+         ],
+         "correct": 1,
+         "explain": "Executed: `0x1122_3344` sits in memory as `44 33 22 11`. Inside Swift the order is invisible; it turns real — and dangerous — only when bytes cross a boundary, which is why wire formats declare one."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one OptionSet in the work codebase or your own UIKit usage (`UIView.AnimationOptions`, autoresizing masks, `NSRegularExpression.Options`…) and write out which bit each case you use owns — `String(rawValue, radix: 2)` makes it visible. Then re-derive b7-01's key bytes `08` and `12` by hand from `(field << 3) | type`.",
+     "verify": "let key = (5 << 3) | 2\nprint(key, String(key, radix: 2))   // 42 101010\nprint(key >> 3, key & 0b111)        // 5 2\nprint(0xFF & 300)                   // 44 — low byte of 1 0010 1100\nlet b: UInt8 = 0b1010_1100          // 0xAC — b7-01's varint byte for 300\nprint(b & 0x7F)                     // 44 — continuation flag stripped\nwithUnsafeBytes(of: UInt32(0x1122_3344)) { print($0.map { String($0, radix: 16) }) }\n// [\"44\", \"33\", \"22\", \"11\"] — little-endian, executed on this Mac (ARM)\nstruct Fit: OptionSet { let rawValue: Int\n    static let width  = Fit(rawValue: 1 << 0)\n    static let height = Fit(rawValue: 1 << 1) }\nprint(([.width, .height] as Fit).rawValue)  // 3 — two bits ORed together",
+     "goDeeper": "The Swift Programming Language, \"Advanced Operators\" chapter — shifts, masks, overflow operators, and the OptionSet story. \"Hacker's Delight\" ch. 2 for the classic bit tricks. Then re-read b7-01 and b7-02: the varint math should now read like plain arithmetic."
     }
    ]
   },
@@ -7120,6 +7215,101 @@ const CUR = {
      "transfer": "Before the weather-app checkpoint: rebuild this exact pipeline against the local-server recipe (flaky page, poison item), but change ONE policy — the cap, the lossiness scope, the backoff base — and predict the new behavior before running. Then the checkpoint: fetch, cache, degrade offline. Zero AI. Every piece is yours now.",
      "verify": "The whole capstone WAS the verification: executed on this Mac — 5 server hits for 3 pages, backoff at 100/200ms, success on attempt 3, collected [1,2,3,4,6,7] with dropped: 1, server stats confirming. The two counterfactuals (questions 4 and 5) are one-line server edits away — run them.",
      "goDeeper": "Re-read your own b4-01..09 verify fields in order — they ARE this pipeline's documentation. Then the weather-app checkpoint. Block 5 (craft) picks up with how to structure, test, and profile what you now know how to build."
+    },
+    {
+     "id": "b4-11",
+     "title": "TCP: the pipe under HTTP",
+     "concept": {
+      "definition": "TCP gives two programs a connection: a reliable, ordered, two-way stream of bytes, named by four numbers — source IP, source port, destination IP, destination port. It guarantees the bytes arrive complete and in order, but it has no concept of a message: deciding where one request ends and the next begins is entirely the job of the protocol above it.",
+      "code": "// client — two writes:            // server — one read:\nsend(fd, \"hello\", 5)               recv(fd, buf, 4096)\nsend(fd, \"world\", 5)               // → 10 bytes: \"helloworld\"\n                                   // boundaries GONE — it's one stream\n\n// a second socket to the SAME server — executed:\n// conn A local port 49419 ─┐ same destination ip+port; told apart\n// conn B local port 49420 ─┘ by the client's ephemeral port\n\n// executed cost of one fresh https connection (curl -w):\n// DNS 0.56s | TCP connect +6ms | TLS +0.51s | first byte at 1.09s\n// over a second of setup before ANY payload — reuse skips all of it",
+      "underlying": "A 'connection' is not a thing on the wire — it is agreed state at the two ENDS: sequence numbers, buffers, and the 4-tuple that names it. Establishing that agreement is the three-way handshake (SYN, SYN-ACK, ACK), a full round trip before the first payload byte, and TLS stacks its own round trips on top — measured above: ~6ms of TCP but half a second of TLS to a real host. The ephemeral port is what lets one phone hold many connections to one server: executed, two sockets to the same destination got local ports 49419 and 49420, so every arriving segment routes to the right socket by its unique 4-tuple.\n\nThe stream has no seams. Executed: two 5-byte `send()` calls arrived as ONE 10-byte read, `helloworld` — and the reverse also happens, one send arriving as several reads. `send()` returning success means only 'copied into the local kernel buffer', not delivered, not read. Since TCP will never tell you where a message ends, every protocol above invents framing: HTTP/1's `Content-Length` and chunking (b4-02), length-prefixes, delimiters. Code that assumes one-send-one-recv works on a localhost demo and dies on a real network.\n\nAnd death is silent, because the middle remembers nothing on your behalf — actually worse: NATs and routers keep their own idea of your connection and drop it on idle timers without telling either end. Executed: after the server process died, the client's write #1 returned success (4 bytes, straight into the local buffer); only write #2 came back -1 EPIPE. 'Connected' is always a claim about the past. The only proof of liveness is bytes making a round trip now — which is why heartbeats exist at every layer above (b6-04's chat pings, URLSession's `waitsForConnectivity`), and why gRPC channels send keepalives (preview: b7-10).",
+      "whyItMatters": "Every stalled spinner on hotel Wi-Fi is this loop — a connection both ends still believe in, dead in the middle. And the measured second of setup before the first byte is why connection reuse (URLSession's pool, gRPC's channel, HTTP/2's single connection) is the performance lever Block 7 keeps pulling."
+     },
+     "exercise": {
+      "prompt": "This pair works flawlessly on the office Mac and garbles messages in production. Predict exactly what the server's one `recv` can return, name the bug's category, and give the two standard fixes.",
+      "code": "// client                              // server\nlet a = #\"{\"op\":\"add\",\"n\":1}\"#         // reads once, parses once:\nlet b = #\"{\"op\":\"mul\",\"n\":2}\"#         let n = read(fd, &buf, 4096)\nsend(fd, a, 18)                        let msg = try JSONDecoder()\nsend(fd, b, 18)                        //   .decode(Op.self, buf[0..<n])",
+      "solution": "The read can return ANY split of the byte stream: both payloads concatenated — `{\"op\":\"add\",\"n\":1}{\"op\":\"mul\",\"n\":2}` (executed: two sends arrived as one read) — or a fragment like `{\"op\":\"ad`, or the first message plus half the second. All of them explode the decoder (executed: both the concatenation and the fragment throw 'not valid JSON').\n\nThe bug category: assuming TCP preserves message boundaries. It preserves bytes and order — nothing else.\n\nThe two standard fixes, both meaning 'add framing above the stream': a length prefix before each message (read the length, then read exactly that many bytes — gRPC's choice), or a delimiter the payload can't contain (newline-delimited JSON — many log pipelines' choice).",
+      "explanation": "Localhost hides the bug because both sends usually coalesce or arrive whole; real networks split segments wherever they like, so the failure is intermittent — the worst kind. This is also why gRPC still length-prefixes every message even though HTTP/2 already frames the stream (preview: b7-04): each layer refuses to trust the one below to define ITS message boundaries."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what does TCP guarantee, what does it deliberately not guarantee, and what does a successful `send()` actually prove?",
+      "modelAnswer": "TCP guarantees the bytes I write arrive complete and in the order I wrote them, over a connection named by the 4-tuple of source and destination IP and port. It deliberately does not preserve message boundaries — it is one continuous byte stream, so framing messages is the job of the protocol above, which is why HTTP has Content-Length and gRPC length-prefixes every message. A successful send() proves only that the bytes were copied into my kernel's local buffer — not that they were delivered, and not that the connection is even still alive; a dead connection often surfaces only on the write after the one that 'succeeded'.",
+      "sets": [
+       [
+        {
+         "q": "What does TCP guarantee — and not guarantee?",
+         "options": [
+          "order and completeness, but not message boundaries",
+          "message boundaries and order, but not delivery itself",
+          "delivery and boundaries, with only best-effort ordering",
+          "nothing by itself — reliability is added by HTTP above"
+         ],
+         "correct": 0,
+         "explain": "Executed: two 5-byte sends arrived as one 10-byte read. The bytes were all there and in order — but where one message ended, nothing on the wire says."
+        },
+        {
+         "q": "Two sockets from one iPhone to the same server IP and port. What tells their packets apart?",
+         "options": [
+          "a connection identifier the server issues at accept time",
+          "their sequence numbers, which never overlap between sockets",
+          "the client's ephemeral port, completing a distinct 4-tuple",
+          "nothing — the OS merges them into one shared connection"
+         ],
+         "correct": 2,
+         "explain": "Executed: conn A got local port 49419, conn B 49420. The kernel routes every arriving segment by the full 4-tuple — that's the entire addressing scheme."
+        },
+        {
+         "q": "`send()` just returned successfully. What is actually known?",
+         "options": [
+          "the bytes have already reached the server's receive buffer",
+          "the bytes were copied into the local kernel buffer",
+          "the server application has read the bytes by now",
+          "at least one acknowledgment for them has come back"
+         ],
+         "correct": 1,
+         "explain": "Executed the brutal version: write #1 to an already-dead peer returned success. `send()` is a local copy; delivery, ACKs, and the peer's read all happen later — or never."
+        }
+       ],
+       [
+        {
+         "q": "A teammate fixes stream garbling by adding `usleep(100)` between sends 'so the messages stay apart'. Verdict?",
+         "options": [
+          "wrong layer — the stream needs framing: a length prefix or delimiter",
+          "reasonable — writes spaced in time are guaranteed to travel as separate segments",
+          "close, but only a flush() call after each send makes it reliable",
+          "correct in practice, since real networks rarely merge spaced writes"
+         ],
+         "correct": 0,
+         "explain": "Timing changes probabilities, never guarantees — a retransmit or proxy can still merge or split anywhere. Only explicit framing (read a length, then exactly that many bytes) makes boundaries real."
+        },
+        {
+         "q": "Chat app: after 10 minutes idle, the first message 'sends fine' but never arrives; the second write errors. What happened?",
+         "options": [
+          "the server throttled the app for being idle too long",
+          "a NAT dropped the idle mapping; write #1 just filled the local buffer",
+          "TCP is specified to report an error only after two consecutive writes fail",
+          "the cellular radio needs a warm-up write after sleeping"
+         ],
+         "correct": 1,
+         "explain": "Executed shape: write-after-death returns success, and the failure surfaces one write late. The middle forgot the connection and neither end was told — this is exactly why chat protocols ping."
+        },
+        {
+         "q": "The app's first https request takes ~1s before any payload; later ones are fast. The saved time is…",
+         "options": [
+          "the server caching your response server-side after the first request",
+          "iOS promoting the app's network QoS once traffic begins",
+          "DNS, TCP handshake, and TLS setup — skipped by connection reuse",
+          "compression, negotiated only after the first exchange"
+         ],
+         "correct": 2,
+         "explain": "Measured: DNS 0.56s, TCP +6ms, TLS +0.51s, first byte at 1.09s. A reused connection starts at the request itself — the whole setup tax paid once per connection, not per call."
+        }
+       ]
+      ]
+     },
+     "transfer": "Watch the work app cold-start in Charles (or Instruments' Network template): count distinct connections by client port, and spot reuse — requests riding an existing connection skip connect+TLS entirely. Then find where the codebase configures the gRPC channel's keepalive (or URLSession's `waitsForConnectivity`) and re-read that config with this loop's eyes: every line of it exists because of something this loop executed.",
+     "verify": "// Terminal 1 — a 1-line server:\n// python3 -c $'import socket,time\\ns=socket.socket(); s.bind((\"127.0.0.1\",9901)); s.listen(1)\\nc,a=s.accept(); time.sleep(0.3); print(c.recv(4096))'\n// Terminal 2 — POSIX client (Darwin): connect, then\n//   send(fd, \"hello\", 5); send(fd, \"world\", 5)\n// EXECUTED on this Mac 2026-07-18:\n//   server printed b'helloworld' — one read, boundaries gone\n//   two connections drew ephemeral ports 49419 / 49420\n//   after killing the server: write #1 returned 4 (success!), write #2 → -1 EPIPE\n//   curl -so /dev/null -w '%{time_connect} %{time_appconnect} %{time_starttransfer}'\n//     → DNS 0.56s, TCP +6ms, TLS +0.51s, first byte 1.09s on a fresh connection\n//   JSONDecoder on the concatenated and on the fragmented read: both throw",
+     "goDeeper": "\"TCP/IP Illustrated, Volume 1\" (Stevens) — the connection-establishment and data-flow chapters. RFC 9293, the current TCP specification, §3.5 for the handshake. WWDC 2018 \"Optimizing Your App for Today's Internet\" — connection reuse and what iOS does on your behalf. Then b7-03: HTTP/2 builds its frames on exactly this pipe."
     }
    ]
   },
@@ -8946,6 +9136,101 @@ const CUR = {
      "transfer": "In the work app, open one generated `*.pb.swift` file next to the `.proto` it came from. Pick a message you actually send, and for two of its fields compute the key byte by hand — `(number << 3) | wireType` — then check whether the `.proto` has any `reserved` statements guarding retired field numbers. If it doesn't, you now know what to ask the backend team about their renumbering discipline.",
      "verify": "func varint(_ n: UInt64) -> [UInt8] {\n    var v = n, o: [UInt8] = []\n    repeat { var b = UInt8(v & 0x7F); v >>= 7; if v != 0 { b |= 0x80 }; o.append(b) } while v != 0\n    return o\n}\nlet hex: ([UInt8]) -> String = { $0.map { String(format: \"%02X\", $0) }.joined(separator: \" \") }\nprint(hex(varint(300)))                            // AC 02\nprint(hex(varint(1 << 3 | 0) + varint(150)))       // 08 96 01 — the protobuf docs' canonical Test1 message\nprint(hex(varint(UInt64(bitPattern: Int64(-1)))))  // FF FF FF FF FF FF FF FF FF 01 — int32 -1 costs 10 bytes\nstruct T: Codable { let a: Int }\nprint(try! JSONEncoder().encode(T(a: 150)).count)  // 9 — vs protobuf's 3 for the same value\n// All four executed on this Mac 2026-07-18; outputs match these comments.",
      "goDeeper": "Protocol Buffers documentation, \"Encoding\" chapter — the byte-level reference this loop's claims were checked against. proto3 Language Guide, the \"Field Numbers\" and \"Reserved\" sections. apple/swift-protobuf's generated-code documentation for what protoc emits in Swift. \"gRPC: Up and Running\" ch. 4 for this format in its gRPC context."
+    },
+    {
+     "id": "b7-02",
+     "title": ".proto evolution: changing the contract safely",
+     "concept": {
+      "definition": "A live `.proto` contract can evolve safely only along the moves the wire format forgives: adding fields with fresh numbers, renaming anything, and removing fields whose numbers are then `reserved`. Field numbers and their encodings are forever — renumbering or re-typing a live field doesn't raise an error, it silently drops or corrupts data, because decoders skip unknown numbers by wire type and trust the schema's reading of the bytes.",
+      "code": "// v1                        // proposed v2 — judge each change:\n// message User {             message User {\n//   int32  id    = 1;          int32  user_id = 1;  // rename: SAFE\n//   string name  = 2;          string name    = 7;  // renumber: LOSES DATA\n//   int32  score = 3;          sint32 score   = 3;  // retype: CORRUPTS\n// }                            string bio     = 4;  // add: SAFE\n//                            }\n\n// executed against v1 bytes:\n// name (field 2) → v2 decoder skips it as unknown → name == \"\"   no error\n// score int32-encoded 1 → sint32 decoder zigzag-reads it → -1    no error\n// old client meets bio (field 4) → skips it by wire type → fine",
+      "underlying": "The machinery under all of it is the skip. The full wire-type map: 0 = varint, 1 = fixed 64-bit, 5 = fixed 32-bit, 2 = length-delimited (3 and 4 are protobuf's deprecated 'groups'). A decoder that meets an unknown field number reads the wire type from the key and knows exactly how many bytes to jump — a varint's continuation bits, 8, 4, or a length prefix. Executed on this Mac: a decoder knowing only field 1 walked a message carrying new fields 3 (string) and 4 (fixed32) and came out with id = 300 and two fields cleanly skipped. SwiftProtobuf goes further — generated messages KEEP unknown bytes in `unknownFields` storage and re-emit them when serializing (documented), so a message passing through an old middle-man survives round trips.\n\nThat forgiveness is exactly what makes the failure modes silent. Renumbering: executed — v1 bytes carrying `name` as field 2 met a decoder expecting field 7, and name stayed `\"\"`; the data was skipped as unknown, no error anywhere. Re-typing: executed — `int32` and `sint32` share wire type 0, so the bytes still parse, but encoded 1 zigzag-decodes to -1; values corrupt instead of failing. Presence: b7-01's omit-defaults rule means `count: 0` and count-never-sent are byte-identical (executed — both zero bytes), which is why proto3 added `optional` for explicit presence when 'was it set?' matters. Enums are open the same way: an unknown raw value arrives in Swift as the generated `UNRECOGNIZED(rawValue)` case rather than an error (documented).\n\nSo the discipline is a short list, enforced in code review rather than by the compiler: never renumber, never reuse a retired number, delete only with `reserved 4;` and `reserved \"legacy\";`, add freely with fresh numbers, rename freely. One more number fact worth spending consciously: keys for fields 1–15 fit in one byte (executed: field 15's key = `78`, field 16's = `80 01`), so the hot, always-present fields deserve the low numbers.",
+      "whyItMatters": "Every backend PR that touches a `.proto` makes a compatibility decision on behalf of shipped app versions that will keep speaking the old schema for months. This loop is your review checklist for those PRs — and 'which protobuf changes are backward compatible?' is a standard interview probe."
+     },
+     "exercise": {
+      "prompt": "The backend team proposes this diff to a live message; your app's current release is three weeks old. For each labeled change, verdict — SAFE, BREAKS, or LANDMINE — plus the exact runtime symptom old clients would see.",
+      "code": "// message Order {              // proposed:\n//   int32  id       = 1;       message Order {\n//   string coupon   = 2;         int32  id        = 1;\n//   int32  discount = 3;         string coupon_v2 = 2;   // (a) rename\n// }                              sint32 discount  = 3;   // (b) retype\n//                                string note      = 5;   // (c) new field\n//                              }\n// (d) field 4 was deleted last quarter;\n//     no reserved statement exists anywhere",
+      "solution": "(a) SAFE. Names never travel — the wire only ever carried the number 2. Cost is compile-time only: regenerated Swift renames the property, call sites get fixed by the compiler.\n\n(b) BREAKS — silently. `int32` and `sint32` share wire type 0, so nothing errors: old clients' discount 1 arrives at the new decoder as -1 (executed), and every negative discount from new senders reads as a huge wrong number on old clients. Corrupt values, zero exceptions.\n\n(c) SAFE. Old clients skip field 5 by wire type; when old clients send, new decoders fill `note` with `\"\"`. Both directions degrade gracefully.\n\n(d) LANDMINE. Nothing breaks today — old senders' field 4 just gets skipped. The damage comes later: without `reserved 4;`, someone reuses the number, and three-week-old (or year-old) builds still emitting the old field 4 suddenly have their bytes interpreted as the new field. The fix is one line, and it belongs in THIS PR.",
+      "explanation": "Notice the shape of every wrong answer: protobuf compatibility failures are never loud. Skip-by-wire-type makes decoding succeed at all costs, which converts contract mistakes from crashes into quiet zeros, empty strings, and wrong numbers — the hardest class of bug to notice. If you need loud, you add it yourself with validation above the codec."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: which `.proto` changes are safe on a live API, which aren't, and why do the unsafe ones fail silently instead of raising errors?",
+      "modelAnswer": "Safe changes: adding fields with fresh numbers, renaming anything, and deleting fields as long as their numbers are marked `reserved` — names never travel, and decoders skip unknown numbers by wire type. Unsafe: renumbering a live field, reusing a retired number, or changing a field's encoding, like int32 to sint32. The unsafe ones are silent because the decoder is designed to keep going: an unknown number is skipped without error, and a re-typed field still parses under the wrong rules — so contract mistakes surface as default values and corrupted numbers rather than exceptions.",
+      "sets": [
+       [
+        {
+         "q": "A decoder meets a field number its schema doesn't know. What happens?",
+         "options": [
+          "decoding fails with an unknown-field error for safety",
+          "it skips the value using the key's wire type and keeps going",
+          "it stops parsing and returns only the fields seen so far",
+          "it infers the field's type by inspecting the payload's leading bytes"
+         ],
+         "correct": 1,
+         "explain": "The wire type says exactly how far to jump — a varint's length, 8 bytes, 4 bytes, or a length prefix. That skip IS forward compatibility; SwiftProtobuf even keeps the bytes in `unknownFields` and re-emits them."
+        },
+        {
+         "q": "Which change is wire-safe on a live API?",
+         "options": [
+          "renaming `string coupon = 2` to `string promo = 2`",
+          "renumbering coupon from 2 to 6 for readability",
+          "changing `int32 discount = 3` to `sint32 discount = 3`",
+          "giving deleted field 4's number to a brand-new field"
+         ],
+         "correct": 0,
+         "explain": "Names are compile-time; the wire only ever carried the 2. The other three all reinterpret or orphan bytes that shipped clients still produce."
+        },
+        {
+         "q": "In proto3, why can't a plain `int32 count` distinguish 'sent as 0' from 'never sent'?",
+         "options": [
+          "defaults are omitted, so 0 and absence are the same zero bytes",
+          "varint encoding has no representation for the number zero",
+          "the decoder strips zero values to reduce memory pressure",
+          "count does travel on the wire, but the generated struct hides its flag"
+         ],
+         "correct": 0,
+         "explain": "b7-01's omission rule has a price: absence is invisible. Marking the field `optional` makes the encoder track explicit presence — the modern answer when 'was it actually set?' matters."
+        }
+       ],
+       [
+        {
+         "q": "Backend PR: `int32 discount = 3` becomes `sint32 discount = 3` 'for cheaper negatives'. Old app versions are live. The post-deploy symptom?",
+         "options": [
+          "old clients crash on decode whenever a discount arrives",
+          "discounts from old clients arrive as wrong numbers — encoded 1 reads as -1",
+          "the field arrives empty on both sides until clients update",
+          "nothing — both types share wire type 0, so decoders treat them as interchangeable"
+         ],
+         "correct": 1,
+         "explain": "Executed: same varint bytes, two interpretations — zigzag reads plain-encoded 1 as -1. Sharing a wire type is precisely what makes it silent; a wire-type change would at least be skipped."
+        },
+        {
+         "q": "You're deleting `string legacy = 4` from a live message. The PR must also contain…",
+         "options": [
+          "nothing extra — field deletions are always backward compatible",
+          "`reserved 4;` and `reserved \"legacy\";` so number and name can't return",
+          "a renumbering of fields 5 and up to close the gap cleanly",
+          "a major version bump plus a synchronized redeploy of the whole service"
+         ],
+         "correct": 1,
+         "explain": "The deletion itself is safe — old senders' field 4 gets skipped. The hazard is next year: an unreserved 4 gets reused, and old builds' bytes suddenly mean something else."
+        },
+        {
+         "q": "The server ships a new enum case your three-week-old app's schema lacks. Generated Swift hands the app…",
+         "options": [
+          "a decode error that fails the entire message",
+          "the enum's zero case, substituted silently by the decoder",
+          "an `UNRECOGNIZED(rawValue)` case preserving the number",
+          "the field stripped out, as though the server never sent it"
+         ],
+         "correct": 2,
+         "explain": "proto3 enums are open: unknown values survive as UNRECOGNIZED (documented SwiftProtobuf behavior), so every switch over a wire enum needs a real plan for that case — not a `fatalError` default."
+        }
+       ]
+      ]
+     },
+     "transfer": "Pull two git revisions of one of the work app's `.proto` files and diff them. Classify every change with this loop's verdicts — SAFE / BREAKS / LANDMINE — and check `reserved` discipline on anything deleted. If history contains a renumber or retype, trace what actually happened downstream; that archaeology is the best compatibility lesson your codebase can offer.",
+     "verify": "// paste under b7-01's varint/key/hex helpers:\nfunc lenField(_ f: UInt64, _ s: String) -> [UInt8] { key(f, 2) + varint(UInt64(s.utf8.count)) + Array(s.utf8) }\n// 1. old decoder (knows only field 1) walks a message with new fields 3 + 4:\n//    executed → id=300, unknown fields skipped=2, no error\n// 2. v1 bytes with name at field 2, decoder expecting field 7:\n//    executed → name stays \"\" — silent loss\nfunc zigzagDecode(_ n: UInt64) -> Int64 { Int64(n >> 1) ^ -Int64(n & 1) }\nprint(zigzagDecode(1))          // -1 — int32-encoded 1 misread by a sint32 decoder (executed)\nprint(varint(15 << 3 | 0))      // [120]    — fields 1–15: one-byte key (executed)\nprint(varint(16 << 3 | 0))      // [128, 1] — field 16+: two bytes (executed)\n// count:0 vs absent — both serialize to zero bytes (executed, b7-01's omission rule)\n// UNRECOGNIZED enums + unknownFields re-serialization: documented SwiftProtobuf behavior",
+     "goDeeper": "proto3 Language Guide: \"Updating a Message Type\" and \"Reserved\" — the canonical rules this loop compresses. The protobuf Encoding chapter's wire-type table. SwiftProtobuf documentation on `unknownFields` and enum `UNRECOGNIZED`. Google's AIP-180 (Backwards compatibility) for how an API org turns these rules into written policy."
     }
    ]
   }

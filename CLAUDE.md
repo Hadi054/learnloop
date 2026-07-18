@@ -31,18 +31,18 @@ may be freely developed with Claude Code.
 
 | Block | Name | Loops | Status |
 |---|---|---|---|
-| 0 | The Machine Under the Syntax | 15 | DONE (in curriculum.js) |
+| 0 | The Machine Under the Syntax | 16 | DONE (b0-16 bit ops added 2026-07-18) |
 | 1 | "Semantics Under the Sugar": optionals/enums, ARC, closures/capture, COW, dispatch, generics, + ext: payload enums, property wrappers, laziness, HOFs | 19 | DONE incl. thorough ext (in curriculum.js) |
 | 2 | "The Machinery of the Screen": run loop, view/layer, VC lifecycle, geometry, Auto Layout, responder chain, hit-testing, target-action, cell reuse, threading, app lifecycle, + ext: navigation, containment, gestures, animation | 18 | DONE incl. thorough ext (in curriculum.js) |
 | 3 | "One Thread Is Never Enough": queues/threads, sync/deadlock, races, async/await, task tree, actors, Sendable, continuations, capstone, + ext: AsyncSequence, MainActor, GCD kit | 12 | DONE incl. thorough ext (in curriculum.js) |
-| 4 | "Bytes You Don't Control": URLSession, HTTP, Codable, decoding resilience, caching, persistence, Keychain, pagination+retry, network-layer design, capstone | 10 | DONE (in curriculum.js). Verified via local python servers (flaky pagination + poison items + hit counters) and macOS Security framework (Keychain CRUD with real error codes) |
+| 4 | "Bytes You Don't Control": URLSession, HTTP, Codable, decoding resilience, caching, persistence, Keychain, pagination+retry, network-layer design, capstone, TCP under HTTP | 11 | DONE (b4-11 TCP added 2026-07-18). Verified via local python servers (flaky pagination + poison items + hit counters) and macOS Security framework (Keychain CRUD with real error codes) |
 | 5 | "Code You Can Change": MVVM, observation, DI, unit testing, async testing, Time Profiler, Allocations/Leaks, API design, logging, capstone | 10 | DONE (in curriculum.js). Verified: XCTest via SPM, `leaks --atExit` ring conviction, 2-module access-control errors verbatim, os.Logger executed |
 | 6 | "Designing the Whole Machine": image feed, offline-first sync, caching strategy, realtime/chat, push, modularization, launch perf, design capstone | 8 | DONE (in curriculum.js) |
-| 7 | "Protocols on the Wire": protobuf wire format, HTTP/2 frames/streams, anatomy of a gRPC call, streaming RPCs, interceptors, SwiftNIO/transports, TLS+pinning, connection lifecycle, auth over gRPC | 9 | IN PROGRESS (b7-01 done) |
-| 8 | "Data That Survives": Core Data stack, faulting, contexts/threads, fetching, migrations, layered caching | 6 | PLANNED |
-| 9 | "The Device's Senses": CoreLocation state machine, maps/geocoding, APNs from the socket up, notification routing, LocalAuthentication, background execution | 6 | PLANNED |
-| 10 | "Interface Builder and the Storyboard Machine": storyboard→NSCoder, segues vs manual, storyboards at scale, traits/size classes, runtime localization | 5 | PLANNED |
-| 11 | "Shipping the Machine": targets/schemes/xcconfig, code signing, SPM/CocoaPods internals, scenes lifecycle, CI for iOS, update strategy | 6 | PLANNED |
+| 7 | "Protocols on the Wire": protobuf wire format, .proto evolution, HTTP/2 frames/streams, anatomy of a gRPC call, deadlines+cancellation, streaming RPCs (+flow control), interceptors, SwiftNIO/transports, TLS+pinning, connection lifecycle, auth over gRPC | 11 | IN PROGRESS (b7-01..02 done) |
+| 8 | "Data That Survives": Core Data stack, faulting, contexts/threads, fetching, NSFetchedResultsController, migrations, the import pipeline (batch insert/dedup/merge), layered caching | 8 | PLANNED |
+| 9 | "The Device's Senses": CoreLocation state machine (+reduced accuracy; delegate→AsyncStream per b3-10), maps/geocoding, APNs from the socket up, notification routing (+service extension), LocalAuthentication, background execution | 6 | PLANNED |
+| 10 | "Interface Builder and the Storyboard Machine": storyboard→NSCoder, segues vs manual, XIBs/reusable views, storyboards at scale, traits/size classes, localization under the hood, runtime language switching | 7 | PLANNED |
+| 11 | "Shipping the Machine": targets/schemes/xcconfig, code signing, SPM/CocoaPods internals, scenes lifecycle, dSYMs+crash symbolication, CI for iOS, update strategy | 7 | PLANNED |
 
 CURRICULUM COMPLETE 2026-07-18: 92 loops, 7 blocks, 552 questions, 0 length
 tells, every b1+ loop with transfer/verify/goDeeper. Verification tiers used:
@@ -57,12 +57,48 @@ via a multi-environment build system. The learner proposed five new blocks
 (their message used 1-indexed "Block 8–12"; repo ids are b7–b11) plus three
 intra-block loops. Author in this order, one loop at a time, thorough mode:
 b7 (biggest gap) → b8 → b9 → b10 → b11 → intra-block additions:
-- b2-19 keyboard management (notifications, scroll insets, what IQKeyboardManager hooks)
+- b2-20 keyboard management (notifications, scroll insets, what IQKeyboardManager hooks)
 - b3-13 actor-as-singleton (static let shared on an actor, CheckedContinuation
-  waiter gating — APIClient's exact shape; author AFTER b7-08 connection lifecycle
+  waiter gating — APIClient's exact shape; author AFTER b7-10 connection lifecycle
   so it can cross-reference)
-- b4-11 when REST and gRPC coexist (Alamofire for uploads/3rd-party alongside
+- b4-12 when REST and gRPC coexist (Alamofire for uploads/3rd-party alongside
   gRPC; choosing per endpoint; author after b7)
+
+FOUNDATION DELTA (agreed 2026-07-18, after auditing b0–b6 against what b7–b11
+assume): three building-block loops for machinery no existing loop installs —
+- b0-16 "Bits, hex, and the operators that move them" (<<, |, & masks, hex
+  digit = nibble, endianness; b7's key/varint math uses all of it). Author FIRST.
+- b4-11 "TCP: the pipe under HTTP" (byte stream, ports, handshake cost,
+  connections die silently; assumed by b7-03 frames and b7-10 lifecycle).
+  DONE 2026-07-18 — verified with POSIX sockets vs local python servers
+  (helloworld coalescing, ephemeral ports 49419/49420, write-after-death
+  success then EPIPE) and curl -w timings (TLS +0.51s on a fresh conn).
+  NOTE id shift: TCP takes b4-11; "REST and gRPC coexist"
+  moves to b4-12 (neither existed yet; ids in curriculum.js stay sequential).
+- b2-19 "KVC and the stringly runtime" (setValue:forKey:, the non-KVC-compliant
+  crash; under b10-01 outlet wiring and b8-02 @NSManaged). Author BEFORE b8.
+  Same id shift: keyboard management moves to b2-20.
+Rejected as folds: SQL fundamentals (b8-04 carries it), linker (b11-03 owns it),
+TLS basics (b7-09 self-contained), delegation refresher (b2-10 owns it).
+Combine: learner confirmed 2026-07-18 the work app doesn't use it — stays out.
+Authoring order now: b0-16 → b4-11 TCP → b7-03..11 → b2-19 KVC → b8 → b9 →
+b10 → b11 → b2-20 keyboard, b3-13 actor-singleton, b4-12 coexist.
+
+ASSESSMENT DELTA (agreed 2026-07-18, after Claude's curriculum review): six loops
+added to the learner's original 32. b7 gains b7-02 ".proto evolution" (reserved,
+proto3 presence/optional, unknown-field skipping, enum unknowns; also completes
+the wire-type map 1/5 and mentions SwiftProtobuf's unknown-field storage — the
+two scope trims b7-01 made) and a deadlines+cancellation loop (grpc-timeout
+header, propagation into b3's task tree). b7 loop order: 01 wire format,
+02 proto evolution, 03 HTTP/2, 04 anatomy of a call, 05 deadlines+cancellation,
+06 streaming (+flow-control fold-in), 07 interceptors, 08 NIO/transports,
+09 TLS+pinning, 10 connection lifecycle, 11 auth. b8 gains NSFetchedResultsController
+and the import pipeline. b10 gains XIBs/reusable views and splits localization
+into under-the-hood + runtime switching (MA-2319 gets its own loop). b11 gains
+dSYMs+symbolication. DEEPER-NOT-REPEAT rule for known overlaps: b8-08 layered
+caching goes implementation-level vs b6-03's design table (NSCache cost, keys
+with size/scale, ImageIO downsampling); b9 APNs = mechanism vs b6-05's design;
+b11 scenes = SceneDelegate/windows/restoration vs b2-13's process lifecycle.
 Verification tiers for the extension: b7 wire-format claims = plain Swift byte
 math against canonical protobuf encodings; HTTP/2 frames = curl -v --http2 +
 local python; SPM fetch of grpc-swift possible (network verified up 2026-07-18);
