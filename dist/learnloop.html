@@ -12584,6 +12584,576 @@ const CUR = {
      "transfer": "Map the work app's matrix: list its configurations and schemes, and for the scheme you ship from, note which configuration each ACTION uses. Find the xcconfig files (and whether CocoaPods' includes survive at the top of yours), then run xcodebuild -showBuildSettings for the archive configuration and verify SWIFT_ACTIVE_COMPILATION_CONDITIONS and the API base URL are what production expects. Finally, check for the #error guard — if a new config could silently build environment-less, add the executed one-liner.",
      "verify": "// executed on this Mac 2026-07-19:\n// swiftc -D DEV/STG/PRD on one source → three binaries, three URLs printed\n// no -D flag → compile error verbatim: 'No environment set — pass -D DEV…'\n// strings env_DEV & env_PRD: staging URL ABSENT — dead branches stripped\n// xcodebuild -showBuildSettings -scheme nio-demo -xcconfig override.xcconfig:\n//   user-defined API_BASE_URL materialized; SWIFT_ACTIVE_COMPILATION_CONDITIONS\n//   showed '$(inherited) STG' splicing; the $() escape kept // out of the\n//   comment parser (value survived)\n// documented: scheme action→configuration mapping, Info.plist $(VAR)\n//   substitution, per-(target×config) xcconfig assignment, CocoaPods includes",
      "goDeeper": "Apple's Xcode Build Settings Reference — the dictionary this loop's layers resolve against. WWDC 2021 \"Explore advanced project configuration in Xcode\". The xcconfig format's best write-ups are community ones — search 'xcconfig guide' and note how much of it this loop executed. b11-02 next: code signing — the settings that decide whether the build is allowed to exist."
+    },
+    {
+     "id": "b11-02",
+     "title": "Code signing demystified",
+     "concept": {
+      "definition": "A code signature seals a binary: hashes of its pages, signed by a certificate whose chain reaches Apple's root — change one byte and validation fails. Shipping to devices adds the provisioning profile: a signed document from Apple binding WHO may sign (certificates), WHAT the app may do (entitlements), and — outside the App Store — WHERE it may run (device list). Every mysterious signing error is one of those three bindings failing to line up.",
+      "code": "// executed on a real binary:\n// $ codesign -s - signdemo && codesign -vv signdemo\n//   → valid on disk · satisfies its Designated Requirement\n// $ codesign -d -vv signdemo\n//   CodeDirectory … flags=0x2(adhoc) hashes=3+2   ← page hashes\n//   TeamIdentifier=not set\n// $ codesign -f -s - --entitlements ent.plist signdemo\n// $ codesign -d --entitlements - signdemo\n//   → aps-environment: development · get-task-allow  ← baked into the seal\n//\n// tamper — append ONE byte:\n//   → 'main executable failed strict validation'\n//\n// Apple's own chain (Calculator.app, executed):\n//   Authority=Software Signing ← Apple Code Signing CA ← Apple Root CA",
+      "underlying": "The seal, executed: signing writes a CodeDirectory — hashes of every page of the binary (the executed `hashes=3+2`) — and signs THAT, so verification re-hashes pages and compares; the one appended byte failed 'strict validation' because page hashes are the mechanism, not a checksum vibe. The identity half is b7-09 verbatim: a signing certificate is a key pair whose certificate chains to Apple's root — executed on Calculator: Software Signing ← Apple Code Signing CA ← Apple Root CA — and 'ad-hoc' (the executed `Signature=adhoc`, `TeamIdentifier=not set`) is a seal with no identity: integrity without provenance, why ad-hoc builds run locally but prove nothing to a device. `security find-identity` executed honestly here: zero identities — this Mac can seal but not vouch; a 'No signing certificate found' CI error is exactly this state.\n\nEntitlements are capabilities baked INTO the seal — executed round trip: an entitlements plist signed in, then dumped back out of the signature itself. That placement is the point: `aps-environment` (b9-03's push switch), app groups (b9-04's extension sharing), keychain-access-groups (b4-07) can't be edited post-build without re-signing, because they ARE signature content. The catch that generates half of all signing errors: on device, your entitlements must be a SUBSET of what the provisioning profile allows — an entitlement the profile doesn't grant fails at install/launch, which is why 'I toggled a capability and now it won't install' means the profile is stale.\n\nThe provisioning profile completes the triangle. It's a CMS-signed plist from Apple (readable with `security cms -D -i profile.mobileprovision` — documented; none live on this Mac) containing: the certificates allowed to sign, the app ID pattern, the granted entitlements, an EXPIRY date, and — for development and ad-hoc distribution — the device UDID list. Now the error taxonomy decodes: 'profile doesn't include signing certificate' = cert/profile mismatch (new cert, old profile); 'profile expired' = the date; 'device not in profile' = the UDID list; entitlement install failures = the subset rule. App Store profiles drop the device list (Apple re-signs for distribution); enterprise profiles trade the list for an audit burden. 'Automatically manage signing' is Xcode driving this same machinery via API — fine until CI (b11-06) needs the pieces explicit, which is why shipping teams eventually name every cert and profile in config (b11-01's xcconfig, again).",
+      "whyItMatters": "Signing errors are the top time-sink in iOS shipping, and each one names a binding you can now check: cert vs profile, entitlement vs profile, device vs list, date vs today. The executed tamper-fail also explains WHY the system is strict — the seal is the device's only proof the binary is what someone vouched for. 'What's actually in a provisioning profile?' is a shipping-interview classic."
+     },
+     "exercise": {
+      "prompt": "Four signing failures, three bindings. (1) CI fails with 'No signing certificate iOS Distribution found' though the profile is present and valid. (2) A colleague enables push notifications in the portal, rebuilds, and the app installs but push registration fails with 'no valid aps-environment entitlement' — the capability shows enabled in Xcode. (3) An ad-hoc build installs on the PM's old phone but not their new one. (4) The App Store build was fine last month; today the SAME configuration fails with 'provisioning profile has expired'. For each: which binding broke, and the fix — plus (5): why did our executed one-byte append kill the signature?",
+      "code": "// the triangle: certificate (who signs) · entitlements (what's allowed,\n//   IN the seal — executed round trip) · profile (Apple's grant binding\n//   certs + entitlements + devices + expiry)\n// executed: adhoc seal = integrity without identity; page hashes;\n//   'failed strict validation' on one appended byte",
+      "solution": "(1) The certificate binding: the profile lists which certs may sign, but the MACHINE must hold the matching private key — the executed '0 valid identities' state. The profile being present is irrelevant without the identity in the keychain; fix is installing the distribution certificate + key (CI: from secure storage — b11-06's problem).\n\n(2) The entitlement/profile subset rule: the app was signed claiming `aps-environment`, but the PROFILE predates the capability grant — regenerate the profile so its entitlement set includes push, then re-sign. Xcode's checkbox edits your side of the triangle; Apple's side (the profile) must be refreshed to match.\n\n(3) The device list: ad-hoc profiles enumerate UDIDs, and the new phone isn't in it. Add the UDID in the portal, regenerate the profile, rebuild. (The App Store build has no such list — this failure mode is specific to ad-hoc/development distribution.)\n\n(4) The expiry: profiles are dated documents — nothing else changed; the grant lapsed. Renew and rebuild; mature teams calendar profile and cert expiries because this failure always lands on release day.\n\n(5) The executed mechanism: the CodeDirectory holds per-page hashes and the signature covers the CodeDirectory — our appended byte changed a page, its hash no longer matched, and validation failed strictly. That unforgeable-by-construction seal is what every device trusts before executing a single instruction.",
+      "explanation": "The debugging meta-move: every signing error message names one edge of the cert–entitlements–profile triangle. Read the message, name the edge, check that binding — the mystique dissolves into three lookups, which is the entire demystification this loop promises."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what does a code signature physically contain, what does a provisioning profile bind together, and why must entitlements be a subset of the profile's grants?",
+      "modelAnswer": "A signature embeds a CodeDirectory of per-page hashes of the binary, signed by a certificate chaining to Apple's root — verification re-hashes and compares, so a single changed byte fails validation, as the executed tamper test showed. Entitlements — push environment, app groups, keychain access — are baked into that seal, not carried beside it, so they can't change without re-signing. The provisioning profile is Apple's signed grant binding the triangle: which certificates may sign, which app ID and entitlements are allowed, an expiry date, and for non-App-Store distribution a device list. The device enforces that the signature's entitlements fall within the profile's grants — your claim must fit Apple's grant — which is why a freshly enabled capability fails until the profile is regenerated, and why every signing error names one edge: cert versus profile, entitlement versus grant, device versus list, or date versus today.",
+      "sets": [
+       [
+        {
+         "q": "The executed one-byte append broke the signature because…",
+         "options": [
+          "codesign stores the file's modification date and size inside the sealed directory",
+          "the appended byte landed outside the __TEXT segment",
+          "the binary's size no longer matched the Info.plist entry",
+          "a page's hash no longer matched the signed CodeDirectory of page hashes"
+         ],
+         "correct": 3,
+         "explain": "Executed: 'failed strict validation' — hashes=3+2 in the directory, one page changed, verification caught it. Per-page hashing is the mechanism; that's why the seal is trustworthy and why every rebuild re-signs."
+        },
+        {
+         "q": "An ad-hoc signature (the executed `Signature=adhoc`, no team) provides…",
+         "options": [
+          "integrity without identity — the seal holds, but nobody vouches for the binary",
+          "full App Store validity for up to seven days of testing",
+          "identity without integrity — the provenance is recorded but the pages go unchecked",
+          "a temporary team identity borrowed from the local keychain"
+         ],
+         "correct": 0,
+         "explain": "The pages are hashed and sealed (tamper still fails), but no certificate chain says WHO — which is why ad-hoc runs locally yet proves nothing to a device or reviewer. Identity is the certificate's contribution."
+        },
+        {
+         "q": "Entitlements live IN the signature (executed round trip) rather than as a bundle file because…",
+         "options": [
+          "the app bundle's plist format cannot faithfully represent capability keys at runtime anyway",
+          "capabilities must be unforgeable — sealed claims checked against the profile's grants",
+          "signature storage is faster to read at launch time",
+          "extensions need entitlements before the bundle is mounted"
+         ],
+         "correct": 1,
+         "explain": "A capability you could edit post-build would be a capability anyone could grant themselves. Sealed-in claims + the profile subset rule = the device verifying both WHAT you claim and whether Apple AGREED."
+        }
+       ],
+       [
+        {
+         "q": "'Provisioning profile doesn't include signing certificate' decodes to…",
+         "options": [
+          "the certificate expired at midnight and needs renewal",
+          "the profile's app ID wildcard pattern doesn't actually match the app's bundle identifier",
+          "the cert/profile edge: the profile's allowed-certs list predates the certificate in use",
+          "the entitlements exceed what the profile grants"
+         ],
+         "correct": 2,
+         "explain": "Profiles enumerate the certificates they authorize; a regenerated cert (new key pair) isn't in an old profile's list. Regenerate the profile against the current cert — the most common triangle break after cert rotation."
+        },
+        {
+         "q": "Push works in TestFlight but a freshly-enabled App Group fails at install with an entitlement error. The rule in play?",
+         "options": [
+          "App Groups require enterprise distribution certificates",
+          "TestFlight deliberately strips all App Group entitlements until the final release approval lands",
+          "the group container name collided with another team's",
+          "signed entitlements must be a SUBSET of the profile's grants — the profile predates the group"
+         ],
+         "correct": 3,
+         "explain": "Your seal claims more than Apple's document grants — the device refuses. Portal capability toggles change the NEXT profile generation; the current one must be regenerated and the app re-signed."
+        },
+        {
+         "q": "'Automatically manage signing' is best understood as…",
+         "options": [
+          "Xcode driving the same cert/profile machinery via API, hands hidden",
+          "a distinct signing mode with relaxed validation rules",
+          "fully delegating the signing operation to Apple's servers at upload time instead",
+          "ad-hoc signing with automatic device-list refresh"
+         ],
+         "correct": 0,
+         "explain": "Same triangle, hidden hands: it creates certs and regenerates profiles for you. It breaks exactly where automation can't reach — CI keychains, multiple teams — which is why shipping configs (b11-01) eventually name everything."
+        }
+       ]
+      ]
+     },
+     "transfer": "Run the executed commands against the work app's artifacts: `codesign -d --entitlements -` on a built .app to read the sealed capabilities, `security find-identity -v -p codesigning` on your machine and the CI box, and `security cms -D -i` on the .mobileprovision to read Apple's side of the triangle — then diff the entitlements against the profile's grants. Note the profile's expiry date and put it in the team calendar; that's this loop's cheapest incident prevention.",
+     "verify": "// executed on this Mac 2026-07-19 (codesign + security CLIs, real binary):\n// security find-identity → '0 valid identities found' (honest machine state)\n// ad-hoc sign → 'valid on disk · satisfies its Designated Requirement'\n// codesign -d -vv → CodeDirectory flags=0x2(adhoc) hashes=3+2 ·\n//   TeamIdentifier=not set (integrity without identity)\n// entitlements round trip: signed in via --entitlements, dumped back out of\n//   the signature (aps-environment: development, get-task-allow)\n// tamper: one appended byte → 'main executable failed strict validation'\n// Apple chain on Calculator.app: Software Signing ← Apple Code Signing CA ←\n//   Apple Root CA (b7-09's walk, codesign edition)\n// documented: provisioning profile contents/CMS structure, subset rule,\n//   device lists, expiry, automatic signing's machinery",
+     "goDeeper": "Apple's \"TN3125: Inside Code Signing — Provisioning Profiles\" and its sibling technotes — the definitive pieces, recent and precise. `man codesign` — shorter than expected, executable start to finish. b7-09 for the chain-of-trust machinery this loop reuses. b11-06 ahead: making CI hold the identity this Mac honestly lacks."
+    },
+    {
+     "id": "b11-03",
+     "title": "SPM and CocoaPods internals: resolution and linking",
+     "concept": {
+      "definition": "A package manager does two separable jobs: RESOLUTION — turning version requirements into one pinned graph, recorded in a lockfile (Package.resolved, Podfile.lock) so every machine builds identical sources — and INTEGRATION — compiling those sources and LINKING them into your product, statically (code copied into the binary) or dynamically (a separate framework loaded by dyld at launch). Most dependency mysteries are one of the two jobs misbehaving: a drifted lock, or the wrong side of the static/dynamic line.",
+      "code": "// executed — resolution's artifact (Package.resolved):\n// { \"identity\": \"swift-atomics\",\n//   \"location\": \"https://github.com/apple/swift-atomics.git\",\n//   \"state\": { \"revision\": \"0442cb5a…\", \"version\": \"1.3.1\" } }\n//   ← a transitive dep, pinned by COMMIT HASH, not just version\n\n// executed — the linking fork, same library both ways:\n// dynamic: otool -L app_dyn  →  libGreet.dylib (dependency edge)\n//          delete the dylib   →  dyld: 'Library not loaded: libGreet.dylib'\n// static:  otool -L app_static → no Greet — the code is INSIDE the binary\n//          the dylib can vanish; the app doesn't notice",
+      "underlying": "Resolution first. Your manifest declares REQUIREMENTS (`from: \"1.3.0\"` = up to next major, per semver); the resolver walks the whole graph — including dependencies' dependencies (the executed swift-atomics pin arrived via swift-nio, nothing this package asked for by name) — finds one version per package satisfying everyone, and writes the lockfile: identity, location, version AND commit hash (executed — the hash is the real pin; tags can move, commits can't). The lockfile is the reproducibility contract: committed to git, it makes every machine and CI build the same sources; `resolve` obeys it, `update` rewrites it — and 'works on my machine, fails in CI' dependency bugs are almost always one machine holding a different lock. Version CONFLICTS are resolution's honest failure: two packages demanding incompatible majors of a third have no solution, and the fix is negotiation (bump one) — not force.\n\nLinking is where 'what ends up in the app bundle' gets decided, and the executed pair is the whole taxonomy. STATIC: the library's code is copied into the executable at link time — otool shows no dependency, nothing extra to load at launch, the lib file itself can vanish post-build. DYNAMIC: the executable records a dependency edge (executed: `libGreet.dylib` in otool -L) and dyld loads it at launch — the executed deletion producing `dyld: Library not loaded`, which is the same crash users see as 'app won't open' when a framework is missing from the bundle or an install is corrupted. The trade: static costs binary size but zero launch work; dynamic costs dyld time per framework at launch (b6-07's measured pre-main tax) and enables sharing between app and extensions (one framework, two processes — the app-plus-widget case where dynamic earns its keep). Note the honest executed detail: our tiny lib produced identical file sizes — the size argument is real only at real scale. SPM defaults to static where it can (`.automatic`); mergeable libraries (modern toolchains) blur the line further by letting release builds merge dynamic deps statically — documented.\n\nCocoaPods does the same two jobs with different machinery, visible in the artifacts the work app carries: `Podfile.lock` is its lockfile (same contract — commit it, diff it in review); integration happens by MUTATING your build — it generates a Pods project, wraps everything in an `.xcworkspace` (why 'always open the workspace'), and injects xcconfig files that your own configs must `#include` (the b11-01 tie: 'my xcconfig broke the build' usually means that include line died). Frameworks vs static libs in Pods follows `use_frameworks!`. The philosophical difference is WHERE they live: SPM is resolution-plus-build inside Xcode's own build system; CocoaPods is a build-system co-owner — powerful, and the reason removing it cleanly is a project surgery.",
+      "whyItMatters": "The work app almost certainly carries both managers — gRPC-Swift via SPM, legacy pods via CocoaPods — and this loop is the map for its two lockfiles, its workspace, and its 'Library not loaded' crash class. 'Static or dynamic, and why?' plus 'what does the lockfile actually pin?' are the two dependency questions senior interviews reliably ask."
+     },
+     "exercise": {
+      "prompt": "Four dependency incidents. (1) CI builds different source than your machine for the same commit; both have the dependency 'at 1.3'. (2) An app with 40 dynamic frameworks launches noticeably slower than a static-linked sibling; explain with b6-07's machinery, and name when dynamic is still REQUIRED. (3) A user's crash report shows 'dyld: Library not loaded: @rpath/Charts.framework' at launch — what class of failure is this, and where do you look? (4) After deleting CocoaPods from a project, builds fail with unresolvable xcconfig errors — why does removal require surgery? Plus (5): your PR bumps one package and the lockfile diff shows THREE packages changed — is that wrong?",
+      "code": "// executed reference:\n//   lockfile pins by commit hash (tags move; commits don't)\n//   dynamic: dependency edge in otool -L + dyld crash when missing\n//   static: code inside the binary, no edge, no launch work\n//   CocoaPods integrates by mutating your build (workspace + xcconfigs)",
+      "solution": "(1) The lock drifted: one side resolved fresh (or the lockfile is gitignored — the classic sin) while the other obeyed an older pin. 'At 1.3' is a REQUIREMENT; the executed lockfile entry is the ANSWER (specific commit). Fix: commit the lockfile, make CI use `resolve` (never `update`), and treat lockfile diffs as reviewable changes.\n\n(2) Each dynamic framework is a dyld job at launch — load, fixups, rebase — before first frame (b6-07's measured pre-main phase); 40 of them is 40 taxes. Static linking moves that cost to build time. Dynamic remains REQUIRED where code is genuinely shared between processes: app + extensions (widget, notification service — b9-04) loading one framework copy, or Swift previews/dev loops that hot-swap.\n\n(3) The executed dyld crash, shipped: the binary's dependency edge points at a framework absent from the bundle — a build-phase miss (framework not embedded), a signing strip, or a corrupted install. Look at the app bundle's Frameworks/ directory for the artifact, then the Embed Frameworks build phase for the cause. It's an INTEGRATION failure — resolution was fine.\n\n(4) Because CocoaPods co-owned the build: workspace, injected xcconfig `#include`s, build phases, search paths. Deleting the Podfile removes the manager but not the mutations — the xcconfig error is your config still including a generated file that no longer exists. Deintegration = removing each mutation (pod deintegrate does most), which is the price of the integration style.\n\n(5) Usually correct: the bumped package's own requirements moved, dragging transitive pins (the executed swift-atomics entry exists only because swift-nio asked). The resolver satisfies the GRAPH, not your one line. Review the transitive changes — that's the lockfile diff doing its job — and only worry if an unrelated major jumped.",
+      "explanation": "The sorting instinct: resolution bugs smell like 'different machines, different sources' and live in lockfiles; integration bugs smell like 'missing at launch' or 'broken build wiring' and live in linking and build phases. Naming which job failed is halfway to the fix."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what does a lockfile actually pin and why must it be committed; and walk the static-versus-dynamic trade including when dynamic is mandatory.",
+      "modelAnswer": "The lockfile records the resolver's answer for the whole graph — every package including transitive ones, pinned to exact versions AND commit hashes, since tags can move but commits can't — and committing it is what makes every machine and CI build identical sources; resolve obeys it, update rewrites it, and drift between machines is the classic works-on-mine dependency bug. Static linking copies library code into the executable at link time: no dependency edge, nothing for dyld to load, cost paid in binary size and build time. Dynamic linking records an edge the loader satisfies at launch — visible in otool -L, and a missing framework is the 'dyld: Library not loaded' launch crash — costing pre-main time per framework but enabling one code copy shared across processes, which is why app-plus-extension sharing makes dynamic mandatory. CocoaPods does the same two jobs by mutating your project — workspace, injected xcconfigs — while SPM lives inside Xcode's build system.",
+      "sets": [
+       [
+        {
+         "q": "The executed Package.resolved pins swift-atomics — which this package never declared. Why is it there?",
+         "options": [
+          "SPM pre-pins Apple's standard packages for faster resolution",
+          "resolution covers the whole graph — a dependency's dependency gets pinned like everything else",
+          "the entry is a cache hint, not a real pin",
+          "swift-nio publicly re-exports the whole module, so SPM treats it as though it were directly declared"
+         ],
+         "correct": 1,
+         "explain": "The resolver answers for every node (swift-nio asked for it; the lock records the answer). That's also why bumping one package legitimately moves several pins — the graph re-satisfied."
+        },
+        {
+         "q": "The lockfile pins a commit HASH alongside the version because…",
+         "options": [
+          "hashes let SPM skip signature checks on the download",
+          "version numbers alone cannot ever express pre-release or branch-based dependency requirements",
+          "tags can be moved or re-pushed — the commit is the immutable truth of what 1.3.1 meant",
+          "the hash encodes which platform the resolution ran on"
+         ],
+         "correct": 2,
+         "explain": "Executed in the artifact: revision + version together. Reproducibility means 'the same bytes', and only the commit guarantees that — a re-tagged 1.3.1 upstream can't silently change your build."
+        },
+        {
+         "q": "The executed deletion of libGreet.dylib crashed app_dyn at launch but left app_static untouched because…",
+         "options": [
+          "static builds keep a private cached copy of every dylib",
+          "dyld only validates libraries on the app's first-ever launch",
+          "app_static's otool dependency edge pointed straight into the system's shared dyld cache",
+          "static copied the code into the binary; dynamic recorded an edge dyld must satisfy"
+         ],
+         "correct": 3,
+         "explain": "The executed pair is the whole taxonomy: no edge vs edge, build-time copy vs launch-time load — and 'Library not loaded' is the shipped form of the same crash (missing embed, corrupt install)."
+        }
+       ],
+       [
+        {
+         "q": "When is dynamic linking genuinely required rather than a default?",
+         "options": [
+          "when the compiled dependency exceeds roughly ten megabytes of generated machine code in total",
+          "when code must be shared across processes — app plus extensions loading one framework copy",
+          "whenever a dependency ships closed-source binaries",
+          "when the package graph contains any transitive dependencies"
+         ],
+         "correct": 1,
+         "explain": "A widget or notification-service extension (b9-04) is a separate process; static linking would duplicate the code into each. Sharing one framework is the case the launch-time tax (b6-07) is paid FOR."
+        },
+        {
+         "q": "'Always open the .xcworkspace, not the .xcodeproj' exists because…",
+         "options": [
+          "workspaces enable incremental multi-project builds that bare Xcode projects simply cannot",
+          "the project file locks itself while CocoaPods is installed",
+          "CocoaPods integrates as a sibling project — the workspace is where app and Pods meet",
+          "Xcode deprecated bare projects for multi-target apps"
+         ],
+         "correct": 2,
+         "explain": "Integration-by-mutation: a generated Pods project, linked through a workspace, plus injected xcconfigs your configs #include (b11-01). Open the bare project and the other half of the build simply isn't there."
+        },
+        {
+         "q": "CI builds different dependency source than your machine at the same app commit. First check?",
+         "options": [
+          "whether the lockfile is committed and CI runs resolve, never update",
+          "whether CI's newer Xcode version resolves the semver ranges differently than yours",
+          "whether the registry served a stale tarball to CI",
+          "whether derived data caches crossed between branches"
+         ],
+         "correct": 0,
+         "explain": "Reproducibility lives in the lock: gitignored lockfiles or an `update` in the CI script are the two classic causes. Same lock + resolve = same commits, by construction (the executed pin's whole purpose)."
+        }
+       ]
+      ]
+     },
+     "transfer": "Inventory the work app's dependency estate: both lockfiles committed? Diff Podfile.lock and Package.resolved against a month ago and read what actually moved. Run otool -L on the built binary and count dynamic edges against the Frameworks/ directory; classify each framework — why is it dynamic (shared with an extension? pod default?) — and check the top of your xcconfigs for the CocoaPods #include lines b11-01 warned about.",
+     "verify": "// executed on this Mac 2026-07-19:\n// Package.resolved (real, from the SPM-fetched nio-demo): transitive\n//   swift-atomics pinned {revision: 0442cb5a…, version: 1.3.1}\n// linking pair, one library built both ways:\n//   dynamic → otool -L shows libGreet.dylib edge; deleting it →\n//     'dyld: Library not loaded: libGreet.dylib' (verbatim, at launch)\n//   static → no otool edge, runs with the .a deleted — code is in the binary\n//   sizes identical at this scale (34 KB both) — the size trade is real only\n//   at real scale (honest result)\n// documented: resolver semantics/conflicts, mergeable libraries, CocoaPods\n//   workspace + xcconfig injection + deintegration",
+     "goDeeper": "Swift Package Manager's documentation on resolution and Package.resolved. WWDC 2022 \"Link fast: Improve build and launch times\" — the static/dynamic trade with Apple's numbers, plus mergeable libraries. b6-07 for the launch tax dynamic frameworks pay. CocoaPods' own 'xcconfig integration' docs — read once, then b11-01's include rule makes permanent sense."
+    },
+    {
+     "id": "b11-04",
+     "title": "Scenes and the modern lifecycle",
+     "concept": {
+      "definition": "Since iOS 13, the process and the UI have separate lifecycles: the AppDelegate owns the PROCESS (launch, push registration, background events — b2-13's machine), while each SCENE — one UI instance with its own window and state — is owned by a SceneDelegate, connected and disconnected independently. The scene manifest in Info.plist wires the delegate class by name; windows belong to scenes, not the app; and state restoration rides NSUserActivity so a disconnected scene can resurrect where it left off.",
+      "code": "// executed — the manifest that wires it (Info.plist):\n// UIApplicationSceneManifest\n//   UIApplicationSupportsMultipleScenes: false\n//   UISceneConfigurations → UIWindowSceneSessionRoleApplication →\n//     [{ UISceneConfigurationName: Default,\n//        UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate }]\n//         ← a CLASS NAME string: b10-01's stringly wiring, lifecycle edition\n\n// executed — windows now belong to scenes (Catalyst CLI, b2-20's find):\n// UIWindow(frame:) headless → 'NSApplication has not been created yet' —\n// a window can no longer exist without a scene context\n\n// executed — the restoration payload is just data:\n// NSUserActivity(activityType: \"com.workapp.order-detail\")\n//   .userInfo = [\"orderID\": \"A-2319\", \"tab\": \"orders\"] — round-tripped",
+      "underlying": "The split exists because 'the app is on screen' stopped being one fact: iPad multi-window means one PROCESS hosting several UI instances of the same app. So responsibilities divide sharply. AppDelegate keeps what is process-wide: didFinishLaunching (dependency setup, b8-01's container), push token delivery (b9-03 — the token is per-install, not per-window), background events (b9-06's permits). SceneDelegate gets what is per-UI-instance: `scene(_:willConnectTo:options:)` — where the window is CREATED and the root installed (in scene-based apps the storyboard/root wiring happens here or via the manifest), plus the foreground/background dance per scene. The executed manifest shows the wiring is b10-01's pattern again — a delegate CLASS NAME in a plist, resolved at runtime — and the executed Catalyst crash from b2-20's verification ('NSApplication has not been created yet' when creating a bare UIWindow headless) is the architectural fact surfacing: windows are scene citizens now, which is also why `UIApplication.shared.keyWindow` deprecated into 'which scene's window do you mean?'.\n\nThe lifecycle mapping extends b2-13 rather than replacing it (deeper-not-repeat): the PROCESS still walks not-running → foreground → background → suspended (b2-13's machine, b9-06's freezer), but scene states ride on top — each scene independently connects → foregrounds → backgrounds → DISCONNECTS. Disconnection is the new event worth respect: the system may disconnect a background scene to reclaim memory WITHOUT killing the process (b2-13's silent kill got a milder sibling), destroying the UI while your singletons live on. `sceneDidDisconnect` is the cleanup hook, and any 'the app restarted but my object graph didn't' weirdness on iPad is exactly this — one lifecycle died, the other didn't.\n\nRestoration is how disconnection stays invisible to users: each scene hands the system an `NSUserActivity` describing WHERE it is (executed: an activityType plus a userInfo dictionary — 'order-detail, A-2319'), via `stateRestorationActivity(for:)`; on reconnection the activity comes back in the connection options and the app REBUILDS that UI — which is b10-02's Router earning its keep once more (the activity names a route; the Router materializes it), and the same NSUserActivity type doubles for Handoff, Spotlight, and deep links, making 'describe your screens as data' one investment paying four times. For single-window phone apps the manifest often declares multiple-scenes false (executed manifest) and the SceneDelegate is a thin ceremony — but the ceremony is load-bearing the day the app meets an iPad, and understanding WHICH delegate owns an event is this loop's entire practical yield.",
+      "whyItMatters": "The work app's storyboard-first codebase has this split running whether anyone thinks about it or not — push tokens landing in one delegate, window setup in the other — and 'why is keyWindow deprecated' / 'which delegate does X go in' are the questions this loop settles. Deeper-not-repeat: b2-13 taught the process machine; this loop is the UI machine bolted on top, per iOS 13+."
+     },
+     "exercise": {
+      "prompt": "Sort and diagnose. (1) Classify these into AppDelegate vs SceneDelegate with one reason each: push-token delivery, window + root VC creation, Core Data container setup, per-window foreground refresh. (2) On iPad, QA reports 'app restarted, but it remembered nothing' after multitasking heavily — singletons were alive the whole time. Explain the lifecycle event and design the restoration that fixes it. (3) A legacy code path uses UIApplication.shared.keyWindow and misbehaves only in multi-window — why is the API deprecated and what replaces it? (4) In a scene-based app, where does the storyboard's initial VC actually get instantiated, and how does that connect to b10-01's machinery?",
+      "code": "// executed reference:\n//   manifest wires SceneDelegate by CLASS NAME (stringly, b10-01)\n//   bare UIWindow without a scene context → crash (Catalyst, b2-20)\n//   NSUserActivity: activityType + userInfo round trip — a route, as data\n// b2-13: process states · this loop: scene connect/disconnect on top",
+      "solution": "(1) Push token → AppDelegate (per-install, per-process — b9-03; there's one token no matter how many windows). Window + root creation → SceneDelegate's willConnectTo (a window per scene, by definition). Core Data container → AppDelegate/launch path (process-wide, b8-01 — every scene shares the stack). Per-window refresh → SceneDelegate's sceneWillEnterForeground (each window foregrounds independently on iPad).\n\n(2) The system DISCONNECTED the background scene — UI destroyed, process (and singletons) alive: the milder sibling of b2-13's silent kill. Fix: implement stateRestorationActivity(for:) returning the executed shape (activityType naming the screen, userInfo carrying its identity — 'order-detail, A-2319'); on willConnectTo, read the restored activity from options/session and have the Router (b10-02) rebuild that route. Test it with the simulator's terminate-and-reconnect flows, not by hoping.\n\n(3) 'THE key window' stopped being a coherent question when one app means N windows — keyWindow returned an arbitrary one, so code depending on it works single-window and misbehaves multi-window (alerts on the wrong screen, wrong size classes). Replacement: reach the window through the CONTEXT that asked — the view's own window, or the relevant windowScene's windows — never a global.\n\n(4) The manifest (or willConnectTo code) names the scene's storyboard/configuration; connection instantiates the initial VC through exactly b10-01/02's machinery — the storyboardc index plist's designated entry point, decoded via init(coder:). The scene layer chooses WHEN and INTO WHICH WINDOW; the nib machinery still does the HOW. One pipeline, new dispatcher.",
+      "explanation": "The sorting rule that generalizes: ask 'how many of this thing exist when the app has three windows?' One → AppDelegate/process. Three → SceneDelegate/scene. That single question routes every lifecycle event, and the executed crash is what happens to code that never asked it."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: why did iOS 13 split the lifecycle, what belongs to each delegate, and how does a disconnected scene come back where it left off?",
+      "modelAnswer": "Multi-window iPad made 'the UI' plural: one process can host several scenes, so the AppDelegate kept process-wide concerns — launch and dependency setup, push-token delivery, background events — while each scene's window, root installation, and per-instance foreground/background transitions moved to a SceneDelegate, wired by class name through the Info.plist scene manifest. The routing question is 'how many exist with three windows open': one means process, three means scene — which is also why keyWindow deprecated into asking a specific scene. The system can disconnect a background scene to reclaim memory without killing the process — UI destroyed, singletons alive — so each scene describes its position as an NSUserActivity (an activity type plus userInfo, effectively a route as data), returned from stateRestorationActivity; on reconnection the activity arrives in the connection options and the Router rebuilds that screen. The nib machinery still instantiates everything — scenes just decide when and into which window.",
+      "sets": [
+       [
+        {
+         "q": "The one-question router for 'which delegate does this belong in':",
+         "options": [
+          "does the event arrive before or after didFinishLaunching?",
+          "does the API's introduction predate iOS 13 (AppDelegate) or postdate iOS 13 (SceneDelegate)?",
+          "how many of this thing exist when three windows are open — one (process) or three (scene)?",
+          "does the event involve UIKit types or Foundation types?"
+         ],
+         "correct": 2,
+         "explain": "Push token: one (process). Windows, foreground transitions: three (scene). Core Data stack: one. The question routes every event — and code that never asked it is the multi-window bug backlog."
+        },
+        {
+         "q": "The executed manifest wires the SceneDelegate via `UISceneDelegateClassName` — a string. This is…",
+         "options": [
+          "b10-01's stringly runtime wiring again — a class name resolved at connection time",
+          "a build-time reference that the compiler validates against the target's class list",
+          "a legacy key ignored when the app defines scenes in code",
+          "an optimization hint for dyld's prelinking of delegates"
+         ],
+         "correct": 0,
+         "explain": "Same late binding, same failure mode: a renamed/mis-moduled delegate class fails at RUNTIME with a scene that never connects. $(PRODUCT_MODULE_NAME) in the executed manifest is the module-qualification guard."
+        },
+        {
+         "q": "A background scene gets disconnected by the system. What's true?",
+         "options": [
+          "the process was terminated and will cold-launch on return",
+          "the UI is destroyed but the process — singletons included — may live on",
+          "the scene's window is preserved alive inside the app switcher's snapshot process",
+          "only unfocused iPad side-panels can be disconnected"
+         ],
+         "correct": 1,
+         "explain": "b2-13's silent kill got a milder sibling that kills ONE lifecycle: sceneDidDisconnect fires, memory returns, and 'the app restarted but my objects didn't' is this event unhandled — restoration is the answer."
+        }
+       ],
+       [
+        {
+         "q": "The executed NSUserActivity ('order-detail' + orderID) serves restoration by…",
+         "options": [
+          "serializing the view hierarchy for pixel-perfect resurrection",
+          "keeping the scene's memory alive until reconnection completes",
+          "registering the screen with Spotlight indexing so the system can relaunch it later",
+          "describing the screen as a ROUTE in data — the Router rebuilds it on reconnect"
+         ],
+         "correct": 3,
+         "explain": "Restoration rebuilds, never resurrects: the activity is a route token (b10-02's vocabulary), returned from stateRestorationActivity and handed back in connection options. The same shape powers Handoff and deep links — one investment, four payoffs."
+        },
+        {
+         "q": "UIApplication.shared.keyWindow was deprecated because…",
+         "options": [
+          "window access now requires main-actor isolation",
+          "with multiple scenes 'THE key window' is ambiguous — an arbitrary answer",
+          "it retained the window and leaked scenes on iPad",
+          "scene windows are created lazily and may simply not exist yet at the moment of the query"
+         ],
+         "correct": 1,
+         "explain": "The executed headless crash is the same fact from another angle: windows are scene citizens. Correct code reaches the window through context (view.window, the relevant windowScene) — globals stopped naming anything."
+        },
+        {
+         "q": "In a scene-based storyboard app, the initial view controller is instantiated…",
+         "options": [
+          "by the AppDelegate before any scene ever connects, then handed over to the first scene",
+          "lazily, on the first layout pass of the scene's window",
+          "at scene connection — b10-01's entry-point machinery, dispatched by the scene layer",
+          "by the manifest parser during app launch"
+         ],
+         "correct": 2,
+         "explain": "Same pipeline (index plist → nib decode → init(coder:)), new dispatcher: the scene decides when and into which window. Nothing about b10's machinery changed — it gained a caller."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open the work app's AppDelegate and SceneDelegate and audit every method against the one-question router — anything answering 'three' sitting in the AppDelegate (or vice versa) is a latent multi-window bug. Grep for keyWindow and windows.first. Then check restoration: does stateRestorationActivity exist, and does the connection path read the restored activity — or would an iPad disconnection lose the user's place? The NSUserActivity shape you need is the executed one: a route, as data.",
+     "verify": "// executed on this Mac 2026-07-19:\n// scene manifest built + parsed (plutil): UIApplicationSceneManifest →\n//   scene configuration → UISceneDelegateClassName as a $(PRODUCT_MODULE_NAME)-\n//   qualified string — the stringly wiring, verbatim\n// windows-belong-to-scenes, surfaced live: bare UIWindow(frame:) in headless\n//   Catalyst → 'NSApplication has not been created yet' (b2-20's captured\n//   crash, reread as architecture)\n// NSUserActivity: activityType + title + userInfo round trip — the\n//   restoration payload as plain data\n// documented (device/app required): willConnectTo flow, sceneDidDisconnect\n//   reclamation, stateRestorationActivity delivery, multi-window behavior\n// floor: b2-13's process machine, which this loop extends, not replaces",
+     "goDeeper": "WWDC 2019 \"Architecting Your App for Multiple Windows\" — the split, explained by its authors. Apple's \"Specifying the scenes your app supports\" for the manifest grammar. b2-13 for the process half; b10-02's Router — restoration's natural executor; b9-03 for why the push token stays process-side. Next: b11-05 — dSYMs and crash symbolication."
+    },
+    {
+     "id": "b11-05",
+     "title": "dSYMs and crash symbolication: reading the postmortem",
+     "concept": {
+      "definition": "A release binary is STRIPPED — it no longer knows its own function names — so a crash report from the field is raw addresses. The dSYM is the debug map extracted at build time (addresses → names, files, lines), matched to its binary by a shared UUID; symbolication is the lookup that turns `0x1000031a4` back into `parsePayload(_:) at crashy.swift:3`. No matching dSYM, no names — which is why every crash-reporting pipeline is, at its core, dSYM logistics.",
+      "code": "// executed — the whole pipeline on a real binary:\n// $ swiftc -g crashy.swift -o crashy && dsymutil crashy -o crashy.dSYM\n// $ dwarfdump --uuid crashy       → UUID: 52787C35-88DF-3053-…\n// $ dwarfdump --uuid crashy.dSYM  → UUID: 52787C35-88DF-3053-…  ← MATCH\n//\n// $ nm crashy | grep -c ' [Tt] '  → 13 text symbols\n// $ strip crashy\n// $ nm crashy | grep -c ' [Tt] '  → 1 — the binary forgot its own names\n//\n// $ atos -o crashy.dSYM/…/crashy 0x100003xyz\n// → parsePayload(_:) (in crashy) + 0     ← address → NAME, via the map",
+      "underlying": "The executed pipeline is the entire mental model. Compiling with `-g` embeds DWARF debug info; `dsymutil` EXTRACTS it into the dSYM bundle so the shipping binary can be STRIPPED — executed: 13 text symbols before, 1 after; the release binary physically lacks its names (smaller, and reverse-engineering gets harder — both intended). The UUID is the join key: every binary gets one per build (executed: identical in binary and dSYM), a crash report records the UUID of each loaded image, and symbolication REFUSES mismatches — which is the answer to the eternal 'I have a dSYM but Crashlytics says missing': it's the WRONG BUILD's dSYM. Every compile mints a new UUID, so 'just rebuild it' cannot regenerate the map for a shipped binary — the dSYM from THAT archive is the only one that will ever work.\n\n`atos` is symbolication naked, executed: hand it the dSYM and an address, get `parsePayload(_:)` back — with file:line when the query hits DWARF's line tables. Real crash reports add one twist: ASLR slides the binary at launch, so reported addresses are slid; the report includes each image's LOAD ADDRESS, and `atos -l <loadAddress>` un-slides before the lookup. That's all a symbolication server does at scale: store dSYMs indexed by UUID, receive raw stacks + load addresses, run the lookups. System frameworks symbolicate from Apple's own symbol stores — why device-OS/Xcode version mismatches leave UIKit frames raw while your frames resolve, and vice versa.\n\nThe logistics, which is where teams actually bleed: the archive step produces the dSYMs; they must reach the crash reporter for every build that ships — Crashlytics upload scripts, App Store Connect's 'include symbols', and the historical wrinkle: when Bitcode existed, Apple RECOMPILED your app so your local dSYMs were wrong-by-construction and had to be downloaded from Apple post-processing (documented; Bitcode is gone, the support articles remain). The operational checklist this loop compresses: archive → dSYMs stored (by UUID, forever — b11-01's per-config builds each mint their own) → uploaded to the reporter → verified symbolicated crash in the dashboard before release sign-off. And MetricKit/the organizer give you Apple's own crash feed, symbolicated against the dSYMs you uploaded with the build — same machinery, first-party clothes.",
+      "whyItMatters": "The work app's Crashlytics dashboard is only as good as its dSYM hygiene — one missed upload and a release's crashes are hex forever. 'Why is this crash unsymbolicated?' has exactly three answers (missing dSYM, wrong-UUID dSYM, OS symbols absent), and the executed pipeline is how you check each. It's also an interview separator: 'walk me through what happens to a crash between the user's device and your dashboard' is answered end-to-end by this loop."
+     },
+     "exercise": {
+      "prompt": "Four symbolication incidents. (1) A release's crashes show YOUR frames as hex but UIKit frames symbolicated — invert of the usual; what does that tell you, and the fix? (2) A teammate re-builds the shipped tag to regenerate a 'lost' dSYM — same code, same config — and the UUID doesn't match the crash reports. Why is this unfixable that way, and what IS the recovery? (3) Crash reports from one build symbolicate for the app but show hex for your embedded framework (b11-03) — diagnose. (4) Using the executed tools, design the CI check that makes 'missing dSYM' impossible to ship.",
+      "code": "// executed reference:\n//   -g → DWARF · dsymutil extracts · strip removes names (13 → 1 symbols)\n//   UUID identical binary↔dSYM — the join key symbolication refuses without\n//   atos -o <dSYM> [-l loadAddr] <addr> → name (+ file:line)\n// three unsymbolicated causes: no dSYM · wrong-UUID dSYM · OS symbols absent",
+      "solution": "(1) OS symbols present, YOUR map absent: the crash pipeline has Apple's symbols for that iOS version but no dSYM matching your build's UUID — the upload was missed or failed for this release. Fix: find the dSYMs in the archive (they exist — the archive step made them), upload to the reporter, and most dashboards re-symbolicate retroactively.\n\n(2) A UUID is minted per COMPILE, not per source state — same code, same config, new build, new UUID (the executed pipeline would show the mismatch immediately via dwarfdump). The shipped binary's map either exists somewhere or is gone. Recovery: the original .xcarchive (Organizer keeps them — the dSYM is inside), App Store Connect's symbol download if symbols were included at upload, or — failing all — that release's crashes stay hex and the process gains the (4) check.\n\n(3) Each binary IMAGE has its own UUID and its own dSYM — app and dynamic framework are separate images (b11-03's otool edge). The framework's dSYM wasn't uploaded (common when a framework is prebuilt/vendored — its dSYM never entered your archive). Fix: obtain/produce the framework's dSYM and upload it; crash reports list every image's UUID, so dwarfdump tells you exactly which map is missing.\n\n(4) The executed tools ARE the check: post-archive, script runs dwarfdump --uuid over the binary and every embedded framework, dwarfdump --uuid over the produced dSYMs, asserts the UUID SETS match, then asserts the uploader's response confirms receipt per UUID. Red build if any map is missing before the release can proceed — dSYM logistics converted from hope to CI (b11-06's shape).",
+      "explanation": "Every incident reduces to the join: which IMAGE, which UUID, is its map present where symbolication runs? The executed dwarfdump/atos pair answers all of it locally in seconds — worth more than any dashboard's 'missing dSYM' banner, because it tells you WHICH and WHY."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: trace a crash from a user's device to a named line in your dashboard — what the report contains, what the dSYM contributes, and how they're matched.",
+      "modelAnswer": "The device writes a report with raw addresses per frame, plus each loaded image's UUID and load address — the release binary was stripped at build time, so it contains no names to include. The dSYM, extracted by dsymutil at archive time, is the DWARF map from addresses to functions, files, and lines; symbolication un-slides each address using the load address (ASLR moved the binary) and looks it up in the dSYM whose UUID matches that image's — a per-compile identity, which is why a rebuild's dSYM can never symbolicate a shipped binary and why the archive's dSYMs must be stored and uploaded per release. Your frames resolve against your uploaded dSYMs; system frames resolve against Apple's OS symbols; each image needs its own map, embedded frameworks included. Unsymbolicated crashes therefore have exactly three causes: missing dSYM, wrong-UUID dSYM, or absent OS symbols.",
+      "sets": [
+       [
+        {
+         "q": "The executed strip took the binary from 13 text symbols to 1. Release binaries ship stripped because…",
+         "options": [
+          "smaller binary and harder reverse-engineering — the names live in the dSYM instead",
+          "the App Store review pipeline automatically rejects binaries containing full symbol tables",
+          "stripped binaries load measurably faster through dyld",
+          "DWARF data is licensed and cannot be distributed"
+         ],
+         "correct": 0,
+         "explain": "The names aren't lost — they're EXTRACTED (dsymutil) then removed (strip). The executed pair is the release model in miniature: the app forgets itself; the dSYM remembers for it."
+        },
+        {
+         "q": "Symbolication matches a crash's frames to a dSYM using…",
+         "options": [
+          "the app's bundle identifier combined with its marketing and build version strings together",
+          "a content hash of the binary's __TEXT segment",
+          "the per-compile UUID recorded in both the image and the dSYM — executed identical",
+          "the archive date embedded in the crash report"
+         ],
+         "correct": 2,
+         "explain": "dwarfdump --uuid on both showed the same 52787C35… — the join key. Version strings lie (two builds, one version); the UUID can't, which is exactly why the wrong build's dSYM is refused."
+        },
+        {
+         "q": "Crash addresses need the image's LOAD address before lookup because…",
+         "options": [
+          "ASLR slid the binary at launch — reported addresses are offset by the slide",
+          "Swift functions physically relocate themselves in memory during generic specialization",
+          "the dSYM stores addresses relative to the previous build",
+          "atos requires alignment to 4 KB page boundaries"
+         ],
+         "correct": 0,
+         "explain": "The report includes each image's load address precisely so symbolication can un-slide (atos -l). The executed no-slide lookup worked because we queried the file's own static address."
+        }
+       ],
+       [
+        {
+         "q": "Rebuilding the same tag with the same settings to regenerate a lost dSYM fails because…",
+         "options": [
+          "incremental compilation caches poison the DWARF output",
+          "the UUID is minted per compile — a new build is a new identity, whatever the source says",
+          "strip removes the UUID along with the symbol table",
+          "dSYMs embed the exact archive timestamp and machine name inside their address lookup tables"
+         ],
+         "correct": 1,
+         "explain": "Identity is the build, not the source. Recovery is archaeology (the original .xcarchive, App Store Connect's symbols), not reconstruction — and the CI check exists so archaeology is never needed."
+        },
+        {
+         "q": "App frames symbolicate; an embedded framework's frames stay hex. The diagnosis?",
+         "options": [
+          "frameworks must be statically linked for symbolication",
+          "the framework was originally compiled without -g and thus has no DWARF data anywhere",
+          "the crash reporter only supports one dSYM per app",
+          "each image needs its own UUID-matched dSYM — the framework's was never uploaded"
+         ],
+         "correct": 3,
+         "explain": "b11-03's separate images are separate identities: the report lists every image's UUID, and dwarfdump tells you which map is absent. Vendored/prebuilt frameworks are the classic gap — their dSYMs never entered your archive."
+        },
+        {
+         "q": "The CI gate that ends missing-dSYM incidents:",
+         "options": [
+          "diff the dashboard's symbolication rate week over week",
+          "post-archive: assert image and dSYM UUID sets match and uploads confirmed — else red build",
+          "retain every produced .xcarchive for at least two full years on a shared network disk volume",
+          "run atos on one known symbol as a smoke test"
+         ],
+         "correct": 1,
+         "explain": "The executed tools composed into policy: dwarfdump enumerates both sides of the join, the assert closes it, upload receipts prove delivery. Archives-as-backup is the fallback, not the gate."
+        }
+       ]
+      ]
+     },
+     "transfer": "Audit the work app's dSYM logistics end to end: find where the Crashlytics upload happens (build phase script? CI step?), then take the last release's archive and run the executed pair — dwarfdump --uuid across the app binary, every embedded framework, and the dSYM folder — and verify the sets match what the dashboard shows as uploaded. Pick one real crash from the dashboard and symbolicate one frame yourself with atos; the pipeline stops being a black box the moment you've done it once by hand.",
+     "verify": "// executed on this Mac 2026-07-19 (swiftc -g, dsymutil, dwarfdump, strip,\n// nm, atos — the full pipeline on a real binary):\n// UUID 52787C35-88DF-3053-A744-0E800ADD1A38 — IDENTICAL in binary and dSYM\n// nm text symbols: 13 before strip → 1 after (the binary forgot its names)\n// atos -o crashy.dSYM/…/crashy <static addr> → 'parsePayload(_:) (in crashy)'\n//   — raw address to name via the map, after the binary itself was stripped\n// documented: ASLR slide + load addresses in real reports (-l flag), per-\n//   image dSYMs, Crashlytics/ASC upload flows, the Bitcode-era download\n//   wrinkle (historical), MetricKit/Organizer crash feeds",
+     "goDeeper": "Apple's \"Adding identifiable symbol names to a crash report\" — the official version of this loop's executed pipeline. `man atos` and `man dsymutil`. WWDC 2021 \"Symbolication: Beyond the basics\" — the definitive talk, slide math included. b11-03 for why each image is its own identity; b11-06 next: the CI that runs these checks so humans never have to remember."
+    },
+    {
+     "id": "b11-06",
+     "title": "CI for iOS: the pipeline as a shell script",
+     "concept": {
+      "definition": "An iOS pipeline is xcodebuild driven headlessly: resolve dependencies from the lockfile, build, test — where the EXIT CODE is the entire contract between tests and the pipeline — then archive and export with an ExportOptions.plist. The machine running it starts with nothing: it must be TAUGHT identity (a temporary keychain holding the imported certificate, the profile installed) and PINNED to a toolchain, because every 'works locally, fails in CI' is one of those two teachings missing.",
+      "code": "// executed — the contract, in one integer:\n// $ swift test   (assertion holds)  → exit 0   green build\n// $ swift test   (assertion broken) → exit 1   red build\n//   log: 'XCTAssertEqual failed: (\"6\") is not equal to (\"7\")' — verbatim\n\n// executed — the identity dance's skeleton:\n// $ security create-keychain -p $CI_PASSWORD ci-temp.keychain\n// $ security list-keychains …   (+ import .p12, install profile)\n// $ security delete-keychain ci-temp.keychain    ← teardown, always\n\n// executed — the pin CI must declare:\n// $ xcodebuild -version → Xcode 26.5 · Build 17F42\n\n// the release lane, shaped:\n// xcodebuild archive → .xcarchive (dSYMs inside — b11-05's source)\n// xcodebuild -exportArchive -exportOptionsPlist ExportOptions.plist → .ipa",
+      "underlying": "Strip the vendor YAML away and every iOS pipeline is five shell steps. CHECKOUT, then RESOLVE — from the lockfile, `resolve` never `update` (b11-03's reproducibility contract; an `update` in CI is how builds drift). BUILD-AND-TEST — executed above as the whole contract: the runner invokes the tool, the tool exits 0 or 1, the pipeline goes green or red; everything else (the verbatim assertion text in logs, test reports, annotations) is presentation layered on that integer. ARCHIVE — `xcodebuild archive` producing the .xcarchive that contains the app AND its dSYMs (b11-05's gate runs here: assert UUID sets, upload symbols). EXPORT — `-exportArchive` with an ExportOptions.plist declaring method (app-store, ad-hoc), team, and signing style, yielding the .ipa that uploads via the App Store Connect API. A Fastfile or a GitHub Actions workflow is these five steps wearing a DSL.\n\nThe identity problem is b11-02's triangle meeting a blank machine: a fresh CI box is exactly this Mac's executed '0 valid identities' state — it can build but not vouch. The dance (skeleton executed): create a THROWAWAY keychain with a password from the secrets store, import the distribution certificate's .p12 into it, add it to the search list and unlock it, install the .mobileprovision where Xcode looks — and tear it all down after, because CI machines are shared and identity must not outlive the job. The certificate and its password live in the CI vendor's encrypted secrets, never the repo; fastlane's `match` is this dance productized (certs in an encrypted repo, synced per machine — documented). When signing fails in CI but works locally, the executed keychain skeleton is the checklist: is the identity IN the job's keychain, is that keychain in the search list, is it unlocked?\n\nDETERMINISM is the remaining discipline. Pin the toolchain — the executed `Xcode 26.5 (17F42)` read is what a pipeline should assert or select via DEVELOPER_DIR, because 'CI upgraded Xcode overnight' is a classic red-build morning; pin simulator destinations explicitly (`-destination 'platform=iOS Simulator,name=…,OS=…'`). Cache deliberately: SPM caches and DerivedData trade speed against staleness, and a cache that survives a toolchain bump produces the weirdest failures — key caches BY toolchain version. And be honest about flakiness: simulator boots and network-touching tests fail spuriously; a retry-once policy with tracked flake RATES is engineering, while retry-until-green is lying to yourself with extra steps. The lanes compose from the blocks: PR lane = resolve, build, test (fast, no signing needed); release lane = the full five plus b11-01's configuration selection, b11-02's identity, b11-05's dSYM gate — which is why those loops came first.",
+      "whyItMatters": "The work app ships through some version of this pipeline, and every CI incident you'll meet — signing failures, dependency drift, Xcode-bump mornings, flaky retries — maps to one of this loop's four disciplines. 'Set up CI for an iOS app from scratch' is a senior interview task, and the answer is this loop recited: five steps, taught identity, pinned environment, honest flakes."
+     },
+     "exercise": {
+      "prompt": "Four red builds, one pipeline. (1) The PR lane is green but the release lane fails at archive with 'no signing certificate found' — the repo contains the .mobileprovision. (2) CI builds different dependency source than every developer machine at the same commit. (3) Everything passed Friday; Monday every build fails with compiler errors no one's code introduced. (4) A UI test fails one run in five with a simulator-boot timeout; a teammate proposes retry-until-green. Diagnose each with the executed evidence, then (5) order the five steps of the release lane and name which earlier loop each depends on.",
+      "code": "// executed reference:\n//   exit 0 / exit 1 — the tests-to-pipeline contract\n//   fresh machine = '0 valid identities' (b11-02, executed state)\n//   keychain dance: create → import → search-list/unlock → delete\n//   toolchain: Xcode 26.5 (17F42) — pin or drift\n//   resolve-not-update — the lockfile contract (b11-03)",
+      "solution": "(1) The profile is Apple's grant; the CERTIFICATE's private key is the missing half (b11-02's triangle) — the release lane's machine is in the executed '0 identities' state because the keychain dance never ran (or ran without the search-list/unlock steps, the two most-forgotten lines). PR lanes don't sign, which is why they stayed green.\n\n(2) The lockfile contract is broken one of two ways: the lockfile isn't committed, or the CI script says `update` where it must say `resolve` (b11-03). The fix is one line plus a review rule: lockfile diffs are code review.\n\n(3) Nobody's code changed — the ENVIRONMENT did: the CI image bumped Xcode over the weekend (the executed version read is what the pipeline should have asserted). Pin via DEVELOPER_DIR or image version, and key every cache by toolchain so a bump can't serve stale artifacts into a new compiler.\n\n(4) Retry-until-green converts a real signal (5% boot flake) into silence — the test suite stops meaning anything. The honest policy: retry ONCE, tag and COUNT flakes, fix or quarantine the worst offenders, and keep the exit-code contract truthful — the executed 0/1 is only worth what it honestly reports.\n\n(5) Resolve (b11-03's lockfile) → build+test (the executed contract) → archive (b11-01's configuration decides WHICH build; b11-05's dSYMs are born here) → dSYM gate + symbol upload (b11-05's CI check) → export with ExportOptions + upload (b11-02's identity, taught via the executed keychain dance). The lane is the block, composed.",
+      "explanation": "The unifying frame: CI has no magic — it's a machine that starts knowing NOTHING, executing steps you could run by hand (and now have). Every mystery decomposes into 'which teaching is missing': identity, lockfile, toolchain, or honesty about flakes."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: name the steps of an iOS release pipeline, explain how a CI machine gets signing identity, and state the two pinning disciplines that keep builds deterministic.",
+      "modelAnswer": "Checkout, resolve from the lockfile (resolve, never update), build and test — where the process exit code is the whole contract with the pipeline — then archive, which produces the xcarchive with its dSYMs, and export with an ExportOptions.plist to an ipa uploaded via the App Store Connect API. A fresh runner has no identities, so the job teaches it: create a temporary keychain, import the distribution certificate from the secrets store, add it to the search list and unlock it, install the provisioning profile, and tear it all down afterward — fastlane match is this productized. Determinism needs the toolchain pinned (assert or select the Xcode version; key caches by it) and simulator destinations pinned explicitly. Flaky tests get one retry and a counted flake rate — retry-until-green just falsifies the exit code the whole pipeline rests on.",
+      "sets": [
+       [
+        {
+         "q": "The executed green-0/red-1 pair demonstrates that the tests-to-pipeline interface is…",
+         "options": [
+          "the process exit code — everything else in the logs is presentation on that integer",
+          "the structured JUnit-style test report that the runner parses for individual test failures",
+          "an IPC channel between xcodebuild and the runner daemon",
+          "the count of assertion lines written to standard error"
+         ],
+         "correct": 0,
+         "explain": "CI vendors parse logs for PRETTY output, but the go/no-go IS $?. That's also why swallowing a failure (|| true) or retry-until-green corrupts the only signal the system has."
+        },
+        {
+         "q": "The keychain dance exists because a CI runner…",
+         "options": [
+          "cannot access Apple's servers to validate certificates",
+          "automatically shares its entire login keychain across all concurrently running jobs by default",
+          "starts in the executed '0 valid identities' state — it can seal but not vouch until taught",
+          "requires admin rights that only a new keychain grants"
+         ],
+         "correct": 2,
+         "explain": "b11-02's honest machine state is CI's natural condition. Create-import-searchlist-unlock teaches identity for one job; the delete keeps it from outliving the job on a shared box."
+        },
+        {
+         "q": "In CI, dependency resolution must run as `resolve`, never `update`, because…",
+         "options": [
+          "the update command requires an interactive confirmation prompt that headless CI cannot ever provide",
+          "resolve obeys the committed lockfile — update rewrites it, and builds drift from developers'",
+          "update invalidates the SPM cache on every single run",
+          "resolve is the only mode that verifies commit hashes"
+         ],
+         "correct": 1,
+         "explain": "b11-03's contract at its enforcement point: same lock + resolve = same commits everywhere. An update in the pipeline is 'works on my machine' manufactured at scale."
+        }
+       ],
+       [
+        {
+         "q": "Monday: every build fails with compiler errors from unchanged code. The first suspect?",
+         "options": [
+          "brand-new weekend dependency releases that the resolve step automatically pulled into the build",
+          "corrupted git objects from a force-push on main",
+          "a flaky runner that needs its queue drained",
+          "the CI image bumped its Xcode over the weekend — the pin the executed -version read exists for"
+         ],
+         "correct": 3,
+         "explain": "Unchanged code + changed verdict = changed environment. Assert or select the toolchain (DEVELOPER_DIR), and key caches by it — the classic Monday has a two-line permanent fix. (Locked deps can't drift by themselves.)"
+        },
+        {
+         "q": "ExportOptions.plist's job in the release lane is…",
+         "options": [
+          "declaring the export: method, team, signing style — how the archive becomes an ipa",
+          "listing the devices the exported build may install on",
+          "pinning the dependency versions used by the archive",
+          "configuring which test suites must pass before the export step is allowed to proceed"
+         ],
+         "correct": 0,
+         "explain": "Archive makes the build; export PACKAGES it for a distribution channel — the plist is that decision as reviewable text (b11-01's philosophy reaching the last step). Device lists live in the profile (b11-02), not here."
+        },
+        {
+         "q": "The honest policy for a test that fails one run in five on simulator boot:",
+         "options": [
+          "delete the test — flaky coverage is worse than none",
+          "move it into a separate nightly-only lane where its failures don't block anyone's merges",
+          "retry once, count and track the flake rate, fix or quarantine the worst offenders",
+          "retry until green so the signal stays actionable"
+         ],
+         "correct": 2,
+         "explain": "One retry absorbs infrastructure noise; the COUNT keeps the problem visible and prioritizable. Retry-until-green makes the exit code lie — and the executed pair is only worth what it honestly reports."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open the work app's actual pipeline file and map every job onto the five steps — then audit the four disciplines: where does identity come from (find the keychain dance or its fastlane equivalent), is the toolchain pinned or drifting, does resolution obey the lockfile, and what happens to flaky tests? Run the release lane's xcodebuild commands once BY HAND on your machine — the pipeline stops being a vendor's magic the moment you've executed its steps yourself.",
+     "verify": "// executed on this Mac 2026-07-20:\n// swift test on a real package: passing assertion → exit 0; broken\n//   assertion → exit 1, log carrying 'XCTAssertEqual failed: (\"6\") is not\n//   equal to (\"7\")' verbatim — the pipeline contract\n// keychain dance skeleton: security create-keychain → list → delete (ran\n//   clean; cert import needs a real .p12 — this Mac's 0 identities, b11-02)\n// toolchain pin read: Xcode 26.5, Build 17F42\n// documented: xcodebuild archive/-exportArchive + ExportOptions.plist\n//   grammar, ASC API upload, fastlane match, cache keying, destination pins",
+     "goDeeper": "Apple's \"Distributing your app for beta testing and releases\" — the archive/export flow officially. fastlane's match and gym docs — the dance and the lane, productized. `man xcodebuild` — the five steps live there, flags and all. b11-01/02/03/05 — the four loops this pipeline composes. Next: b11-07 closes everything — what happens after the ipa leaves."
+    },
+    {
+     "id": "b11-07",
+     "title": "App update strategy: the fleet you actually run",
+     "concept": {
+      "definition": "You never run ONE version of your app — review latency, phased release, and user inertia mean a FLEET of versions is live for months, all talking to today's backend. Update strategy is managing that fleet: a server-driven version gate (minimum version → blocking update screen; current version → dismissible nudge), compared NUMERICALLY — never as strings — failing OPEN when the config is unreachable, with protocol compatibility (b7-02's discipline) as the real safety net underneath, because no gate can force an update instantly.",
+      "code": "// executed — THE version-check bug:\nprint(\"1.10\" > \"1.9\")               // false — 1.10 sorts BEFORE 1.9!\n// character 3: '1' < '9' — the string compare crowns the OLDER version\n\n// executed — the correct tool:\n\"1.9\".compare(\"1.10\", options: .numeric)   // .orderedAscending ✓\n\"2.0\".compare(\"1.99\", options: .numeric)   // .orderedDescending ✓\n\n// the two identities every check juggles (executed read):\n// CFBundleShortVersionString = \"1.10.0\"   ← marketing: what users/gates see\n// CFBundleVersion            = \"2047\"     ← build number: what CI increments\n\n// the gate's shape:\n// config: { \"minimumVersion\": \"1.8.0\", \"currentVersion\": \"1.12.0\" }\n// below minimum → blocking screen + store link · below current → nudge\n// config UNREACHABLE → proceed normally (fail OPEN — never brick on outage)",
+      "underlying": "The executed comparison bug has a real outage genealogy: apps that string-compared versions worked for years — until the marketing version crossed from 1.9 to 1.10 and the check decided every up-to-date user was ancient, walling THEM behind the forced-update screen (or letting genuinely old clients through). Segments must compare as NUMBERS — the executed `.numeric` compare is Foundation handing you the correct tool — and the check must use the right identity: `CFBundleShortVersionString` is the marketing version gates and stores speak; `CFBundleVersion` is the monotonically-climbing build number CI stamps (b11-06) and TestFlight distinguishes builds by. Confusing them gates on a number the server never heard of.\n\nThe fleet is the fact that makes strategy necessary. A release reaches users through review (days, not hours — plan for it), optionally a PHASED rollout (documented: automatic delivery ramps over seven days — 1%, 2%, 5%… — pausable mid-ramp, which is your safety valve: a day-two crash spike means PAUSE, fix, resubmit, not push-on), and then adoption's long tail: months later, meaningful cohorts still run old versions. Consequences run in both directions. The backend must serve every live version — which is b7-02's schema discipline promoted to policy (append fields, never repurpose; version the breaking changes) — and when an old version must genuinely die, the server enforces it too (a graceful minimum-version rejection at the API layer — gRPC's FAILED_PRECONDITION with a readable message), because clients that predate your version-gate feature can't obey a gate they never learned to check.\n\nThe gate itself is a composition of earlier loops. It rides remote config fetched early but NON-blocking (b6-07: the launch path doesn't wait on a network call), cached with a TTL (b6-03), and — the load-bearing decision — failing OPEN: config unreachable means proceed normally, because the alternative is the self-inflicted outage where your config server's bad hour bricks every launch behind an update wall nobody can pass. (Fail-open's honest cost: during an outage, old clients roam ungated — which is why the SERVER-side minimum-version check is the backstop, and the client gate is UX, not security.) The blocking screen deep-links to the store (`itms-apps://…`); the nudge is dismissible and rate-limited, because a nag that fires every launch trains users to hate updates. And the honest ceiling on all of it: forced update is a MONTHS-long lever, never an emergency brake — review plus adoption is the minimum latency — so the real emergency tools are the ones that work without shipping: feature flags to disable a broken path, server-side fixes, and the protocol compatibility that made old clients safe to leave running in the first place.",
+      "whyItMatters": "The work app's fleet is real — support tickets from versions shipped last quarter prove it — and its update gate (or the absence of one) decides whether 'we need everyone off 1.x' is a plan or a prayer. The executed 1.10-vs-1.9 bug has bricked real apps at exactly their tenth minor release. 'How do you force-update, and what's its actual latency?' is a senior interview question whose honest answer — 'months; that's why the protocol discipline matters more' — is this loop."
+     },
+     "exercise": {
+      "prompt": "Four fleet incidents. (1) The day 1.10.0 ships, up-to-date users get walled behind the forced-update screen while 1.7 users sail through — find the bug with the executed evidence. (2) Design the version-gate config and client flow end to end, naming the fail direction and why. (3) Phased rollout, day 3, 40% delivered: crash-free drops from 99.8% to 97% on the new version — enumerate your moves. (4) Backend wants to shut down the v1 API 'next sprint'; the oldest live client is eight months old and predates the version gate — compute the honest timeline and the mechanism that actually retires v1.",
+      "code": "// executed reference:\n//   \"1.10\" > \"1.9\" == false (string) · .numeric compare correct both ways\n//   marketing vs build number identities\n//   fail OPEN on unreachable config · phased ramp is pausable (documented)\n//   b7-02: old clients keep speaking old schema — forever, from their seat",
+      "solution": "(1) The executed string compare: '1.10' < '1.9' lexicographically, so the gate concluded 1.10.0 was BELOW the 1.9.0 minimum and walled the newest users — while 1.7 slipped through whatever inverted logic shipped alongside. Fix: `.numeric` compare (executed correct), plus the regression test this incident writes for free: assert 1.10 > 1.9 > 1.2 > 1.10-is-greater-than-all, in CI (b11-06).\n\n(2) Config: `{minimumVersion, currentVersion}` from remote config / a config endpoint; fetched non-blocking at launch (b6-07), cached with TTL (b6-03). Flow: marketing version compared numerically — below minimum → blocking screen with store deep-link (and a 'why' sentence); below current → dismissible, rate-limited nudge. Fail OPEN on unreachable config — the config server's outage must not become the app's outage; the server-side minimum check (4) is the security backstop, the client gate is UX.\n\n(3) PAUSE the phased rollout — that's the valve's purpose, and it's why you ship phased at all. Then: read the crashes (b11-05's symbolicated dashboard names the culprit), check whether a feature flag can disable the broken path for the 40% already updated (the only instant lever), fix, resubmit with expedited review if warranted, resume ramp on the fixed build. Pushing on to 100% converts a contained incident into a fleet-wide one.\n\n(4) 'Next sprint' is fantasy: the retirement path is ship the gate-aware version → review (days) → phase (a week) → adoption (months for the long tail) → THEN raise minimumVersion — and the eight-month-old clients that predate the gate never obey it, so the actual mechanism is server-side: v1 endpoints return a graceful minimum-version rejection (FAILED_PRECONDITION with a human-readable message old UIs can at least display), while b7-02's compatibility discipline is what made leaving them running safe in the meantime. Honest timeline: one to two quarters, and the negotiation with backend is exactly this arithmetic.",
+      "explanation": "The strategic inversion this loop teaches: because updates are slow, update-FORCING is never the primary safety mechanism — compatibility (b7-02), server-side enforcement, and feature flags are, with the gate as their UX. Teams that get this backwards discover it during an incident, at fleet scale."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: why is a version fleet unavoidable, how does a correct version gate work (comparison, fail direction, both enforcement points), and what is forced update's honest latency?",
+      "modelAnswer": "Review takes days, phased release ramps over a week, and adoption has a months-long tail — so many versions are always live, and the backend serves them all, which is why schema compatibility is the foundation update strategy stands on. The gate: a remote config carrying minimum and current versions, fetched without blocking launch and cached; the client compares its marketing version NUMERICALLY — string comparison inverts at 1.10 versus 1.9, a real outage class — showing a blocking store-linked screen below minimum and a dismissible nudge below current, and it fails open when config is unreachable because a config outage must not brick every launch. Client gating is UX; the security backstop is server-side minimum-version enforcement, since clients predating the gate can't obey it. Forced update's honest latency is review plus phase plus adoption — months — so the real emergency levers are feature flags, server fixes, and the compatibility that made old clients safe to leave running.",
+      "sets": [
+       [
+        {
+         "q": "The executed comparison: `\"1.10\" > \"1.9\"` is false because…",
+         "options": [
+          "Swift always compares version strings by their segment count before their contents",
+          "string comparison is character-wise — '1' < '9' at position three decides it",
+          "the trailing zero in 1.10 is trimmed before comparing",
+          "operator > uses locale-sensitive collation for digits"
+         ],
+         "correct": 1,
+         "explain": "Lexicographic order knows nothing of versions: 1.10 sorts before 1.2 too. The executed .numeric compare exists precisely for this — and the bug detonates at every app's tenth minor release."
+        },
+        {
+         "q": "A version gate should fail OPEN (config unreachable → proceed) because…",
+         "options": [
+          "closed-fail requires an extra network round trip that the launch path cannot afford",
+          "App Review rejects apps that can block launch on a network call",
+          "otherwise the config server's outage bricks every launch behind an unpassable wall",
+          "the cached TTL makes the failure case statistically negligible"
+         ],
+         "correct": 2,
+         "explain": "The self-DoS: your own config having a bad hour becomes YOUR fleet-wide outage. Open-fail's cost — old clients roam ungated during the outage — is covered by the server-side backstop, which is where security lives anyway."
+        },
+        {
+         "q": "The gate compares against CFBundleShortVersionString rather than CFBundleVersion because…",
+         "options": [
+          "the marketing version is what the server, the store, and the minimum policy all speak",
+          "CFBundleVersion is unavailable to code at runtime",
+          "build numbers reset with every marketing release",
+          "App Store Connect automatically strips the CFBundleVersion key from all shipped binaries"
+         ],
+         "correct": 0,
+         "explain": "Two identities, two jobs (executed read): marketing (1.10.0) is the fleet's public coordinate; the build number (2047) is CI's monotonic stamp (b11-06) that TestFlight tells builds apart by. Gating on the wrong one gates on a number the policy never named."
+        }
+       ],
+       [
+        {
+         "q": "Day 3 of a phased rollout, crash-free drops two points on the new version. The first move?",
+         "options": [
+          "raise the minimumVersion gate to pull users back onto the previous release",
+          "push to 100% quickly so the dashboard reflects one version",
+          "hotfix through expedited review before touching the rollout",
+          "pause the ramp — containment first; that valve is why you phased at all"
+         ],
+         "correct": 3,
+         "explain": "Pause is instant and reversible; everything else follows behind it (symbolicated diagnosis via b11-05, a flag to defuse the 40% if one exists, fix, resume). Users cannot be 'pulled back' — shipped versions only go forward."
+        },
+        {
+         "q": "Clients older than the version-gate feature itself are retired by…",
+         "options": [
+          "a store-level minimum OS requirement bump",
+          "server-side enforcement — graceful minimum-version rejections at the API",
+          "a push notification deep-linking to the update page",
+          "waiting patiently for their OS updates to break compatibility naturally over time"
+         ],
+         "correct": 1,
+         "explain": "A gate can't bind clients that predate it — the server is the only enforcement point they all pass through. FAILED_PRECONDITION with a readable message is the graceful form; b7-02's discipline is what kept them safe until then."
+        },
+        {
+         "q": "'We need everyone off 1.x by next sprint.' The honest engineering answer:",
+         "options": [
+          "raise minimumVersion today — the fleet updates within days",
+          "review + phase + adoption = months; the real levers are flags, server fixes, compatibility",
+          "ship a migration release that auto-updates older installs",
+          "block all 1.x traffic at the CDN edge and simply let the update screen handle the rest of it"
+         ],
+         "correct": 1,
+         "explain": "Forced update is a months-long lever, never an emergency brake — there is no auto-update you control and no instant wall that isn't a self-DoS. Strategy means having the fast levers BEFORE the incident."
+        }
+       ]
+      ]
+     },
+     "transfer": "Audit the work app's gate: find the version check (does it compare numerically? — write the 1.10-vs-1.9 test either way), its fail direction when config is unreachable, and whether the backend enforces a minimum server-side. Then measure your real fleet: analytics' version distribution for the oldest version with meaningful users — that number IS your forced-update latency, and the input to every 'when can we drop the old API' conversation.",
+     "verify": "// executed on this Mac 2026-07-20 (plain swift):\n// \"1.10\" > \"1.9\" → false — string comparison crowns the older version\n//   ('1' < '9' at char 3; the classic tenth-minor-release outage)\n// .numeric compare: 1.9 < 1.10 ✓ · 2.0 > 1.99 ✓ — Foundation's correct tool\n// version identities read: CFBundleShortVersionString 1.10.0 (marketing)\n//   vs CFBundleVersion 2047 (build number)\n// documented: phased-release ramp (7-day, pausable), review latency,\n//   adoption tails, itms-apps deep link, server-side minimum enforcement\n// floors: b6-03 (TTL cache), b6-07 (non-blocking launch), b7-02 (the\n//   compatibility that makes fleets safe), b11-06 (the CI that stamps builds)",
+     "goDeeper": "App Store Connect documentation on phased releases — the ramp percentages and the pause switch. Apple's version-numbering docs (CFBundleShortVersionString vs CFBundleVersion, officially). b7-02 — the schema discipline that IS long-term update strategy. Your own analytics' version-distribution chart — the fleet, measured. BLOCK 11 COMPLETE · WORK-APP EXTENSION COMPLETE: b0-16 through b11-07, 45 loops, every executable claim executed."
     }
    ]
   }
