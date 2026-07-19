@@ -5009,6 +5009,196 @@ const CUR = {
      "transfer": "In your app, animate a button 200 points sideways over 3 seconds and try to tap it mid-flight at both its old and current apparent positions. Then log frame in the completion with the finished flag, interrupt it with a second animation, and watch false arrive. Ten minutes; the two-layer model becomes permanent.",
      "verify": "Executed on this Mac (UIKit via Catalyst): alpha read 0.1 immediately after a 2-second animate call — the model jumps; layer.presentation() was nil headless, confirming the presentation world lives with the render server (pairs with b2-02's blocked-main-thread experiment for the visual half). Interruption/finished behavior: verify with the transfer exercise's logs.",
      "goDeeper": "WWDC 2014 \"Building Interruptible and Responsive Interactions\" — retargeting, done properly. objc.io issue #12 \"Animations Explained\" — model vs presentation at depth. UIViewPropertyAnimator docs for scrubbable/reversible control over the same machinery."
+    },
+    {
+     "id": "b2-19",
+     "title": "KVC: the stringly runtime",
+     "concept": {
+      "definition": "Key-Value Coding lets the Objective-C runtime read and write properties by STRING at runtime: `setValue(_:forKey:)` and `value(forKey:)` look accessors up by name with no compile-time knowledge of the type. It reaches only what the runtime can see — `@objc` members of NSObject types — and a key with no matching property doesn't fail gracefully: it throws `NSUnknownKeyException`, 'this class is not key value coding-compliant for the key X'.",
+      "code": "class Profile: NSObject {\n    @objc var name = \"\"          // visible to the runtime\n    var secret = \"hidden\"        // pure Swift — runtime can't see it\n}\n\nlet p = Profile()\np.setValue(\"riya\", forKey: \"name\")     // a WRITE, by string (executed)\np.value(forKey: \"name\")                // \"riya\" — a READ, by string\naccount.setValue(\"nadia\", forKeyPath: \"owner.name\")  // dot-path walk\n\np.value(forKey: \"secret\")              // CRASH — executed verbatim:\n// 'NSUnknownKeyException' … this class is not key value\n// coding-compliant for the key secret.",
+      "underlying": "b0-01 said names compile away into addresses. KVC is the counter-world: on NSObject types, `@objc` member NAMES survive into the runtime's metadata, and `value(forKey:)` walks a documented search pattern at call time — a getter named `key`, then variants, then the instance variable — resolving the string to an accessor the way `objc_msgSend` resolves selectors (b1-10's dynamic column; executed here too: `NSSelectorFromString(\"uppercaseString\")` performed on a string returned TARGET-ACTION, the method-side twin of key lookup, and the machinery b2-10's target-action stores). The sharp edge, executed: `secret` EXISTS as a Swift property, yet KVC threw 'not key value coding-compliant' — modern Swift does not expose plain properties to the runtime; `@objc` is the opt-in that makes a name real again.\n\nWho actually uses this — the two loops it was built to support: (1) storyboard wiring, b10-01 ahead. A storyboard is XML; each connection stores your outlet's property name as a string, and at load UIKit instantiates the scene and calls `setValue(_:forKey:)` for every connection. Rename the property without reconnecting in IB and the XML still holds the old string — at load you get the executed crash, `setValue:forUndefinedKey:` … 'not key value coding-compliant for the key nmae'. THE classic storyboard crash, and it's just KVC meeting a stale string. (2) Core Data's `@NSManaged`, b8-02 ahead: those properties have NO stored ivar — the runtime provides accessors that route reads and writes through KVC-shaped machinery into the managed object's row data. KVO — the observation ancestor under b5-02 — rides the same rails, finding and swizzling setters by name (documented).\n\nThe trade is explicit: strings buy LATE BINDING — a nib compiled years ago can wire any class you write tomorrow, because nothing was resolved until load — and the price is that typos and refactors become runtime exceptions instead of compile errors. The mitigations mark the boundary: `#keyPath(Profile.name)` makes the compiler verify the string exists; Swift's own `KeyPath` (`\\Profile.name`) is the fully-typed successor — same 'property as a value' idea, checked at compile time, no runtime search.",
+      "whyItMatters": "Every 'this class is not key value coding-compliant' crash after renaming an outlet is this loop — and after it, that crash reads as 'a stale string in XML', not witchcraft. It's also the missing floor under `@NSManaged` (b8) and IB wiring (b10), and 'how do outlets actually get connected?' is an interview probe for whether UIKit is machinery or magic to you."
+     },
+     "exercise": {
+      "prompt": "Predict each outcome precisely. (a) `setValue(\"9.1\", forKey: \"version\")` where `@objc var version = \"\"`. (b) `value(forKey: \"build\")` where `var build = 42` — a plain Swift property that definitely exists. (c) A view controller's outlet `titleLabel` is renamed to `headerLabel` in code; the storyboard isn't touched. When does it fail, with what message, and what's the fix?",
+      "code": "class Info: NSObject {\n    @objc var version = \"\"      // (a)\n    var build = 42              // (b) exists — but who can see it?\n}\n// (c) storyboard XML still contains:\n//   <outlet property=\"titleLabel\" destination=\"x7z-…\"/>\n// code now declares: @IBOutlet var headerLabel: UILabel!",
+      "solution": "(a) Works — the runtime finds the `@objc` accessor named `version` and writes the string (executed: same shape as name=riya).\n\n(b) CRASH: `NSUnknownKeyException`, 'not key value coding-compliant for the key build' (executed with `secret`). Existing in Swift is not the same as existing to the runtime — without `@objc`, the name was compiled away, b0-01 style, and KVC's search finds nothing.\n\n(c) It fails AT SCENE LOAD, not at compile time and not at the line that uses the label — UIKit decodes the storyboard, reads the stale string `titleLabel`, calls `setValue(_:forKey:)` on your VC, and throws the executed `setValue:forUndefinedKey:` crash before viewDidLoad ever runs. The compiler was happy: it only saw `headerLabel`. Fix: reconnect the outlet in IB (or delete the stale connection) so the XML string matches the property name again.",
+      "explanation": "Note the diagnostic signature of (c): a crash whose stack has no line of YOUR code executing — just nib-loading frames — because the failure lives in data (XML strings), not code. That's the general lesson of stringly systems: their errors detonate at the string's point of USE, far from the edit that broke them."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what is Key-Value Coding, why can it only reach `@objc` members, and how does it explain the classic 'not key value coding-compliant' storyboard crash?",
+      "modelAnswer": "KVC is the Objective-C runtime's string-keyed property access: setValue(_:forKey:) and value(forKey:) resolve a name to an accessor at runtime by walking a documented search pattern, the property-side twin of selector dispatch. It only reaches @objc members of NSObject types because those are the only names that survive into runtime metadata — a plain Swift property exists to the compiler but was compiled away for the runtime, so KVC throws NSUnknownKeyException for it. Storyboards store each outlet connection as the property's name in XML, and loading a scene replays those strings through setValue(_:forKey:) — so renaming an outlet without reconnecting leaves a stale string, and the scene crashes at load with 'not key value coding-compliant' before any of your code runs. That's also the machinery under Core Data's @NSManaged accessors.",
+      "sets": [
+       [
+        {
+         "q": "How does `value(forKey: \"name\")` locate what to return?",
+         "options": [
+          "the compiler resolved the string to an offset at build time",
+          "it reads the same stored property list that Codable's decoder also uses",
+          "a hash of the key indexes into the object's memory layout",
+          "a runtime search by NAME: getter, variants, then instance variable"
+         ],
+         "correct": 3,
+         "explain": "The search happens at call time against runtime metadata — the documented KVC accessor pattern. It's b1-10's dynamic dispatch, property edition: nothing was resolved until the string arrived."
+        },
+        {
+         "q": "`var build = 42` on an NSObject subclass — no `@objc`. What does `value(forKey: \"build\")` do?",
+         "options": [
+          "crashes: without @objc the name never entered runtime metadata",
+          "returns 42 — NSObject subclasses expose all their properties",
+          "returns nil, since the key can't be type-checked at runtime",
+          "bridges the Int to an NSNumber automatically and returns it successfully"
+         ],
+         "correct": 0,
+         "explain": "Executed: the property existed and KVC still threw 'not key value coding-compliant'. Existing in Swift ≠ existing to the runtime — @objc is what makes a name real again (b0-01 in reverse)."
+        },
+        {
+         "q": "What buys the crash risk — why did Apple build wiring on runtime strings at all?",
+         "options": [
+          "strings were the only type ObjC could store in collections",
+          "string lookup outperforms compiled property access",
+          "late binding: XML written yesterday can wire any class you compile tomorrow",
+          "app sandboxing rules forbid nibs from holding direct memory offsets to objects"
+         ],
+         "correct": 2,
+         "explain": "A nib compiles against nothing — connections stay strings until load resolves them. That's why IB works for classes it has never seen, and why the errors wait until runtime to appear."
+        }
+       ],
+       [
+        {
+         "q": "An outlet was renamed in code; IB wasn't touched. When and how does it fail?",
+         "options": [
+          "at compile time — the storyboard is validated against the class",
+          "at scene load: setValue:forUndefinedKey: throws before viewDidLoad runs",
+          "at the first USE of the label, which is left nil after the wiring silently failed",
+          "never — UIKit skips connections it cannot resolve by name"
+         ],
+         "correct": 1,
+         "explain": "Executed message, stale-string cause: UIKit replays the XML's `titleLabel` through KVC against a class that now only knows `headerLabel`. The stack shows nib-loading frames, none of your code — the bug lives in data."
+        },
+        {
+         "q": "`@NSManaged var title: String` compiles with no stored property behind it. Reads work because…",
+         "options": [
+          "the compiler synthesizes a hidden ivar in the class's layout",
+          "Core Data generates a subclass of your class at build time to add hidden storage",
+          "the value comes from UserDefaults keyed by the entity name",
+          "the runtime provides accessors that route through KVC machinery to row data"
+         ],
+         "correct": 3,
+         "explain": "@NSManaged is a promise: 'accessors will exist at runtime.' Core Data supplies them, backed by the managed object's row snapshot — b8-02 stands directly on this loop."
+        },
+        {
+         "q": "A teammate builds table cells configured via `setValue(_:forKey:)` with keys from a server response. Review verdict?",
+         "options": [
+          "one unrecognized key from the server crashes the app — validate or use typed decoding",
+          "fine — KVC ignores keys it cannot resolve on the target",
+          "perfectly fine as long as every configurable cell property is marked @objc for exposure",
+          "the only issue is performance: string lookup on every cell"
+         ],
+         "correct": 0,
+         "explain": "The executed crash, now remote-controlled: any key without a matching @objc property throws. Server data driving KVC keys hands the server a crash button — Codable (b4-03) exists for exactly this boundary."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open one of the work app's storyboards as source code (right-click → Open As → Source Code) and find the `<outlet property=\"…\">` entries — those strings are KVC keys, and now you know who replays them. On a scratch branch, rename one connected outlet in code only, run, and meet the executed crash on purpose; read its stack and notice none of your frames are in it. Then find one `@NSManaged` property and answer: what provides its storage?",
+     "verify": "// executed on this Mac 2026-07-19 (plain swift + Foundation):\n// setValue(\"riya\", forKey:\"name\") on @objc var → wrote it; value(forKey:) read it\n// setValue(forKeyPath: \"owner.name\") → traversed and wrote the nested object\n// NSSelectorFromString(\"uppercaseString\") + perform → \"TARGET-ACTION\"\n// value(forKey: \"secret\") where secret is plain Swift (exists, no @objc):\n//   *** NSUnknownKeyException … valueForUndefinedKey: … this class is not\n//   key value coding-compliant for the key secret.\n// setValue for typo'd key \"nmae\": same exception via setValue:forUndefinedKey:\n//   — the storyboard crash message, verbatim\n// documented: the KVC accessor search pattern; nib decoding calling\n// setValue:forKey: per connection; @NSManaged runtime accessors; KVO swizzling",
+     "goDeeper": "Apple's Key-Value Coding Programming Guide — the accessor search pattern this loop executed against. `#keyPath` in the Swift docs for compile-checked keys, and SE-0161 (typed KeyPath) as the modern successor. b1-10 for the dispatch machinery underneath; b10-01 and b8-02 ahead, both standing on this floor."
+    },
+    {
+     "id": "b2-20",
+     "title": "Keyboard management: notifications and the inset dance",
+     "concept": {
+      "definition": "The keyboard is a SYSTEM window layered over yours — it never joins your view hierarchy, so UIKit tells you about it only through notifications (`keyboardWillShow`/`WillHide`) whose userInfo carries the end frame in screen coordinates plus the animation's duration and curve. Correct handling is geometry: convert that frame into your view's space, intersect it with your bounds, and apply the overlap as `contentInset.bottom` — undone on hide. IQKeyboardManager exists because this dance is boilerplate; it hooks the very same notifications, globally.",
+      "code": "// executed via Catalyst — the exact keys iOS sends, observed and applied:\nNotificationCenter.default.addObserver(\n    forName: UIResponder.keyboardWillShowNotification, …) { note in\n    let frame = (note.userInfo![UIResponder.keyboardFrameEndUserInfoKey]\n                 as! NSValue).cgRectValue        // SCREEN coordinates\n    let kbInView = scroll.convert(frame, from: nil)   // → view space\n    let overlap = scroll.bounds.intersection(kbInView).height\n    scroll.contentInset.bottom = overlap\n    scroll.verticalScrollIndicatorInsets.bottom = overlap\n}\n// executed: frame (0, 498, 390, 346), duration 0.25s →\n//   keyboard-in-view y=438 → overlap 346pt → contentInset.bottom = 346\n//   hide side: reset to 0 (executed)",
+      "underlying": "Why notifications at all: the keyboard lives in its own window, owned by the system — you cannot find it in your hierarchy, ask it questions, or constrain against it directly (pre-iOS 15), so the notification userInfo IS the API. Executed: posting the same notification name with the same keys iOS uses (`keyboardFrameEndUserInfoKey`, `keyboardAnimationDurationUserInfoKey`) drove the real observer path end-to-end — which is also why the whole dance is unit-testable without a device. The 'will' variants carry the END frame before animation starts, so your layout change can animate ALONGSIDE the keyboard using the delivered duration and curve — ignore those two keys and content snaps while the keyboard glides (the most visible amateur tell in iOS).\n\nThe geometry has two load-bearing details the naive version skips. The frame arrives in SCREEN coordinates: `convert(_:from: nil)` maps it into your view's space (executed with an explicit root standing in for the screen — same math), and skipping conversion 'works' only while your view happens to fill the screen. And the correct quantity is the INTERSECTION with your bounds, not the keyboard's height — executed: overlap computed via `bounds.intersection` — because on an iPad form sheet, with a floating keyboard, or with a hardware keyboard showing only a toolbar, the keyboard's frame may barely overlap your view; `inset = kbFrame.height` over-scrolls exactly there. Applying the overlap as `contentInset.bottom` (plus the scroll-indicator inset, executed) rather than moving the view keeps b2-05/06's layout untouched — the scroll view just gains scrollable room, and `scrollRectToVisible` or first-responder tracking brings the active field into view.\n\nWhat IQKeyboardManager actually is, given all this: an object that observes these SAME notifications app-wide, walks the responder chain (b2-08) from the first responder to find its enclosing scroll container, and applies this loop's math everywhere with zero call sites. That's b7-07's invisibility trade again — global behavior no call site reveals — and both of its edges: screens that already do the dance get adjusted TWICE (the double-inset jump), and custom input layouts fight it, which is why its API is mostly opt-outs (`disabledDistanceHandlingClasses`). Modern endgame: `keyboardLayoutGuide` (iOS 15+) — Apple shipping this entire loop as a constraint anchor that tracks the keyboard, floating and undocked included (documented); new screens should prefer it, and this loop is what it abstracts.",
+      "whyItMatters": "The work app is storyboard-first with forms — this dance (or IQKeyboardManager doing it) runs on every text field, and the double-adjust jump plus the iPad over-inset are two of the most common keyboard bugs in review. 'Walk me through handling the keyboard' is an iOS interview staple where mentioning coordinate conversion and intersection — not just 'add an inset' — is the practitioner's tell."
+     },
+     "exercise": {
+      "prompt": "Four keyboard bugs, one geometry. (1) A form works on iPhone but over-scrolls wildly on iPad when presented as a form sheet — the code reads `inset = kbFrame.height`. (2) Content jumps instantly while the keyboard animates smoothly. (3) One screen's fields leap upward twice the keyboard's height; the project uses IQKeyboardManager, and this screen ALSO adjusts insets itself. (4) After dismissing the keyboard, the scroll view can still be dragged past its content into an empty gap. Mechanism and fix for each, citing the executed math.",
+      "code": "// executed reference:\n//   frame arrives in SCREEN coords → convert(_:from: nil) → view space\n//   overlap = bounds.intersection(kbInView).height   // NOT kbFrame.height\n//   apply as contentInset.bottom (+ indicator insets); reset on hide\n//   animation duration + curve arrive in the same userInfo",
+      "solution": "(1) The form sheet doesn't reach the screen bottom, so the keyboard overlaps only a sliver of it — but `kbFrame.height` (346pt executed) was applied wholesale. The executed math fixes it by construction: convert to view space, intersect with bounds — on the form sheet the intersection is small or zero, and the inset matches reality.\n\n(2) The handler ignored `keyboardAnimationDurationUserInfoKey`/curve (executed: 0.25s delivered in the same userInfo). Wrap the inset change and layout in an animation using exactly those values and the content glides with the keyboard instead of teleporting under it.\n\n(3) Both adjusters ran: IQKeyboardManager observed the same notification this screen handles and applied the math a second time — the b7-07 invisibility trade collecting its fee. Pick one owner per screen: disable the manager for this VC (its opt-out API exists for precisely this) or delete the manual handling.\n\n(4) The hide side never ran — `keyboardWillHide` wasn't observed (or the reset was skipped on some path, e.g. interactive dismissal), leaving `contentInset.bottom = 346` forever (executed reset shows the counterpart). Observe hide and restore the original insets; for interactive dismissal, `keyboardWillChangeFrameNotification` tracks the drag.",
+      "explanation": "Note that all four bugs are visible in the executed transcript's four lines: the conversion, the intersection, the duration, the reset. The keyboard dance isn't hard — it's four obligations, and each bug is exactly one of them skipped."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: how does an app learn about the keyboard, what's the correct geometry for adjusting a scroll view, and what does IQKeyboardManager actually do under the hood?",
+      "modelAnswer": "The keyboard is a system window outside your hierarchy, so the only feed is notifications — keyboardWillShow/WillHide/WillChangeFrame — whose userInfo carries the end frame in screen coordinates plus the animation's duration and curve. Correct handling converts that frame into the affected view's space with convert(from: nil), intersects it with the view's bounds — the intersection, not the keyboard's height, handles iPad form sheets and floating keyboards — and applies the overlap as contentInset.bottom alongside the indicator insets, animated with the delivered timing, and reset on hide. IQKeyboardManager observes those same notifications globally, finds the first responder's enclosing scroll container via the responder chain, and applies this math with zero call sites — which is why it collides with screens that also handle insets themselves. Since iOS 15, keyboardLayoutGuide packages the whole dance as a constraint anchor.",
+      "sets": [
+       [
+        {
+         "q": "Why is the keyboard's frame delivered through notification userInfo rather than queried from a view?",
+         "options": [
+          "the keyboard is a system window outside your hierarchy — notifications are the only feed",
+          "querying the keyboard's window view directly is technically possible but deprecated since iOS 13",
+          "notifications batch keyboard changes for better animation performance",
+          "the frame is privacy-sensitive and requires the notification entitlement"
+         ],
+         "correct": 0,
+         "explain": "You can't find, ask, or constrain against a window you don't own (pre-keyboardLayoutGuide). Executed: the same name + userInfo keys iOS posts drove the real observer path — the payload IS the API."
+        },
+        {
+         "q": "The correct inset amount is `bounds.intersection(kbInView).height` rather than the keyboard frame's height because…",
+         "options": [
+          "intersection automatically compensates for the scroll indicator's thickness on every device",
+          "the keyboard may only partially overlap your view — form sheets, floating keyboards",
+          "the keyboard's own height fluctuates during its animation frames",
+          "intersection is cheaper to compute than reading the frame's height"
+         ],
+         "correct": 1,
+         "explain": "Executed full-screen: overlap equaled the height. On an iPad form sheet it wouldn't — the naive version over-insets exactly where layouts differ from the phone. Intersection is correct by construction."
+        },
+        {
+         "q": "Content should move in sync with the keyboard's slide. The mechanism is…",
+         "options": [
+          "UIKit automatically animates any inset change made from inside the observer closure",
+          "a fixed 0.3s ease-in-out that matches the system keyboard",
+          "animating with the duration and curve delivered in the same userInfo",
+          "deferring the inset change until keyboardDidShow fires"
+         ],
+         "correct": 2,
+         "explain": "Executed: 0.25s arrived beside the frame. The 'will' notification fires before the slide so your animation runs alongside it — hardcoded timings drift the moment Apple changes the keyboard's."
+        }
+       ],
+       [
+        {
+         "q": "A screen's content leaps twice the keyboard height. The project uses IQKeyboardManager. First hypothesis?",
+         "options": [
+          "the notification legitimately fired twice because of a mid-edit keyboard type change",
+          "the screen also adjusts insets manually — two observers, one keyboard, double math",
+          "IQKeyboardManager mis-detected a hardware keyboard as software",
+          "the inset was applied to both the scroll view and its superview"
+         ],
+         "correct": 1,
+         "explain": "The manager observes the same notifications your code does — invisible at call sites (b7-07's trade), so the collision surfaces as UI, not as a compile error. One owner per screen; the opt-out API exists for this."
+        },
+        {
+         "q": "What does IQKeyboardManager use to find WHICH view to adjust?",
+         "options": [
+          "a registry each screen populates in viewDidLoad",
+          "the storyboard's outlet graph, walked at launch",
+          "internal heuristics that scan for the deepest visible scroll view inside the key window",
+          "the responder chain — from the first responder up to its enclosing scroll container"
+         ],
+         "correct": 3,
+         "explain": "b2-08's chain earns its keep: the active field IS the first responder, and walking up finds the scroll container this loop's math applies to. That's also why exotic hierarchies confuse it."
+        },
+        {
+         "q": "For a new iOS 15+ screen, the modern default for keyboard avoidance is…",
+         "options": [
+          "keyboardLayoutGuide — the dance packaged as a constraint anchor that tracks the keyboard",
+          "IQKeyboardManager, now bundled into UIKit as of iOS 15",
+          "UIScrollView's automaticallyAdjustsKeyboardInsets checkbox, enabled from Interface Builder",
+          "SwiftUI hosting, which is the only framework with built-in avoidance"
+         ],
+         "correct": 0,
+         "explain": "Apple shipped this loop as API: constrain to the guide and the system does conversion, intersection, and animation — floating and undocked included. This loop is what it abstracts, and what you debug when it surprises you."
+        }
+       ]
+      ]
+     },
+     "transfer": "In the work app: find whether IQKeyboardManager is active (AppDelegate setup) and list any screens that ALSO handle insets manually — each is bug (3) waiting. Pick one form screen and check the four obligations against its code: conversion, intersection, animation timing, hide-reset. Then, on any iPad-capable screen, run it as a form sheet with the naive height-only math in mind and watch for the over-inset.",
+     "verify": "// executed on this Mac 2026-07-19 (Mac Catalyst, real UIKit):\n// posted UIResponder.keyboardWillShowNotification with the real userInfo\n// keys; observer received frame (0, 498, 390, 346) + duration 0.25s\n// convert → keyboard-in-scroll-space y=438 · bounds.intersection → 346pt\n// contentInset.bottom = 346 (+ indicator inset) · hide-side reset → 0\n// note: UIWindow needs a scene in CLI Catalyst — a root UIView stood in\n// for the screen; on device the same convert uses from: nil (screen space)\n// documented: keyboardLayoutGuide, floating/undocked keyboards,\n// keyboardWillChangeFrame for interactive dismissal, IQKeyboardManager's\n// responder-chain walk",
+     "goDeeper": "Apple's \"Adjusting your layout with keyboard layout guide\" — the modern anchor, and this loop is its internals. UIResponder keyboard-notification documentation for the full userInfo key set. IQKeyboardManager's README — read the opt-out section as a map of where global adjustment breaks. b2-08 for the chain it walks; b7-07 for the invisibility trade it embodies."
     }
    ]
   },
@@ -6156,6 +6346,101 @@ const CUR = {
      "transfer": "Grep your project for DispatchGroup and .barrier. For each group: verify every enter has a leave on every path (add the defer if not). For each barrier: confirm the queue is yours and concurrent, then write one sentence on what the actor version would look like — even if you don't migrate today.",
      "verify": "Executed on this Mac: group.wait returned with done == 3 after three staggered tasks; 100 barrier-flagged appends to shared state landed 100/100 (plain concurrent appends would race — b3-03); QoS wiring confirmed on a global queue. Reproduce, then delete one leave() and watch notify never fire.",
      "goDeeper": "WWDC 2017 \"Modernizing Grand Central Dispatch Usage\" — the definitive QoS + queue-hierarchy talk. WWDC 2015 \"Building Responsive and Efficient Apps\" for priority inheritance. b3-05/b3-06 for the successors you migrate toward."
+    },
+    {
+     "id": "b3-13",
+     "title": "The actor singleton: static let shared, gated ready",
+     "concept": {
+      "definition": "`static let shared` on an actor is the modern singleton: Swift guarantees the initializer runs EXACTLY once even under concurrent first access, and actor isolation (b3-06) serializes every call to it. The production shape adds a readiness gate — early callers park as stored continuations until setup completes (b7-10's waiters) — and carries actor's one subtle law: REENTRANCY. Actor state can change across every `await` inside your own methods, so re-check after suspension; never assume.",
+      "code": "actor APIClient {\n    static let shared = APIClient()      // lazy · once · thread-safe\n    private init() { … }                 // nobody else can construct one\n}\n// executed: 100 concurrent first-touches → init printed EXACTLY once;\n//           100 awaited calls → calls == 100 (no lost increments, b3-03)\n\n// REENTRANCY, executed — two calls to one actor method:\n// A: entered — cacheState is 'empty'\n// B: entered — cacheState is 'loading'   ← B ran while A was AWAITING\n// A: resumed — cacheState is now 'loading'\n// B: resumed — cacheState is now 'loaded by A'\n// final cacheState: loaded by B          ← last resume wins\n// the actor serialized the SYNCHRONOUS stretches — not whole methods",
+      "underlying": "Both halves of `static let shared` earn their keep mechanically. The `static let` is Swift's lazy-global machinery (b6-07's executed lazy initialization): first access runs the initializer under a once-guard — executed here as a stampede, 100 concurrent tasks touching `.shared` and `init` printing exactly once — so there is no init race to hand-roll, no `dispatch_once` incantation, and a `private init` closes the back door. The `actor` half replaces the singleton's traditional curse: where a class singleton is shared mutable state begging for b3-03's races, the actor serializes access at the type level — executed: 100 concurrent increments landed as exactly 100 (compare b3-03's executed lost updates on the same shape).\n\nReentrancy is the law that separates actor users from actor understanders, and the executed transcript is its whole story. `B: entered — cacheState is 'loading'` happened while A sat at its `await`: an actor guarantees mutual exclusion for SYNCHRONOUS stretches, but every `await` inside an actor method is a door — the actor services other calls during the suspension, and your method resumes into whatever state they left (executed: A resumed to find state B-modified; final state was 'loaded by B', last-resume-wins). Two disciplines follow. Re-validate after every await — the line `if cache == nil` above a suspension proves nothing below it. And for once-only async work, a Bool flag is the WRONG guard: caller B seeing `isRefreshing == true` has no way to await the result A is producing — the correct state is the in-flight `Task` itself (b7-11's executed single-flight vault: check for a stored Task, await it if present, store your own if not — the Task-as-value insight from b3-05 doing concurrency-policy work).\n\nAssembled, this is the work app's APIClient, every piece of it executed somewhere in this curriculum: `static let shared` on an actor (here — once-init under stampede), a `ConnectionGate` parking early callers as CheckedContinuations until the channel is ready (b7-10 — three calls parked at 0.00s, transmitted together at 0.31s), and a single-flight TokenVault for refresh storms (b7-11 — five concurrent 401s, one refresh). The singleton caveat survives modernization: `.shared` is convenient at call sites and hostile to tests (b5-03) — the resolution is to keep the TYPE injectable (protocol or init-injected instance) and let `.shared` be merely the production instance, so tests construct their own actor with a fake transport underneath.",
+      "whyItMatters": "This loop IS the work app's APIClient shape, named and executed piece by piece — and the reentrancy transcript explains a class of 'impossible' actor bugs (state changed between my check and my use, inside my own method) that ships in real codebases. 'Are actors reentrant, and what does that mean for your singleton?' is a senior interview question with the transcript as the two-line answer."
+     },
+     "exercise": {
+      "prompt": "Code-review this actor singleton's refresh guard, using the executed reentrancy transcript. (1) Trace two concurrent callers through it — where exactly does it break, and what do both callers experience? (2) Fix it with the Task-as-state pattern and explain why that's immune. (3) A teammate proposes `static var shared` with a setter 'so tests can replace it' — what two guarantees just left?",
+      "code": "actor TokenStore {\n    static let shared = TokenStore()\n    private var isRefreshing = false\n    private var token: String?\n\n    func freshToken() async -> String {\n        if isRefreshing {                 // ← B arrives here while A awaits\n            return token ?? \"\"            //    …and returns a STALE token\n        }\n        isRefreshing = true\n        token = await refreshFromServer() // suspension — the door opens\n        isRefreshing = false\n        return token!\n    }\n}",
+      "solution": "(1) A enters, sets `isRefreshing = true`, suspends at the network await — the door opens (executed: B entered while A awaited). B enters, sees `isRefreshing == true`, and takes the early return: a stale or empty token, delivered as if fresh. The Bool 'guard' correctly detects the in-flight refresh but offers B no way to WAIT for it — detection without coordination. Worse timings exist: with more callers, everyone between A's suspension and resumption gets garbage, silently.\n\n(2) Replace the Bool with the flight itself: `private var inFlight: Task<String, Never>?` — if present, `return await inFlight.value` (B piggybacks on A's result); if absent, create the Task, store it, await it, clear it. Executed in b7-11: five concurrent callers, ONE refresh, all five received the same fresh token. It's immune because the stored Task is both the detection AND the coordination — a value any number of callers can await (b3-05's Task-as-value).\n\n(3) `static var` forfeits the once-guarantee (the lazy-once machinery belongs to `let`; a settable var can be replaced mid-flight, callers racing the swap) and forfeits confinement of construction (`private init` still compiles, but the setter reopens the door `let` closed). Testability is legitimate — the answer is injection (b5-03): keep call sites on an injected instance or protocol, let `.shared` be the production default. Tests build their own actor; production keeps both guarantees.",
+      "explanation": "The general law under (1): in a reentrant world, a flag can only ever say 'something is happening' — it cannot hand you the result. Guards that must coordinate, not just detect, store the awaitable thing itself. Once you see Bool-guard-around-await as the smell, you find it everywhere."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: why is static let shared on an actor safe without any locking code, what does actor reentrancy mean inside your own methods, and how do you make once-only async work actually once-only?",
+      "modelAnswer": "static let runs its initializer under Swift's lazy-once machinery — concurrent first access is safe and init runs exactly once, executed as a 100-task stampede with one init — and the actor serializes all subsequent access at the type level, so the traditional singleton race simply can't compile its way in. Reentrancy means mutual exclusion covers only synchronous stretches: every await inside an actor method lets the actor service other calls, so your method resumes into possibly-changed state — the executed transcript shows a second caller entering mid-await and the first resuming to find its state modified. Therefore re-validate state after every await, and guard once-only async work with the in-flight Task stored as actor state — callers finding it await its value, which both detects the work and shares its result — never with a Bool, which detects but cannot coordinate.",
+      "sets": [
+       [
+        {
+         "q": "100 tasks concurrently touch `APIClient.shared` for the first time. The executed result?",
+         "options": [
+          "the first task wins the race; the other 99 briefly observe nil and retry",
+          "init ran exactly once — static let is lazy-once by language guarantee",
+          "100 inits ran; the actor discarded 99 duplicate instances",
+          "a runtime warning: unprotected concurrent global access"
+         ],
+         "correct": 1,
+         "explain": "Executed: one init print under the stampede, calls == 100. The once-guard is the language's (b6-07's lazy globals) — no dispatch_once, no locks, and private init closes construction entirely."
+        },
+        {
+         "q": "The executed transcript shows 'B: entered' while A sat at its await. This proves actors…",
+         "options": [
+          "serialize synchronous stretches only — awaits are doors where other calls interleave",
+          "run their methods fully concurrently whenever they don't touch the same stored property",
+          "had a scheduling bug — B should have queued until A's method returned",
+          "prioritize new callers over suspended ones by default"
+         ],
+         "correct": 0,
+         "explain": "Reentrancy by design: blocking the actor for a whole async method would invite deadlocks and starvation. The price is that your own state may differ after every await — re-check, don't assume."
+        },
+        {
+         "q": "Inside an actor method, `if cache == nil` on line 1, then an await, then `cache = result`. The risk?",
+         "options": [
+          "the compiler rejects writes to actor state after an await",
+          "none whatsoever — actor isolation guarantees the check stays valid until the whole method returns",
+          "another caller filled the cache during the await — the check is stale, the write may clobber",
+          "the await moves execution off the actor, making the write racy"
+         ],
+         "correct": 2,
+         "explain": "Executed shape: B modified state during A's suspension, and A's pre-await knowledge was fiction on resume. Isolation held throughout (no data race) — but VALIDITY across the door is yours to re-establish."
+        }
+       ],
+       [
+        {
+         "q": "The Bool-guarded refresh (`if isRefreshing { return token ?? \"\" }`) fails because…",
+         "options": [
+          "reading the Bool flag from another concurrent caller is itself an undiagnosed data race",
+          "the flag detects the in-flight work but gives waiters no way to await its result",
+          "setting the flag before an await is forbidden by isolation rules",
+          "the guard runs on the caller's executor, not the actor's"
+         ],
+         "correct": 1,
+         "explain": "Detection without coordination: B learns 'a refresh exists' and can only return stale data or spin. The stored in-flight Task (b7-11, executed: 5 callers → 1 refresh) is both the fact AND the awaitable result."
+        },
+        {
+         "q": "For testability, a teammate changes `static let shared` to `static var shared`. What broke?",
+         "options": [
+          "nothing — var and let have identical initialization semantics for statics",
+          "only style — mutable globals trigger a strict-concurrency warning but behave identically at runtime",
+          "the actor's isolation now excludes the shared property itself",
+          "the lazy-once guarantee and construction confinement — replaceable mid-flight, races included"
+         ],
+         "correct": 3,
+         "explain": "The once machinery belongs to let; a settable global is b3-03's shared mutable state at the meta level. Testability's real answer is injection (b5-03): .shared as the production instance, tests building their own."
+        },
+        {
+         "q": "The full APIClient assembly, in executed pieces, is…",
+         "options": [
+          "static-let-once (here) + waiter gate (b7-10) + single-flight vault (b7-11), on one actor",
+          "a traditional class singleton with a serial DispatchQueue carefully guarding each subsystem",
+          "three separate actors — client, gate, vault — bridged by streams",
+          "an actor for state plus a global executor for the network hops"
+         ],
+         "correct": 0,
+         "explain": "Every part ran: one init under stampede; three callers parked and released together at 0.31s; five concurrent 401s producing one refresh. The work app's APIClient is these transcripts, composed."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open the work app's APIClient and audit it against the three executed pieces: is shared a let (once-guarantee) with a private init? Is the readiness gate storing continuations (b7-10's shape) — and does anything check state across an await without re-validating (the reentrancy hole)? Is the refresh guard a Task or a Bool? Then check testability: can a test construct the client with a fake transport, or is .shared hard-wired into call sites (b5-03's finding)?",
+     "verify": "// executed on this Mac 2026-07-19 (plain swift):\n// static-let stampede: 100 concurrent Task { APIClient.shared } →\n//   'init ran' printed EXACTLY once; 100 awaited calls → calls == 100\n// reentrancy transcript (actor method with an internal await, called twice):\n//   A entered (state 'empty') · B entered while A suspended (state 'loading')\n//   · A resumed into B-modified state · final: 'loaded by B'\n//   — mutual exclusion covers synchronous stretches, not whole methods\n// companion executed floors: waiter gate (b7-10: park at 0.00s, release at\n//   0.31s) · single-flight vault (b7-11: 5 callers → 1 refresh)\n// documented: actor reentrancy rationale (SE-0306), custom executors",
+     "goDeeper": "SE-0306 (actors) — the reentrancy section explains WHY awaits are doors: the alternative is deadlock. SE-0316 for global actors, the cousin pattern. b3-05 for Task-as-value, b3-06 for isolation's floor, b7-10/b7-11 for the executed gate and vault this loop assembles. WWDC 2021 \"Protect mutable state with Swift actors\" — the reentrancy slide is this loop's transcript, animated."
     }
    ]
   },
@@ -7208,6 +7493,101 @@ const CUR = {
      "transfer": "Watch the work app cold-start in Charles (or Instruments' Network template): count distinct connections by client port, and spot reuse — requests riding an existing connection skip connect+TLS entirely. Then find where the codebase configures the gRPC channel's keepalive (or URLSession's `waitsForConnectivity`) and re-read that config with this loop's eyes: every line of it exists because of something this loop executed.",
      "verify": "// Terminal 1 — a 1-line server:\n// python3 -c $'import socket,time\\ns=socket.socket(); s.bind((\"127.0.0.1\",9901)); s.listen(1)\\nc,a=s.accept(); time.sleep(0.3); print(c.recv(4096))'\n// Terminal 2 — POSIX client (Darwin): connect, then\n//   send(fd, \"hello\", 5); send(fd, \"world\", 5)\n// EXECUTED on this Mac 2026-07-18:\n//   server printed b'helloworld' — one read, boundaries gone\n//   two connections drew ephemeral ports 49419 / 49420\n//   after killing the server: write #1 returned 4 (success!), write #2 → -1 EPIPE\n//   curl -so /dev/null -w '%{time_connect} %{time_appconnect} %{time_starttransfer}'\n//     → DNS 0.56s, TCP +6ms, TLS +0.51s, first byte 1.09s on a fresh connection\n//   JSONDecoder on the concatenated and on the fragmented read: both throw",
      "goDeeper": "\"TCP/IP Illustrated, Volume 1\" (Stevens) — the connection-establishment and data-flow chapters. RFC 9293, the current TCP specification, §3.5 for the handshake. WWDC 2018 \"Optimizing Your App for Today's Internet\" — connection reuse and what iOS does on your behalf. Then b7-03: HTTP/2 builds its frames on exactly this pipe."
+    },
+    {
+     "id": "b4-12",
+     "title": "When REST and gRPC coexist",
+     "concept": {
+      "definition": "Real apps speak both: gRPC for the primary backend's typed calls, and plain HTTP for what HTTP is better at — file upload and download, third-party APIs whose contract is REST+JSON, and anything a CDN should cache. Choosing per endpoint is an interface decision, not a loyalty test — and the two stacks must SHARE their policy layer (one token vault, coordinated interceptors, one error taxonomy) or the seams become bugs.",
+      "code": "// executed — a multipart upload, built by hand and round-tripped:\n// --Boundary-6FE496…\n// Content-Disposition: form-data; name=\"orderID\"\n//\n// A-2319\n// --Boundary-6FE496…\n// Content-Disposition: form-data; name=\"receipt\"; filename=\"receipt.jpg\"\n// Content-Type: image/jpeg\n//\n// <1024 JPEG bytes>\n// --Boundary-6FE496…--\n//\n// server parsed: ['orderID', 'receipt'] · 1333 bytes · answered 200\n// (this text-framed body is what Alamofire's upload(multipartFormData:)\n//  builds for you — b4-11's framing lesson, one layer up)",
+      "underlying": "Files first, because they're the clearest split. The executed multipart body is just text-framed parts — boundary lines delimiting fields and bytes (b4-11's 'every layer frames its own messages', in its most literal costume) — and the surrounding HTTP ecosystem is what makes uploads/downloads REST's home turf: ranged requests for resume, redirect-following, CDN offload, progress reporting, and b9-06's background URLSession daemon that finishes a 200 MB transfer while your process is frozen. gRPC CAN move bytes (b7-06's client-streaming chunks), but default message-size ceilings, no range/resume convention, and a proxy ecosystem that treats POSTed protobuf as opaque mean that even gRPC-first shops ship files over HTTP. Alamofire earns its place here: multipart construction (the executed body, built for you), progress, retriers — mature machinery for exactly this lane.\n\nThird parties and caches decide the next two lanes. An external API's contract is whatever THEY publish — REST+JSON with no .proto to compile (b4-03's Codable is the toolchain) — so Stripe or a weather API is REST by definition, wrapped in your own funnel types (b4-09) like any other dependency. And HTTP caching (b4-05) is a GET-shaped superpower: config blobs, static catalogs, and images behind a CDN get validators, ETags, and edge caches for free — while a gRPC call is a POST-shaped h2 stream that every cache treats as opaque. The primary backend's typed, streaming, deadline-carrying calls remain b7's whole argument. Per endpoint, the question is never 'which is better' — it's which contract, which caching, which transfer semantics THIS endpoint needs.\n\nThe architecture that makes two stacks safe is sharing the POLICY layer while keeping transports native. One token vault: both the gRPC auth interceptor (b7-07, executed) and Alamofire's RequestInterceptor (the same onion pattern in its ecosystem — adapt-then-retry, documented) must draw from b7-11's single-flight vault, or the executed refresh-storm race returns wearing a second uniform: two clients independently refreshing one rotating token logs users out. One error taxonomy: URLError and grpc-status (b7-04) both map into the app's own error type at the funnel boundary, so screens never learn which transport failed. One logging/metrics spine (b5-09). What NOT to build: a homemade abstraction that makes gRPC look like REST or vice versa — the transports differ in exactly the ways that matter (streaming, deadlines, trailers vs status codes), and papering over them forfeits both toolsets' strengths. Two funnels, one policy — duplication at the transport edge is honest; duplication of POLICY is the bug.",
+      "whyItMatters": "This is the work app's literal architecture — gRPC to the backend, Alamofire for uploads and third parties — and the shared-vault rule is the difference between coexistence and the two-client refresh race. 'When would you NOT use gRPC?' is an interview question whose best answer is this loop's three lanes: files, foreign contracts, and cacheable GETs."
+     },
+     "exercise": {
+      "prompt": "Route five endpoints and defend each choice in one line: (a) fetch the user's profile; (b) upload a 200 MB inspection video; (c) charge a card via Stripe; (d) live courier-location updates on a map; (e) the app's remote-config JSON, served via CDN, fetched at every launch. Then the integration question: (f) both stacks currently refresh the auth token independently — using b7-11's executed evidence, what bug ships, and what's the fix?",
+      "code": "// available lanes:\n//   gRPC channel (b7): typed calls, streams, deadlines, one h2 connection\n//   REST/Alamofire: multipart (executed round trip), ranges/resume,\n//     background URLSession daemon (b9-06), CDN/ETag caching (b4-05)\n// executed reference: 5 concurrent 401s + independent refreshes\n//   = rotating-token invalidation race (b7-11)",
+      "solution": "(a) gRPC — the primary backend's typed contract; one unary call on the warm channel (b7-04), deadline attached (b7-05).\n\n(b) REST via background URLSession (Alamofire for the multipart shape — the executed body) — 200 MB needs resume, progress, and b9-06's out-of-process daemon; gRPC's message ceilings and no-resume make it the wrong pipe even though b7-06 technically could chunk it.\n\n(c) REST — Stripe's contract is Stripe's: their REST+JSON API, their SDK's shapes, decoded with Codable and wrapped in your funnel types (b4-09). No .proto exists and none will.\n\n(d) gRPC server-streaming (b7-06) — a subscription with flow control and task-tree cancellation (b7-05); polling REST would rebuild b6-04's ladder bottom-rung by hand.\n\n(e) REST GET — the CDN and ETag machinery (b4-05) serve it from the edge with 304s; a gRPC call would bypass every cache between you and the origin for a payload that's identical for millions of users.\n\n(f) The executed b7-11 race, doubled: five concurrent 401s produced ONE refresh only because the vault single-flighted them — two independent refresh paths recreate the race ACROSS clients, and with rotating refresh tokens, whichever client refreshes second carries a just-invalidated token: spurious logouts under load, unreproducible in QA. Fix: one TokenVault actor, injected into BOTH the gRPC auth interceptor and Alamofire's RequestInterceptor — the transports stay separate, the policy is one object.",
+      "explanation": "Notice the routing rubric that emerged: WHO owns the contract (them → REST), WHAT moves (big bytes → HTTP's transfer machinery), and WHO should cache it (edges → GET). Only calls failing all three tests default to the gRPC channel — which, for a gRPC-first app, is still most of them."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: when does a gRPC-first app still use REST, and what must the two stacks share to coexist safely?",
+      "modelAnswer": "Three lanes stay REST even in a gRPC shop: file transfer, because HTTP brings ranges, resume, progress, and the background-session daemon while gRPC has message ceilings and no resume convention; third-party APIs, whose contract is their REST+JSON with no .proto to compile; and cacheable GETs like config and CDN-served assets, where ETags and edge caches do work a POST-shaped gRPC stream forfeits. The primary backend's typed and streaming calls stay gRPC for the contract, deadlines, and flow control. What the stacks must share is the policy layer: one single-flight token vault feeding both the gRPC interceptor and the REST request adapter — otherwise two independent refresh paths race a rotating token into spurious logouts — plus one error taxonomy at the funnel boundary and one logging spine. Two transports, one policy; abstracting one to look like the other forfeits both toolsets' strengths.",
+      "sets": [
+       [
+        {
+         "q": "Even gRPC-first shops ship large file uploads over HTTP because…",
+         "options": [
+          "protobuf cannot encode binary payloads above 4 MB",
+          "ranges, resume, progress, and the background-session daemon live in HTTP's ecosystem",
+          "gRPC streams are unencrypted for binary frames",
+          "App Store review guidelines require multipart encoding for all user-generated media uploads"
+         ],
+         "correct": 1,
+         "explain": "b7-06 could chunk it, but message ceilings, no resume convention, and no b9-06 daemon integration make it the wrong pipe. The executed multipart body is the mature lane's entry ticket."
+        },
+        {
+         "q": "The executed multipart body — boundary lines delimiting named parts — is best understood as…",
+         "options": [
+          "HTTP/2 frames rendered in their text representation",
+          "a legacy wire format that modern Alamofire silently replaces with efficient binary encoding",
+          "compression framing for the embedded JPEG bytes",
+          "application-level framing: b4-11's 'every layer marks its own boundaries', in text"
+         ],
+         "correct": 3,
+         "explain": "The server split 1333 bytes into ['orderID', 'receipt'] purely by boundary strings — the same move as length prefixes (b7-04) and Content-Length (b4-02), costumed in text. Framing all the way up."
+        },
+        {
+         "q": "App config JSON served via CDN should be a REST GET rather than a gRPC call because…",
+         "options": [
+          "GETs get ETag/304 revalidation and edge caching; a gRPC POST stream is cache-opaque",
+          "JSON reliably decodes measurably faster than binary protobuf for small payloads like this one",
+          "gRPC channels cannot carry responses larger than the config",
+          "CDNs refuse HTTP/2 connections from mobile clients"
+         ],
+         "correct": 0,
+         "explain": "b4-05's machinery is GET-shaped: validators, edge caches, 304s — all free, all forfeited by a POST-shaped h2 stream every cache treats as opaque. Same bytes for millions of users = the edge's job."
+        }
+       ],
+       [
+        {
+         "q": "gRPC's auth interceptor and Alamofire's RequestInterceptor should BOTH draw tokens from…",
+         "options": [
+          "their own separate vaults, isolated so one stack's failure can never poison the other",
+          "whichever stack authenticated most recently, via a shared flag",
+          "one single-flight vault actor injected into both — one policy, two transports",
+          "the Keychain directly, skipping any in-memory coordination layer"
+         ],
+         "correct": 2,
+         "explain": "b7-11's executed race, doubled: independent refresh paths racing a rotating token = spurious logouts under load. The vault is policy; policy is singular. (Keychain-direct still leaves the refresh race — coordination is the point.)"
+        },
+        {
+         "q": "A teammate builds a wrapper making every gRPC call look like a REST request 'so the app has one networking style'. The cost?",
+         "options": [
+          "slightly slower calls from the additional translation layer's overhead, but nothing more serious",
+          "streaming, deadlines, and trailer semantics — gRPC's justifying differences — get papered over",
+          "none — uniform interfaces are worth any abstraction",
+          "the wrapper breaks HPACK compression on shared headers"
+         ],
+         "correct": 1,
+         "explain": "The transports differ exactly where it matters (b7-05/06's machinery has no REST costume that fits). Share the POLICY layer, keep transports native — duplication at the edge is honest; hiding semantics is debt."
+        },
+        {
+         "q": "Screens should never learn which transport a failure came from. The mechanism is…",
+         "options": [
+          "retrying failed gRPC calls over REST transparently before surfacing",
+          "logging full transport details while still rethrowing the original errors upward unchanged",
+          "restricting each screen to endpoints of a single transport",
+          "mapping URLError and grpc-status into one app error taxonomy at the funnel boundary"
+         ],
+         "correct": 3,
+         "explain": "b4-09's funnel, now with two mouths: both error vocabularies translate at the boundary into the app's own cases (offline, auth-expired, server-down, bug). UI reacts to meaning; transports stay swappable."
+        }
+       ]
+      ]
+     },
+     "transfer": "Map the work app's endpoints into the three lanes (files, foreign contracts, cacheable GETs) versus the gRPC channel — anything in the wrong lane is a finding. Then the critical audit: trace BOTH stacks' auth paths to their refresh logic. If there are two refresh implementations, you've found b7-11's race shipped in production — measure how often both stacks 401 simultaneously (app foregrounding after token expiry does exactly this) to estimate how often it fires.",
+     "verify": "// executed on this Mac 2026-07-19:\n// multipart/form-data body built by hand (boundary framing, two parts:\n//   text field + 1024-byte 'JPEG'), uploaded via URLSession to a local\n//   python server → server parsed ['orderID', 'receipt'], 1333 bytes, 200\n// companion executed floors: single-flight vault (b7-11: 5 callers →\n//   1 refresh — the race two independent stacks would recreate);\n//   interceptor ordering (b7-07); h2 framing (b7-03); TCP framing (b4-11)\n// documented: Alamofire's upload(multipartFormData:)/RequestInterceptor\n//   (adapt + retry), range/resume semantics, gRPC default message limits",
+     "goDeeper": "Alamofire's documentation: multipart upload and RequestInterceptor — the REST twin of b7-07's onion. gRPC's own \"gRPC on HTTP/2\" docs on why proxies and caches treat it as opaque. b4-05 for the caching machinery GETs inherit; b4-09 for the funnel that unifies the errors; b7-11 for the vault both stacks must share. This closes Block 4 at 12 loops — and the work-app extension's intra-block additions."
     }
    ]
   },
@@ -9224,6 +9604,2884 @@ const CUR = {
      "transfer": "Open Charles while the work app runs through a normal session: find the gRPC host, confirm the many exchanges share one connection, and watch the exchange numbering climb — those are streams opening 1, 3, 5… Then check the app's gRPC channel config for a keepalive interval and connect it to what you now know PING frames are for.",
      "verify": "// Terminal 1 — raw capture server (python socket bound to 9903) printing each\n// 9-byte frame header it receives; Terminal 2:\n//   curl -s --http2-prior-knowledge http://127.0.0.1:9903/\n// EXECUTED on this Mac 2026-07-18:\n//   preface b'PRI * HTTP/2.0\\r\\n\\r\\nSM\\r\\n\\r\\n'\n//   00 00 12 04 … SETTINGS stream 0 · 00 00 04 08 … WINDOW_UPDATE stream 0\n//   00 00 1e 01 05 00 00 00 01 HEADERS stream 1 — HPACK payload starts 82 86 41 8a\n//   (82 = :method GET, 86 = :scheme http — static-table hits)\n//   same request as HTTP/1.1 text: 77 bytes vs 30 bytes of HPACK\n// curl -sv --http2 https://example.com https://example.com/other → EXECUTED:\n//   'ALPN: server accepted h2' · '[HTTP/2] [1] OPENED' then '[3] OPENED'\n//   · 'Re-using existing connection'\n// dynamic-table byte-costs on repeat requests: documented, RFC 7541 §2.3",
      "goDeeper": "RFC 9113 (HTTP/2): §4 for framing, §5 for stream states — shorter than its reputation. RFC 7541 (HPACK), Appendix A is the static table the captured 82/86 bytes index into. WWDC 2018 \"Optimizing Your App for Today's Internet\" for URLSession's h2 behavior. Then b7-04: one gRPC call mapped frame by frame onto exactly this machinery."
+    },
+    {
+     "id": "b7-04",
+     "title": "Anatomy of a gRPC call",
+     "concept": {
+      "definition": "A unary gRPC call is exactly one HTTP/2 stream: request HEADERS carrying the metadata (`:path` = /package.Service/Method, `content-type: application/grpc`, `te: trailers`), a DATA frame carrying the request message in a 5-byte-prefixed frame, then the response as HEADERS, DATA, and a final trailing HEADERS frame with `grpc-status`. The HTTP status is almost always 200 — the call's real outcome lives in the trailers.",
+      "code": "// one unary call = one h2 stream:\n// → HEADERS  :method POST   :path /helloworld.Greeter/SayHello\n//            content-type: application/grpc   te: trailers\n// → DATA     00 00 00 00 07 0a 05 77 6f 72 6c 64      (executed)\n//            │  └─ length 7 ─┘ └─ protobuf: name=\"world\" (b7-01)\n//            └─ compressed flag = 0\n//            + END_STREAM — the client is done talking\n// ← HEADERS  :status 200   content-type: application/grpc\n// ← DATA     00 00 00 00 0d <HelloReply message bytes>\n// ← HEADERS  grpc-status: 0                (trailers: the REAL verdict)",
+      "underlying": "The 5-byte prefix is gRPC's own message frame: one compressed-flag byte, then a 4-byte big-endian length, then exactly that many protobuf bytes — executed: HelloRequest{name:\"world\"} is `0a 05 77 6f 72 6c 64`, framed as `00 00 00 00 07` + payload. Why ANOTHER length when b7-03's DATA frames already carry one? Because DATA-frame boundaries are transport artifacts: a big message spans several DATA frames, small messages share one. gRPC refuses to let the layer below define its message boundaries — b4-11's framing lesson, applied a third time, one layer higher.\n\nMetadata is not a separate mechanism — it IS the h2 headers, HPACK-compressed like everything else (b7-03). `:path` carries the full method name, which is all a generated stub really contributes when you call `client.sayHello(request)`; your own metadata (an auth token — b7-11's subject) rides alongside as ordinary headers, and binary values use keys suffixed `-bin`, base64-encoded (documented). The client finishes its half with END_STREAM; the server's half arrives in three acts — initial metadata, message, trailers.\n\nThe part that trips REST-trained eyes: there are TWO status systems. `:status: 200` speaks for the TRANSPORT — it means the h2 exchange itself worked, even when the call failed. The CALL's verdict is `grpc-status` in the trailers: 0 OK, 4 DEADLINE_EXCEEDED, 14 UNAVAILABLE, 16 UNAUTHENTICATED — a status that can only be computed after the body has streamed, which is exactly why it must trail (b7-03: a trailer is a HEADERS frame after the DATA, and `te: trailers` declared we can receive it). For instant failures there's the trailers-only response — a single HEADERS frame carrying grpc-status, no body at all (documented). So the first diagnostic question in gRPC debugging is never 'what was the status code?' — it's 'did I get trailers?': a real `grpc-status` means the call round-tripped the gRPC stack; a bare HTTP error (a 503 with an HTML body) means some proxy answered and your request never reached gRPC at all.",
+      "whyItMatters": "This is the map for reading the work app's traffic in Charles: every exchange shows 200, and the truth sits in the trailer. Distinguishing 'grpc-status 14' from 'HTTP 503 from a proxy' changes who you page — and \"how does gRPC map onto HTTP/2?\" is a staple interview question."
+     },
+     "exercise": {
+      "prompt": "Two production incidents, one skill. (1) Charles shows a call with `:status 200` yet the app surfaced an error; the trailer reads `grpc-status: 14`. (2) Another call shows `:status 503` with an HTML error page body and no trailers at all. For each: what actually happened, where did the failure live, and who do you escalate to?",
+      "code": "// incident 1                      // incident 2\n// ← HEADERS  :status 200          // ← HEADERS  :status 503\n// ← HEADERS  grpc-status: 14      //            content-type: text/html\n//            grpc-message:        // ← DATA     <html>Service\n//            \"connections draining\"//            Unavailable</html>\n//                                 // (no trailers anywhere)",
+      "solution": "Incident 1: the h2 exchange succeeded (`200` = transport fine) and a real gRPC endpoint answered — trailers prove the request round-tripped the gRPC stack. Status 14 UNAVAILABLE with 'connections draining' is the BACKEND declining the call (a deploy rotating instances, an overloaded service). Escalate to the backend/service team; a client retry with backoff (b4-08) is usually the right response, and 14 is a documented retry-safe code.\n\nIncident 2: no trailers means NO gRPC server ever saw this call. The HTML 503 came from something in between — a load balancer, CDN, or proxy answering on the backend's behalf. The client library maps it to UNAVAILABLE too, but the diagnosis is infrastructure, not application: escalate to whoever owns the ingress/proxy layer.\n\nSame surfaced error in the app, two different pages to different teams — the trailer's presence is the discriminator.",
+      "explanation": "This is why gRPC clients treat 'missing trailers' as its own failure class (some libraries surface it as INTERNAL rather than UNAVAILABLE). The transport saying 200 while the call fails feels wrong until you see the layering: HTTP/2 delivered the conversation flawlessly — the conversation's CONTENT was 'no'."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: walk through what crosses the wire in one unary gRPC call, and explain why the real status arrives in trailers rather than in the HTTP status.",
+      "modelAnswer": "One unary call is one HTTP/2 stream: the client sends HEADERS with the metadata — :path carrying /Service/Method, content-type application/grpc, te: trailers — then DATA holding the request message behind a 5-byte prefix of compressed-flag plus big-endian length, then END_STREAM. The server answers with initial-metadata HEADERS, the response message in DATA, and a trailing HEADERS frame carrying grpc-status and grpc-message. The HTTP :status is almost always 200 because it only vouches for the transport; the call's verdict can't be known until the body has finished streaming, so it must come after — which is exactly what trailers are for. A response with no trailers at all means a proxy answered and the request never reached gRPC.",
+      "sets": [
+       [
+        {
+         "q": "The 5 bytes gRPC puts before every message contain…",
+         "options": [
+          "a protocol version marker plus the count of messages still remaining",
+          "the method id and the caller's stream identifier",
+          "a compressed flag and the message's 4-byte big-endian length",
+          "a CRC checksum protecting the protobuf payload"
+         ],
+         "correct": 2,
+         "explain": "Executed: `00 00 00 00 07` then seven protobuf bytes. It exists because DATA-frame boundaries are transport artifacts — gRPC frames its own messages, just like every layer below framed theirs."
+        },
+        {
+         "q": "A gRPC call failed, yet Charles shows `:status 200`. Why is that normal?",
+         "options": [
+          "Charles rewrites error statuses while decoding gRPC",
+          "200 vouches for the transport; the verdict is grpc-status in the trailers",
+          "gRPC servers are configured to never emit HTTP errors",
+          "the 200 belongs to an earlier cached response that Charles replayed, not this call"
+         ],
+         "correct": 1,
+         "explain": "Two status systems, two layers: h2 delivered the exchange (200) and the exchange's content was a failure (grpc-status 14). The real status can only be computed after the body — so it trails."
+        },
+        {
+         "q": "When you call `client.sayHello(request)`, the generated stub's wire contribution is essentially…",
+         "options": [
+          "setting `:path` to /helloworld.Greeter/SayHello and framing the message",
+          "compiling a custom binary transport protocol unique to this generated service",
+          "opening a fresh TCP connection dedicated to this method",
+          "registering the method with the server before the first call"
+         ],
+         "correct": 0,
+         "explain": "Stubs are thin: serialize (b7-01), frame with the 5-byte prefix, POST to the method's :path on the shared channel. Everything else is the same machinery every call uses."
+        }
+       ],
+       [
+        {
+         "q": "A response arrives with HTML in the body and no trailers. The most precise conclusion?",
+         "options": [
+          "the server's protobuf serializer crashed mid-response",
+          "the call's deadline expired midway while the response body was still streaming",
+          "the call was rejected by gRPC's authentication layer",
+          "no gRPC server saw the call — an intermediary answered instead"
+         ],
+         "correct": 3,
+         "explain": "Trailers are the receipt that the gRPC stack round-tripped the call. HTML + no trailers = a proxy/LB spoke for the backend — an infrastructure page, not an application bug."
+        },
+        {
+         "q": "Your team adds a `x-request-id` to every call for log correlation. On the wire this is…",
+         "options": [
+          "an extra field appended to each protobuf message",
+          "an ordinary h2 header in the request metadata, HPACK-compressed",
+          "a query parameter appended onto the method's :path",
+          "a second tiny DATA frame transmitted just ahead of the message itself"
+         ],
+         "correct": 1,
+         "explain": "Metadata IS headers — that's the whole mechanism, and why b7-03's dynamic table makes a repeated key nearly free. Binary values use `-bin` keys with base64 (documented)."
+        },
+        {
+         "q": "gRPC can send a 'trailers-only' response. When, and what is it?",
+         "options": [
+          "for immediate failures: a single HEADERS frame with grpc-status, no body",
+          "for empty messages: the 5-byte prefix with length zero replaces DATA",
+          "for cached replies: headers that reference an earlier stream's response body",
+          "for streaming calls only: the final frame that closes the sequence"
+         ],
+         "correct": 0,
+         "explain": "Why send three acts when the answer is 'UNAUTHENTICATED' before any body exists? One HEADERS frame carries the verdict — documented in the gRPC HTTP/2 spec, and common in the wild for auth failures."
+        }
+       ]
+      ]
+     },
+     "transfer": "In Charles, open one successful and one failed gRPC exchange from the work app. For each, find: the :path (which Service/Method), the te: trailers header, the content-type, and the trailer block with grpc-status. Then find one failure in your logs and classify it with the incident-1-vs-incident-2 discriminator: did trailers arrive?",
+     "verify": "// executed on this Mac 2026-07-18 (b7-01's encoder reused):\n// protobuf HelloRequest{name:\"world\"} → 0a 05 77 6f 72 6c 64\n// gRPC frame: [0][00 00 00 07][payload] → 00 00 00 00 07 0a 05 77 6f 72 6c 64\n//   — the canonical helloworld request, byte-identical to the reference example\n// header/trailer choreography (te: trailers, trailers-only responses, -bin\n// metadata, status-code table): documented — gRPC's PROTOCOL-HTTP2 spec,\n// readable in one sitting and worth it\n// b7-03's executed capture already showed the container: HEADERS then DATA\n// on one stream, trailers = one more HEADERS frame after the body",
+     "goDeeper": "gRPC's PROTOCOL-HTTP2 document — the complete wire spec, surprisingly short. The official gRPC status-codes table (which codes are retry-safe matters for b7-11). \"gRPC: Up and Running\" ch. 4–5. b7-05 next: the deadline that rides in those same request headers."
+    },
+    {
+     "id": "b7-05",
+     "title": "Deadlines and cancellation",
+     "concept": {
+      "definition": "A gRPC deadline is an absolute point in time after which the caller no longer wants the answer: it travels with the call as the `grpc-timeout` request header, every server along the way sees the remaining budget, and whichever side notices it pass aborts the call with status 4, DEADLINE_EXCEEDED. Cancellation is the same teardown triggered by intent instead of the clock — the client resets the stream — and on iOS both plug directly into Swift Concurrency's cooperative cancellation from b3-05.",
+      "code": "// a deadline is a race between the work and the clock (executed):\ntry await withThrowingTaskGroup(of: String.self) { g in\n    g.addTask { try await slowRPC() }          // pretends to need 2.0s\n    g.addTask {\n        try await Task.sleep(for: .seconds(0.3))\n        throw CancellationError()              // the deadline firing\n    }\n    let first = try await g.next()!            // clock wins →\n    g.cancelAll()                              // losers are cancelled\n    return first\n}\n// executed output:\n//   slowRPC: cancel signal received at 0.32s\n//   caller saw CancellationError at 0.32s — not 2.0s;\n//   the child was cancelled, not orphaned",
+      "underlying": "On the wire the deadline is one header: `grpc-timeout`, the REMAINING time with a unit suffix — `300m` for milliseconds, `5S` for seconds (documented format). The client computes it from the absolute deadline at send time, and that's the point: one deadline, many shrinking budgets. A server handling your call reads what's left and passes a smaller `grpc-timeout` into every call IT makes downstream, so the whole tree of work shares a single promise to the user — and retries (b4-08) must fit inside the same budget, not restart it. Per-attempt timeouts that reset on retry are how a '5 second' operation quietly takes thirty; a deadline cannot be extended by failing.\n\nTermination is stream surgery from b7-03's toolkit: the client cancels by sending RST_STREAM — the stream dies mid-conversation, no trailers needed — and a server that notices the deadline first ends the call with trailers carrying status 4. The two are cousins with distinct codes: 4 DEADLINE_EXCEEDED means 'the clock', 1 CANCELLED means 'the caller changed its mind'. Either way the server's handler context is cancelled — but server code, like yours, only stops if it cooperates by checking.\n\nThe Swift side is the part you can hold: a deadline is literally a race on b3-05's task tree — executed above, the clock task fired at 0.3s, `cancelAll()` marked the RPC task, and its cancellation-aware suspension point (`Task.sleep` here, grpc-swift's transport calls in real code) threw `CancellationError` immediately — the caller saw the error at 0.32s, not 2.0s. That last clause is the load-bearing one: cancellation is COOPERATIVE. Marking a task cancels nothing by itself; suspension points and explicit `Task.checkCancellation()` calls are where cancellation actually lands (b3-05). grpc-swift bridges the two worlds: cancel the Task and the library sends RST_STREAM; the deadline passes and the library throws — your `catch` can't tell the difference unless it reads the status, which is exactly as it should be.",
+      "whyItMatters": "Every spinner that hangs forever is a call without a deadline. Every screen a user swipes away should cancel its in-flight calls — and with `.task { }` on the task tree, it does, for free, all the way to an RST_STREAM frame. 'Deadline versus timeout' is also a distinction interviewers explicitly probe on."
+     },
+     "exercise": {
+      "prompt": "A detail screen runs `.task { await vm.load() }` where `load()` awaits a gRPC call carrying a 5-second deadline. The user opens the screen and swipes it away after 0.1s. Predict: (1) what happens on the wire and when; (2) what `load()` observes; (3) the trap — what happens if `load()` follows the await with a heavy CPU parsing loop, and the fix.",
+      "code": "struct DetailScreen: View {\n    var body: some View {\n        content.task {            // tied to the view's lifetime (b3-05)\n            await vm.load()       // → gRPC call, 5s deadline\n        }\n    }\n}\n// user swipes away at t = 0.1s. Then what?",
+      "solution": "(1) The view disappears, SwiftUI cancels the `.task`, cancellation flows down the task tree into the gRPC call, and the library sends RST_STREAM at ~0.1s. The 5-second deadline never gets a vote — cancellation raced it and won. The server's handler context is cancelled too; a cooperating server stops burning CPU on an answer nobody wants.\n\n(2) The awaited call throws (`CancellationError`/status CANCELLED). If `load()` catches errors to show an alert, it should let cancellation pass silently — the user asked for this 'failure'.\n\n(3) The trap: cancellation is cooperative. If the response somehow arrived and the code entered `for item in huge { parse(item) }`, that loop runs to completion — no suspension points, nothing checks the flag. Fix: `try Task.checkCancellation()` inside the loop (b3-05), or chunk the parse across awaits. Cancelled tasks finish exactly as much work as they insist on doing.",
+      "explanation": "Notice what you did NOT write: no cancellation token threaded through parameters, no `deinit` cleanup, no manual bookkeeping. Structure did it — the view owns the task, the task owns the call, the call owns the stream. That chain is b3-05's whole argument, and gRPC just extended it one layer further than your code: onto the wire."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what's the difference between a deadline and a per-request timeout, how does a deadline travel in gRPC, and what does 'cancellation is cooperative' mean for your Swift code?",
+      "modelAnswer": "A timeout restarts with every attempt; a deadline is one absolute point in time that all attempts, retries, and downstream calls share — failing doesn't buy more budget. In gRPC it travels as the grpc-timeout header carrying the remaining time, recomputed at each hop, and whichever side sees it expire ends the call with status 4, DEADLINE_EXCEEDED, while explicit client cancellation resets the stream and surfaces as status 1. On iOS both ride the task tree: cancelling the enclosing Task sends RST_STREAM. Cooperative means marking a task cancelled does nothing by itself — cancellation only lands at suspension points or explicit checkCancellation calls, so CPU-bound stretches keep running until the code volunteers a check.",
+      "sets": [
+       [
+        {
+         "q": "A call retries three times against a 5s deadline. How much total time may it consume?",
+         "options": [
+          "15 seconds — each attempt receives its own fresh budget",
+          "5 seconds plus backoff pauses, which pause the clock",
+          "5 seconds total — every attempt shares the one deadline",
+          "unbounded, until the connection itself finally drops"
+         ],
+         "correct": 2,
+         "explain": "The deadline is absolute; retries and their backoff all spend from the same account. That's the entire distinction from a per-attempt timeout — failure doesn't refill the budget."
+        },
+        {
+         "q": "The `grpc-timeout` header a server receives contains…",
+         "options": [
+          "the remaining budget, recomputed by the sender at each hop",
+          "the absolute wall-clock instant the caller chose at the start",
+          "the original full budget, for the server's bookkeeping",
+          "the count of hops this call may still traverse"
+         ],
+         "correct": 0,
+         "explain": "Clocks across machines disagree, so gRPC ships durations: deadline-minus-now at send time, shrinking hop by hop (`300m`, `5S` — documented format). One promise, many dwindling budgets."
+        },
+        {
+         "q": "On the wire, a client cancelling an in-flight call looks like…",
+         "options": [
+          "a trailers frame from the client carrying grpc-status 1",
+          "an RST_STREAM frame — the stream dies without ceremony",
+          "a zero-length DATA frame flagged END_STREAM",
+          "a GOAWAY frame closing the whole connection politely"
+         ],
+         "correct": 1,
+         "explain": "b7-03's frame table pays off: RST_STREAM kills one stream; GOAWAY would kill the connection and every other call on it. Only servers send status — a cancelling client just leaves."
+        }
+       ],
+       [
+        {
+         "q": "Code review: `catch { showErrorAlert() }` wraps an awaited gRPC call inside a view's `.task`. The subtle bug?",
+         "options": [
+          "swiping away shows an error alert for a cancellation the user caused",
+          "the catch block silently swallows every DEADLINE_EXCEEDED status the call produces",
+          "alerts cannot be presented from inside a task block",
+          "the catch prevents RST_STREAM from reaching the server"
+         ],
+         "correct": 0,
+         "explain": "Dismissal cancels the task, the call throws CancellationError, and the 'error' UI fires for behavior the user requested. Cancellation deserves its own quiet path in every catch."
+        },
+        {
+         "q": "A cancelled server handler keeps computing for 30 more seconds. How?",
+         "options": [
+          "the RST_STREAM frame was lost, so the server never learned",
+          "server-side cancellation always waits for the client's full deadline to pass as well",
+          "its code hit no suspension points or checks — cooperation never happened",
+          "gRPC guarantees handlers always run to completion once started"
+         ],
+         "correct": 2,
+         "explain": "Same rule both sides of the wire: cancellation marks, cooperation stops. Executed locally: the parent saw CancellationError at 0.32s because Task.sleep checks — a raw compute loop wouldn't have."
+        },
+        {
+         "q": "Team A sets deadlines per screen (2s list, 10s upload); team B sets one global 30s. Six months later, the observable difference?",
+         "options": [
+          "team B's app crashes when several calls exceed 30s at once",
+          "team A's spinners resolve at the pace each screen promised; B's hang half a minute",
+          "no observable difference — servers enforce their own stricter limits regardless of clients",
+          "team A's servers see more load from the tighter deadlines"
+         ],
+         "correct": 1,
+         "explain": "A deadline is a UX promise expressed in protocol form: how long may this spinner exist? Global defaults mean the slowest tolerable case decides for every screen — which is how 30-second spinners are born."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find where the work app sets deadlines — search the gRPC client config and call sites for timeout/deadline options. Classify what you find: per-call, per-service default, or none. Then pick ONE screen you know well and answer: when the user swipes it away, does its in-flight call actually get cancelled (is the call inside the view's `.task` tree?), or does it run to completion for nobody?",
+     "verify": "// executed on this Mac 2026-07-18 (plain swift, top-level await):\n// withThrowingTaskGroup race — work task (2.0s) vs deadline task (0.3s):\n//   slowRPC: cancel signal received at 0.32s     ← onCancel fired on cancelAll()\n//   caller saw CancellationError at 0.32s        ← not 2.0s; child not orphaned\n// proves: deadline-as-race, cooperative delivery at a suspension point,\n// and structured teardown of the losing task\n// wire format of grpc-timeout (unit suffixes), RST_STREAM on cancel, status\n// 4 vs 1 semantics: documented — gRPC PROTOCOL-HTTP2 spec + status-codes table",
+     "goDeeper": "gRPC's PROTOCOL-HTTP2 spec, the grpc-timeout grammar. The gRPC blog's \"Deadlines\" article — the canonical 'deadlines are absolute' argument. SE-0304 (structured concurrency) for cancellation's design; b3-05 for the task tree this loop stood on. b7-10 will add the connection-level cousin: keepalive, and what happens to deadlines when the pipe itself dies."
+    },
+    {
+     "id": "b7-06",
+     "title": "Streaming RPCs and flow control",
+     "concept": {
+      "definition": "A streaming RPC keeps the call's HTTP/2 stream open so one or both sides send a SEQUENCE of 5-byte-framed messages instead of exactly one: server-streaming (one request, many responses), client-streaming (many requests, one response), and bidirectional. The conversation still ends the same way — trailers with `grpc-status` — and HTTP/2 flow control paces it: a receiver grants send-credit via WINDOW_UPDATE frames, so a slow consumer automatically slows the sender.",
+      "code": "// a server-stream is back-to-back 5-byte-framed messages (b7-04)\n// on ONE stream — decoding is a loop (executed):\nvar buf = frame(\"world\") + frame(\"again\")     // 24 bytes on the wire\nwhile buf.count >= 5 {\n    let len = Int(buf[1]) << 24 | Int(buf[2]) << 16\n            | Int(buf[3]) << 8  | Int(buf[4])\n    handle(buf[5 ..< 5+len])                  // one protobuf message\n    buf.removeFirst(5 + len)\n}\n// executed: message len=7 name=world · message len=7 name=again\n\n// what your app actually writes (b3-10's surface):\n// for try await update in call.responses { render(update) }",
+      "underlying": "On the wire, 'streaming' is barely a feature: the four RPC shapes differ only in how many 5-byte-framed messages each side sends before its END_STREAM. Executed above: two framed messages concatenated in one buffer, parsed out by a loop reading each length prefix — that loop IS streaming decode, and it's why b7-04's prefix exists at all (DATA-frame boundaries can't be trusted to align with messages). A client-streaming call half-closes — END_STREAM on the client's side — and the server, which has been reading the same loop, answers with its one message and trailers. Bidirectional is both loops running at once: within one direction, order is guaranteed (b4-11 — it's still one TCP stream underneath); ACROSS directions there is no ordering at all, and code that assumes 'my third send happens before their third reply' is writing a race.\n\nFlow control is the transport refusing to let a fast sender drown a slow receiver. Each side declares how many DATA bytes may be in flight — executed: curl's SETTINGS advertised INITIAL_WINDOW_SIZE = 10485760, and it immediately raised the connection-level window with a WINDOW_UPDATE granting +1048510465 bytes of credit. Every DATA byte spends credit from TWO windows, the stream's and the connection's; at zero, the sender STOPS — not an error, just silence until the receiver's WINDOW_UPDATE restores credit. Credit is replenished as the receiver consumes, which turns 'my UI renders slowly' into 'the server physically stops sending' with no code written on either side: backpressure as a transport guarantee, per-stream so one stalled stream can't starve its siblings (though the shared connection window is why one enormous response can still squeeze everyone — b7-03's honest asterisk has a flow-control cousin).\n\nIn Swift the response stream surfaces as an AsyncSequence (b3-10): `for try await` pulls messages at the loop body's pace, and grpc-swift only replenishes windows as your iteration consumes (documented) — so a slow consumer buffers megabytes, not gigabytes. Choosing shapes is then a domain question, not a technology one: is this call one answer (unary), a subscription (server-streaming — locations, chat inbound), a big thing in pieces (client-streaming — chunked upload), or a conversation (bidi — chat, live sync)? And every streaming call still honors b7-05: cancel the task, RST_STREAM ends the conversation, deadline included.",
+      "whyItMatters": "This is the work app's realtime machinery: a subscription is a server-stream your `for try await` loop renders, and the reason a backgrounded, slow, or busy phone doesn't get buried in updates is WINDOW_UPDATE credit running dry. 'When would you choose a streaming RPC, and what stops the firehose?' is a senior-level interview pairing."
+     },
+     "exercise": {
+      "prompt": "Pick the RPC shape for each of the four features below, with one sentence of justification. Then the prediction: feature (b)'s consumer does `try await Task.sleep(for: .seconds(1))` inside its `for try await` loop while the server has 50 updates queued — what happens on the wire, and how much memory does the client burn?",
+      "code": "// (a) fetch the user's profile once at screen-open\n// (b) live driver locations updating a map\n// (c) uploading a 200MB video as 1MB chunks\n// (d) a support-chat screen: both sides talk whenever they like\n//\n// shapes available: unary · server-streaming · client-streaming · bidi",
+      "solution": "(a) Unary — one question, one answer; a stream adds machinery with nothing to say twice.\n\n(b) Server-streaming — one subscription request, an open-ended sequence of location messages; the client's END_STREAM went out with the request.\n\n(c) Client-streaming — many request messages (chunks), one response (the upload receipt). Chunking respects message-size limits and keeps memory flat: 1MB in flight, not 200MB in one protobuf.\n\n(d) Bidirectional — two independent message sequences on one stream; remember order holds within each direction only.\n\nPrediction for (b): the loop consumes one update per second, so the client library replenishes window credit at that pace. The server spends its credit quickly, hits zero, and STOPS SENDING — no error, no timeout, just DATA frames pausing. Queued updates wait server-side (where the service can coalesce or drop stale positions). Client memory stays bounded near the window size — executed evidence of the mechanism: curl declaring INITIAL_WINDOW_SIZE and granting credit by WINDOW_UPDATE; the credit ledger is the buffer cap.",
+      "explanation": "The deep habit: the `for try await` loop's body is not just rendering — its pace is a flow-control signal that crosses the wire. That's also the argument for keeping heavy work OUT of the loop body (hand messages to another task): otherwise your JSON-parse time (or a b2-12 main-thread stall) becomes the server's send rate."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what makes an RPC 'streaming' at the wire level, and how does HTTP/2 flow control protect a slow consumer without any application code?",
+      "modelAnswer": "At the wire level streaming is just cardinality: the stream stays open and a side sends multiple 5-byte-framed messages before its END_STREAM, decoded by a loop reading each length prefix — server-streaming, client-streaming, and bidi are the three multi-message shapes, and trailers still close the call. Flow control is a credit system: each receiver advertises a window, every DATA byte spends from both the stream's window and the connection's, and a sender at zero credit simply stops until the receiver's WINDOW_UPDATE frames replenish it. Credit is only granted as the consumer actually consumes — in Swift, as the for-try-await loop iterates — so a slow consumer bounds its own memory and slows the sender automatically. Backpressure is a transport guarantee, not an application feature.",
+      "sets": [
+       [
+        {
+         "q": "On the wire, what distinguishes a server-streaming call from a unary one?",
+         "options": [
+          "a dedicated STREAMING frame type replaces the DATA frames",
+          "the server sends many 5-byte-framed messages before its trailers",
+          "each response message opens its own new stream id",
+          "the client must send a fresh re-request after every single message it receives"
+         ],
+         "correct": 1,
+         "explain": "Same stream, same frames, same trailers — just more messages before END_STREAM. Executed: two framed messages in one buffer, parsed out by the length-prefix loop."
+        },
+        {
+         "q": "A sender's flow-control credit hits zero mid-stream. What happens?",
+         "options": [
+          "the call immediately fails with RESOURCE_EXHAUSTED at the sending end",
+          "the stream is reset and the client must reconnect",
+          "it pauses sending until WINDOW_UPDATE frames restore credit",
+          "remaining messages are silently dropped as stale"
+         ],
+         "correct": 2,
+         "explain": "Zero credit is a pause, not an error — silence until the receiver consumes and grants more. Executed: curl advertising its window in SETTINGS, then granting credit via WINDOW_UPDATE."
+        },
+        {
+         "q": "In a bidirectional stream, which ordering is guaranteed?",
+         "options": [
+          "within each direction only; across directions, none",
+          "full ordering — messages interleave in global send order",
+          "none — bidi messages may arrive in any order at all",
+          "across directions only when the deadline header is set"
+         ],
+         "correct": 0,
+         "explain": "Each direction is one sequence on one TCP byte stream (b4-11): ordered. But the two directions are independent — 'their reply to my third message' is a protocol you must build, not assume."
+        }
+       ],
+       [
+        {
+         "q": "A map screen's `for try await` loop renders slowly on an old phone. What does the SERVER experience?",
+         "options": [
+          "nothing — it keeps sending at full rate and the network's buffers absorb everything",
+          "deadline expirations from the client's slow acknowledgments",
+          "RST_STREAM frames each time the client falls behind",
+          "its send stalls as the client's window credit stops being replenished"
+         ],
+         "correct": 3,
+         "explain": "The loop's pace IS the credit-grant pace (documented for grpc-swift). Slow consumption crosses the wire as flow control — the server stops, queues server-side, and can coalesce stale updates there."
+        },
+        {
+         "q": "Code review: a 200MB upload as ONE unary call with a single giant message. The strongest objection?",
+         "options": [
+          "unary calls cannot carry binary payloads of that size",
+          "protobuf cannot serialize messages larger than 64MB",
+          "both peers must hold 200MB in memory, and limits will reject it — stream 1MB chunks",
+          "HTTP/2 forbids sending DATA frames larger than the advertised flow-control window size"
+         ],
+         "correct": 2,
+         "explain": "A message is decoded whole — 200MB materializes on both ends, and default max-message-size limits (typically single-digit MB) refuse it first. Client-streaming chunks keep memory flat and resumable."
+        },
+        {
+         "q": "Your chat's server-stream delivers messages, but sends stall whenever the app backgrounds. Which explanation fits the evidence?",
+         "options": [
+          "the suspended app stopped consuming, so credit ran dry — flow control working",
+          "iOS forcibly closes every open HTTP/2 stream the moment an app enters the background",
+          "the server detects presence and pauses delivery to save battery",
+          "TLS renegotiation on background transitions blocks the stream"
+         ],
+         "correct": 0,
+         "explain": "A suspended process (b2-13) iterates no loops and grants no credit — the transport does exactly what it promised. The real design question becomes b6-05's: what should wake you, and push is usually the answer."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one streaming RPC in the work app's protos (`stream` keyword in the .proto, or an AsyncSequence-shaped response in generated code). Trace its consumer: what does the loop body do, and how long can one iteration take? Then answer the flow-control question for YOUR feature: when this consumer is slow, where do messages pile up, and is the server-side behavior (queue? coalesce? drop?) actually what the product wants?",
+     "verify": "// executed on this Mac 2026-07-18:\n// streaming decode — two 5-byte-framed messages in one buffer, parsed by\n// the length-prefix loop: 'len=7 name=world', 'len=7 name=again'\n// flow-control declarations captured from a real client (python raw socket\n// + curl --http2-prior-knowledge):\n//   SETTINGS: MAX_CONCURRENT_STREAMS=100, INITIAL_WINDOW_SIZE=10485760,\n//             ENABLE_PUSH=0\n//   WINDOW_UPDATE (stream 0): +1048510465 bytes of send credit\n// the stall-at-zero-credit behavior and grpc-swift replenishing windows as\n// the AsyncSequence is consumed: documented (RFC 9113 §5.2; grpc-swift docs)",
+     "goDeeper": "RFC 9113 §5.2 — flow control's five paragraphs of design rationale are the best part. gRPC docs on the four RPC shapes and max-message-size limits. b3-10 for the AsyncSequence surface this rides on. \"gRPC: Up and Running\" ch. 4's streaming walkthrough. Next, b7-07: interceptors — the middleware layer that sees every one of these calls."
+    },
+    {
+     "id": "b7-07",
+     "title": "Interceptors: middleware for every call",
+     "concept": {
+      "definition": "An interceptor is middleware wrapped around every RPC on a channel: it receives the request plus a `next` continuation, and may mutate metadata, observe the response, retry, or refuse the call without it ever reaching the network — while the call sites never know it exists. Interceptors compose into a chain where registration order decides who wraps whom: requests flow outermost-in, responses flow back inner-out.",
+      "code": "struct Auth: Interceptor {                 // ONE place, EVERY call\n    func intercept(_ req: Request, next: Next) async throws -> Response {\n        var req = req\n        req.metadata[\"authorization\"] = \"Bearer \\(token)\"\n        return try await next(req)         // pass inward\n    }\n}\n\n// the chain is folded closures (b1-19), index 0 outermost:\nvar next = transport\nfor i in interceptors.reversed() {\n    let inner = next\n    next = { r in try await i.intercept(r, next: inner) }\n}\n\n// executed: client.getProfile() mentions no tokens, logging, or\n// retries — yet all three happened, in registration order",
+      "underlying": "The chain is b1-05 promoted to architecture: each layer is a closure capturing the next layer in its context box, and `compose` folds the array right-to-left so the first-registered interceptor becomes the outermost skin of the onion. Executed with [Logging, Retry, Auth] around a transport that fails its first attempt with status 14: LOG → , transport attempt 1 (metadata already carrying `authorization` — Auth mutated the request on its way through), RETRY catches the 14 and calls `next` AGAIN, transport attempt 2 succeeds, LOG ← status 0. One request line in the log, one success — the retry is invisible from outside it.\n\nThen the same parts in a different order — [Retry, Logging, Auth] — and the log tells a different truth (executed): LOG → , error 14, LOG → , status 0. Two logged attempts, because Logging now sits INSIDE the retry loop and runs once per attempt. Nothing about either arrangement is wrong; they answer different questions ('what did the user experience?' vs 'what hit the wire?'), and choosing is a design decision the chain's ORDER encodes. The same reasoning places Auth inside Retry: each attempt should re-read the token, so an attempt after a refresh carries the new one (b7-11's flow depends on exactly this).\n\nInterceptors also hold veto power: Auth with no token threw UNAUTHENTICATED locally — executed: `transport calls made: 0` — the caller got a real gRPC-shaped failure for a call that never left the process. That's the full menu: mutate the request, observe or replace the response, re-invoke next (retry), or short-circuit. What EARNS a place in the chain is cross-cutting, per-channel policy: auth (b7-11), request-ids (b7-04's metadata), logging (b5-09), metrics, retry budgets (b7-05 — inside the deadline, never resetting it). What never does: business logic — a cart-validation rule in an interceptor is invisible at the call site that depends on it, which is the pattern's power inverted into a trap. grpc-swift formalizes all of this as ClientInterceptor types registered at client creation, with the same request-plus-next shape (documented); servers mirror it for auth checks and logging on their side.",
+      "whyItMatters": "When you wonder 'where does the work app's token get attached?' — it's an interceptor at channel construction, not the 40 call sites. This is also b4-09's funnel argument arriving in gRPC clothes: one choke point for policy, and the first place to look when a header appears in Charles that no call site sets."
+     },
+     "exercise": {
+      "prompt": "The channel is built with interceptors [Logging, Retry(max 1), Auth] and the transport fails the first attempt with status 14, then succeeds. (1) Predict the exact log output. (2) Predict how it changes if the chain becomes [Retry, Logging, Auth]. (3) Tokens can expire mid-retry: which side of Retry must Auth sit on, and why?",
+      "code": "// chain A: [Logging, Retry(1), Auth] + flakyTransport\n// chain B: [Retry(1), Logging, Auth] + flakyTransport\n// flakyTransport: attempt 1 → status 14, attempt 2 → status 0\n//\n// Logging prints:  \"→ path\"  before next,  \"← status\"  after",
+      "solution": "(1) Chain A (executed): `→ /Svc/Get`, then transport attempt 1 fails inside, Retry re-invokes next, attempt 2 succeeds, `← status 0`. ONE arrow pair — the retry happened entirely inside Logging's wrap, so the log shows a single clean call.\n\n(2) Chain B (executed): `→ /Svc/Get`, `← error 14`, `→ /Svc/Get`, `← status 0`. TWO pairs — Logging now runs once per attempt. Neither log is wrong: A answers 'what did the caller experience', B answers 'what hit the wire'.\n\n(3) Auth must sit INSIDE Retry (closer to the transport), so `next` re-enters Auth on every attempt and each attempt re-reads the current token. With Auth outside, the token is stamped once — a retry after a mid-flight refresh would resend the expired one, and the retry of an UNAUTHENTICATED failure becomes a guaranteed second failure (b7-11's exact scenario).",
+      "explanation": "The chain's order is not configuration trivia — it is semantics, and the executed outputs differ line for line. Reviewing a channel setup means reading the array like code: every pair of adjacent interceptors is a 'who sees whose effects' decision."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what is a client interceptor, what can it do that a call site can't, and why does the order of the interceptor chain matter?",
+      "modelAnswer": "A client interceptor is middleware registered on the channel that wraps every RPC: it gets the request and a next continuation, so it can mutate metadata, observe responses, retry by calling next again, or short-circuit the call without touching the network. Its power over a call site is scope — one interceptor applies a policy like auth-token injection or logging to every call, invisibly and consistently, instead of forty copies. Order matters because the chain nests: the first-registered interceptor wraps all the others, so logging outside retry records one attempt while logging inside records every attempt, and auth inside retry re-stamps a fresh token per attempt. The order is behavior, not configuration.",
+      "sets": [
+       [
+        {
+         "q": "What does an interceptor receive when a call passes through it?",
+         "options": [
+          "a copy of the request after the transport has sent it",
+          "the request plus a `next` continuation for the rest of the chain",
+          "only the metadata — message bodies bypass the chain",
+          "the channel's complete list of registered interceptors to coordinate with"
+         ],
+         "correct": 1,
+         "explain": "Request-plus-next is the whole contract: call next to proceed inward, skip it to short-circuit, call it twice to retry. Everything the pattern does falls out of that one shape."
+        },
+        {
+         "q": "Interceptors registered [A, B, C]. Which statement holds?",
+         "options": [
+          "C sees the request first; A talks to the transport",
+          "the runtime chooses an order that optimizes each call",
+          "A sees the request first AND the response last — it wraps everything",
+          "they run concurrently, and the runtime merges their effects afterward"
+         ],
+         "correct": 2,
+         "explain": "Index 0 is the onion's outermost skin: requests flow A→B→C→transport, responses return C→B→A. Executed: reordering Logging and Retry changed the log line-for-line."
+        },
+        {
+         "q": "An interceptor decides not to call `next`. What happens?",
+         "options": [
+          "the call never reaches the network; the caller gets whatever it returns or throws",
+          "the runtime detects the gap and invokes the transport directly",
+          "the call is queued until the interceptor calls next later",
+          "undefined behavior — the contract requires every interceptor to call next exactly once"
+         ],
+         "correct": 0,
+         "explain": "Short-circuiting is a feature: executed, Auth-without-token threw UNAUTHENTICATED and the transport counter read 0. Local cache hits and precondition failures use the same move."
+        }
+       ],
+       [
+        {
+         "q": "Your log shows one clean attempt per call, but Charles shows some calls hitting the wire twice. The explanation?",
+         "options": [
+          "Charles double-counts multiplexed streams on one connection",
+          "the server is replaying requests for idempotency checking",
+          "a metadata bug duplicates the request's END_STREAM flag",
+          "the logging interceptor sits outside the retry interceptor"
+         ],
+         "correct": 3,
+         "explain": "Executed, chain A: retry re-invoked next entirely inside Logging's wrap, so the log saw one call while the transport ran twice. Move Logging inward when you need per-attempt truth."
+        },
+        {
+         "q": "A teammate puts the 'cart must not be empty' check into a client interceptor. Best review verdict?",
+         "options": [
+          "good — the check now provably runs on every single call",
+          "wrong layer: business rules hidden from call sites belong in the domain code",
+          "perfectly fine, provided the server independently validates the same rule on its side",
+          "good, but it should short-circuit with UNAUTHENTICATED, not fail"
+         ],
+         "correct": 1,
+         "explain": "Interceptors earn their invisibility with POLICY that's true for every call (auth, ids, logging). A domain rule invisible at its call site is the same invisibility turned into a debugging trap."
+        },
+        {
+         "q": "Tokens refresh mid-session. Auth sits OUTSIDE Retry. What failure mode ships?",
+         "options": [
+          "a retried call resends the stale token and fails twice",
+          "the refreshed token is attached twice to each retried call",
+          "retries deadlock waiting for the auth interceptor's lock",
+          "nothing — retries always rebuild the request from scratch"
+         ],
+         "correct": 0,
+         "explain": "Outside Retry, Auth stamps once; retries replay the stamped request. Inside Retry, each next re-enters Auth and re-reads the current token — the ordering rule b7-11's refresh flow depends on."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find where the work app constructs its gRPC client/channel and list the interceptor array in order. For each one, write a single line: what it does, and why its POSITION is correct (or isn't — check specifically whether auth sits inside retry, and whether your logging tells per-call or per-attempt truth). That review is this loop, applied.",
+     "verify": "// executed on this Mac 2026-07-18 (plain swift, ~60 lines):\n// protocol Interceptor { func intercept(_ req, next) async throws -> Response }\n// compose = fold closures right-to-left; transport fails attempt 1 with 14\n// chain [Logging, Retry, Auth]:  LOG → · attempt 1 (authorization present)\n//   · RETRY on 14 · attempt 2 · LOG ← 0        — ONE log pair, retry invisible\n// chain [Retry, Logging, Auth]:  LOG → · ← error 14 · LOG → · ← 0\n//                                              — TWO log pairs, per-attempt truth\n// short-circuit: Auth without token → caller saw 16, transport calls made: 0\n// grpc-swift's ClientInterceptor registration API: documented (same shape)",
+     "goDeeper": "grpc-swift documentation: ClientInterceptor and interceptor registration. b1-05 and b1-19 — the closure machinery this chain is built from. b5-09 for what the logging layer should actually record. The pattern's lineage — Rack/Express middleware — if you want to see the same onion in three other ecosystems. Next: b7-08, the engine room these interceptors sit above."
+    },
+    {
+     "id": "b7-08",
+     "title": "SwiftNIO and transports: the engine room",
+     "concept": {
+      "definition": "grpc-swift runs on a pluggable transport: the POSIX transport drives raw sockets on SwiftNIO's own EventLoop threads, while the TransportServices transport delegates to Apple's Network.framework — preferred on iOS because the system stack handles radios, path changes, VPNs, and connection racing for you. An EventLoop is one thread multiplexing many connections through non-blocking I/O and callbacks, and the iron rule follows from that: blocking an EventLoop stalls every connection assigned to it.",
+      "code": "// real SwiftNIO, fetched via SPM and executed on this Mac:\nlet group = MultiThreadedEventLoopGroup(numberOfThreads: 1)\nlet loop = group.next()\nloop.execute {                       // \"handler A\" — does sync work\n    Thread.sleep(forTimeInterval: 0.5)\n}\nloop.execute {                       // \"handler B\" — ready all along\n    print(\"B ran\")                   // …but on the SAME thread\n}\n// executed, 1 thread:  A blocks at 0.00s → B ran at 0.50s\n// executed, 2 threads: A blocks at 0.00s → B ran at 0.00s\n//\n// Network.framework's surface (executed):\n// NWConnection state: preparing → ready · echo received\n// path: satisfied, viable, interface: lo0",
+      "underlying": "An EventLoop runs the oldest pattern in networking: park on kqueue/epoll until some socket has bytes, run the handlers for whatever woke up, park again. One thread serves hundreds of connections BECAUSE no handler ever waits — I/O is non-blocking, work is callbacks, and the loop's currency is EventLoopFuture (bridged to your async/await world at the edges). Executed above with real NIO: on a one-thread group, handler B — queued and ready the whole time — could not run until A's 0.5-second block finished; give the group two threads and B ran instantly. Now connect that to b7-03: ALL streams of one HTTP/2 connection are frames pumped by ONE channel on ONE loop. Sync work in the wrong place doesn't slow one call — it stutters all forty.\n\nIt's the same lesson this curriculum keeps finding at every layer: b2-01's run loop, b2-12's main-thread rule, b3-12's 'don't block the cooperative pool', now wearing network clothes. Your app code lives in Swift Concurrency's world (cooperative pool, width = cores); the transport lives in EventLoops (fixed threads, owned by NIO); grpc-swift v2 hands you async/await end-to-end and does the bridging inside (documented, b3-08's continuations at the seams). Neither world tolerates blocking, and stack traces from the engine room show EventLoop frames — recognizing them is half of debugging transport issues.\n\nThe transport CHOICE is about who owns the socket. The POSIX transport is b4-11's world — NIO holding raw file descriptors: portable, the right answer on Linux servers, and blind to everything a phone knows. The TransportServices transport backs NIO channels with Network.framework's NWConnection — executed: the state machine walked preparing → ready, echoed data via callbacks on a DispatchQueue, and reported its path as 'satisfied, viable, interface: lo0'. That path object is the tell: the system stack tracks WHICH network the connection rides and whether a better one exists, migrates across Wi-Fi↔cellular, races IPv4/IPv6 (Happy Eyeballs), honors VPNs and proxies, and coordinates with the radios' power state — none of which a raw socket will ever do (documented set; the executed path report is its visible edge). That's the whole reason grpc-swift's guidance says TransportServices on Apple devices, POSIX on servers.",
+      "whyItMatters": "When the work app survives a walk from office Wi-Fi to cellular, that's the transport choice paying rent — a raw POSIX socket would have died b4-11's silent death. And when a profiler or crash log shows NIOEventLoop threads, you now know which world you're reading and which rule ('never block the loop') was probably broken."
+     },
+     "exercise": {
+      "prompt": "A teammate adds response post-processing — a 30ms synchronous decode — directly inside a transport-level handler that runs on the EventLoop. The app multiplexes ~40 gRPC calls on one connection (b7-03). Using the executed 1-thread result, predict the symptom, explain why EVERY call feels it, and name two correct placements for that work.",
+      "code": "// transport handler (runs ON the EventLoop thread):\nfunc channelRead(context: ChannelHandlerContext, data: NIOAny) {\n    let frame = unwrap(data)\n    let decoded = heavyDecode(frame)   // 30ms, synchronous\n    context.fireChannelRead(wrap(decoded))\n}\n// one connection · one channel · one EventLoop · 40 streams",
+      "solution": "Symptom: every call on the connection stutters — response latencies grow spikes of 30ms × (frames queued ahead), and streaming calls (b7-06) feel bursty rather than smooth. The executed demo is the proof in miniature: handler B was ready the entire time and still waited the full 0.5s, because readiness means nothing on an occupied thread.\n\nWhy all forty: the connection's frames — every stream's HEADERS, DATA, WINDOW_UPDATEs — are pumped sequentially by the one loop thread that owns the channel. A 30ms decode between frames delays the pump itself; even PING/keepalive responses queue behind it (b7-10 will make that dangerous, not just slow).\n\nCorrect placements: (1) hop off the loop — hand the frame to Swift Concurrency (a Task / the cooperative pool) or a Dispatch queue, decode there, deliver results back asynchronously; (2) move the work up the stack entirely — decode in the async/await layer that grpc-swift v2 already runs your code in (or an interceptor b7-07, which lives outside the loop), where slow work costs only that one call.\n\nThe rule in one line: the EventLoop moves bytes; everyone else computes.",
+      "explanation": "This is the third appearance of one law — main thread (b2-12), cooperative pool (b3-12), EventLoop (here): threads that pump SHARED work must never run YOUR slow work. What changes per layer is only the blast radius: one UI, one process's tasks, one connection's forty calls."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what is an EventLoop, why must you never block one, and why does gRPC on iOS prefer the Network.framework transport over raw POSIX sockets?",
+      "modelAnswer": "An EventLoop is one thread serving many connections: it parks on the kernel until sockets have events, runs the ready handlers as callbacks, and parks again — it scales precisely because no handler ever waits. Blocking it stalls every connection assigned to that loop; since all streams of an HTTP/2 connection are pumped by one loop, one synchronous decode stutters every in-flight call. On iOS, the TransportServices transport backs the same NIO machinery with Network.framework, so the system stack provides what raw sockets can't: path monitoring and Wi-Fi-to-cellular migration, IPv4/IPv6 racing, VPN and proxy handling, and radio-power awareness. POSIX sockets remain the right transport on Linux servers — the choice is about who owns the socket.",
+      "sets": [
+       [
+        {
+         "q": "How does one EventLoop thread serve hundreds of connections?",
+         "options": [
+          "it spawns a short-lived worker thread per ready socket",
+          "connections queue up and take strictly fair turns in fixed round-robin time slices",
+          "non-blocking I/O: it parks until sockets have events, runs callbacks, parks again",
+          "the kernel batches each connection's bytes into one shared stream"
+         ],
+         "correct": 2,
+         "explain": "kqueue/epoll turns 'wait on 500 sockets' into one cheap kernel call. The model only works because handlers never block — the loop's speed IS the handlers' discipline."
+        },
+        {
+         "q": "Executed: on a 1-thread group, handler B was queued and ready yet ran 0.5s late. Why?",
+         "options": [
+          "NIO batches executes and flushes them on a 0.5s timer",
+          "readiness is meaningless on an occupied thread — A's sync block held the loop",
+          "B's closure had lower priority than A's in the loop's queue",
+          "the scheduler migrated B to a different loop and paid a costly thread migration"
+         ],
+         "correct": 1,
+         "explain": "Same law as b2-12 and b3-12, new thread: queued work waits for the thread, not the other way round. Two loops made B instant — executed — because the block no longer owned B's thread."
+        },
+        {
+         "q": "The TransportServices transport differs from the POSIX transport in that…",
+         "options": [
+          "it replaces NIO entirely with URLSession under the hood",
+          "it skips TLS because the system already encrypts traffic",
+          "it can speak HTTP/3 over QUIC while the POSIX transport is limited to HTTP/2",
+          "its channels are backed by NWConnection — the system's stack owns the socket"
+         ],
+         "correct": 3,
+         "explain": "Same NIO pipeline above, different floor below: Network.framework owns the socket and brings path awareness, Happy Eyeballs, and VPN/proxy handling. Executed: the NWConnection state machine and its path report."
+        }
+       ],
+       [
+        {
+         "q": "A user walks from office Wi-Fi to cellular mid-session. With the TransportServices transport, the connection…",
+         "options": [
+          "can migrate or re-establish via path monitoring — Network.framework tracks viability",
+          "survives completely untouched because TCP retransmissions bridge the gap between the networks",
+          "always dies silently, exactly like b4-11's POSIX socket did",
+          "pauses until the app returns to the original Wi-Fi network"
+         ],
+         "correct": 0,
+         "explain": "The executed path report ('satisfied, viable, interface') is the visible edge of this machinery: viability and better-path events let the stack react while a raw fd would just go dark. b7-10 builds reconnection on these signals."
+        },
+        {
+         "q": "A hang report shows threads named NIO-ELT parked in kqueue, and one running your JSON decode. Reading?",
+         "options": [
+          "normal — the loop threads are expected to decode responses as a routine part of their job",
+          "the kqueue parks are deadlocks between the event loops",
+          "a handler is doing app work ON a loop thread — the 'never block the loop' rule broken",
+          "too few EventLoop threads were allocated for this many calls"
+         ],
+         "correct": 2,
+         "explain": "Parked-in-kqueue is an EventLoop at rest (healthy); your compute ON an ELT thread is the smell. The loop moves bytes; decoding belongs in async-land or an interceptor (b7-07)."
+        },
+        {
+         "q": "Your team debates transports for the iOS app and the Linux backend it talks to. The grounded position?",
+         "options": [
+          "TransportServices on absolutely every platform, so client and server behave identically",
+          "TransportServices on the phone, POSIX on the server — each where its owner wins",
+          "POSIX everywhere, because raw sockets are faster than framework layers",
+          "whichever needs fewer dependencies in Package.swift on each platform"
+         ],
+         "correct": 1,
+         "explain": "Network.framework doesn't exist on Linux, and a server gains nothing from radio awareness; a phone gains everything. 'Same code, per-platform transport' is exactly why grpc-swift made the layer pluggable."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open the work app's Package.swift and channel construction: which transport does it actually use (look for NIOTransportServices / TransportServices vs NIOPosix)? Then test the loop's claim in the field: start a long gRPC operation on Wi-Fi, toggle to cellular mid-flight, and note what the app does — instant recovery, a visible reconnect, or a hang — and match that behavior to the transport you found.",
+     "verify": "// executed on this Mac 2026-07-18:\n// REAL SwiftNIO (SPM-fetched, built in 21s):\n//   1-thread group: handler A blocks at 0.00s → B (ready all along) ran at 0.50s\n//   2-thread group: A blocks at 0.00s → B ran at 0.00s\n// Network.framework NWConnection vs local python echo server:\n//   state: preparing → ready · echo received: ping\n//   path: satisfied (Path is satisfied), viable, interface: lo0\n// documented (need a device/real networks to observe): Wi-Fi↔cellular\n// migration, Happy Eyeballs racing, VPN/proxy handling, radio-power\n// coordination; grpc-swift's transport guidance (TransportServices on Apple\n// platforms, POSIX on Linux)",
+     "goDeeper": "SwiftNIO's own documentation — the EventLoop and Channel concepts pages are excellent. WWDC 2018 \"Introducing Network.framework\" — the path/viability model this loop executed the edge of. grpc-swift transport documentation. b2-01, b2-12, b3-12 — the same never-block-the-pump law at its other three layers. Next: b7-09, TLS and pinning — trust, built on this floor."
+    },
+    {
+     "id": "b7-09",
+     "title": "TLS and certificate pinning",
+     "concept": {
+      "definition": "TLS authenticates the server and encrypts the pipe: the server presents a certificate chain, and the client verifies each signature up to a root it already trusts, plus the name and validity dates. Pinning narrows that trust from 'any certificate any trusted CA ever issues for this name' down to 'this specific key (or certificate)' — and the choice between pinning the key and pinning the certificate decides whether routine certificate rotation breaks your app.",
+      "code": "// executed: the real chain behind example.com (openssl s_client)\n// 0  s: CN=example.com                        ← leaf (the server)\n//    i: CN=Cloudflare TLS Issuing ECC CA 3    ← signed by…\n// 1  s: CN=Cloudflare TLS Issuing ECC CA 3\n//    i: CN=SSL.com TLS Transit ECC CA R2      ← signed by…\n// 2  s: CN=SSL.com TLS Transit ECC CA R2\n//    i: CN=SSL.com TLS ECC Root CA 2022       ← in the trust store\n//\n// leaf validity: May 31 → Aug 29 2026 — ~90 days. Rotation is ROUTINE.\n//\n// the pin apps embed = base64(SHA-256(SubjectPublicKeyInfo)):\n//   openssl x509 -pubkey | openssl pkey -pubin -outform der \\\n//     | openssl dgst -sha256 -binary | base64\n// executed → tdjz7o5j27MAN6uFM2/pKGMGSbSyBMSiSU1r5qw4JDM=",
+      "underlying": "Verification is a signature walk (executed above on a live host): the leaf is signed by an intermediate, the intermediate by another, and that one by a root whose self-signed certificate ships in the device's trust store — trust flows down because forging any link means forging a signature. Add the name check (leaf must cover the host you dialed) and the date check, and that's what b4-11's measured +0.51s of TLS setup bought. On iOS the walk is SecTrust's job, invoked for you by URLSession and by grpc-swift's TLS (which b7-08's TransportServices transport gets from the system stack).\n\nWhat pinning adds: the standard walk trusts ~150 root CAs, so ANY of them mis-issuing a certificate for your API's name defeats it — as does any TLS-intercepting middlebox whose root the device has been told to trust. That last clause is the one you've met: Charles decrypts traffic by presenting ITS certificate, signed by a root the QA phone installed. A pin — 'the key I connect to must hash to THIS' — rejects all of it: mis-issued certs, corporate proxies, and Charles too, which is exactly why pinned builds are undebuggable in Charles until pinning is disabled for debug configurations. Pinning defends the pipe's endpoint identity; it does nothing about what's stored on the device (that stayed b4-07's Keychain problem).\n\nWHAT you pin decides your failure mode, and this loop executed the proof: two certificates generated from ONE key have identical SPKI hashes (`QijDSAQO87…` both times) but different whole-certificate hashes. Pin the certificate and every rotation — remember, the executed leaf lives ~90 days — is an app-breaking event unless the app updates first. Pin the KEY (the SPKI hash) and rotation is invisible as long as the operator re-uses the keypair. The production discipline (documented): pin SPKI, always ship at least one BACKUP pin (the next key, generated in advance and kept offline), consider pinning the intermediate CA's key instead of the leaf's for more rotation freedom, and treat pin changes as a coordinated deploy. The famous failure mode is exactly one missing backup pin away: new cert, new key, no matching pin → every install hard-fails TLS until an app-store update crawls out.",
+      "whyItMatters": "The work app pins (or should) — and someday ops will rotate a certificate. Whether that's a non-event or an all-users outage was decided months earlier by pin-to-key-with-backup versus pin-to-cert. 'What does pinning actually defend against?' is also a precise interview probe — the answer is mis-issuance and interception boxes, not device compromise."
+     },
+     "exercise": {
+      "prompt": "Two incidents at one company. (1) Ops rotates the API's certificate at 03:00, generating a fresh keypair; the app pins the old leaf's SPKI hash with no backup pin. Predict what every user experiences, what the error looks like in logs, and why no server-side rollback except one specific action fixes it. (2) QA enables the pinned release configuration and Charles suddenly shows encrypted gibberish / failed handshakes for the app only. Explain, using what a pin checks.",
+      "code": "// pinned: SHA-256(SPKI of leaf key #1) = \"QijDSAQO87…\"\n// 03:00 deploy: new cert, NEW keypair (key #2)\n// executed fact: same key ⇒ same SPKI hash; new key ⇒ new SPKI hash\n//\n// QA phone: Charles root CA installed & trusted, proxy on,\n// app build: pinning ENABLED",
+      "solution": "(1) Every install fails TLS on every call — the handshake completes the chain walk (the new cert is genuinely valid!) but the leaf key hashes to a value not in the pin set, so the client kills the connection. Logs show transport-level TLS/trust errors (no grpc-status at all — b7-04's 'no trailers' class: the request never reached gRPC). No amount of server config helps EXCEPT re-deploying a certificate using the OLD keypair — the one hash the shipped pin set accepts — then shipping an app update with new pins before retiring it. This is why backup pins exist: a second SPKI in the set would have made the rotation a non-event.\n\n(2) Charles works by being a deliberate man-in-the-middle: it presents ITS certificate signed by the root QA installed. The system trust walk passes (the device trusts that root), but the pin check hashes CHARLES's key — no match, connection refused. The app is doing exactly its job against exactly the attack pinning models. Fix for debugging: disable pinning in debug builds (or add Charles's key to a debug-only pin set) — never in release.",
+      "explanation": "Note the asymmetry the two incidents reveal: pinning turns 'valid certificate' from a sufficient condition into a necessary-but-not-sufficient one. That extra condition is yours to manage — which is why pinning is as much an operational commitment (backup pins, rotation runbooks) as a security feature."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: how does the certificate chain establish trust, what threat does pinning add protection against, and why is pin-to-key generally safer than pin-to-cert?",
+      "modelAnswer": "The server presents a chain — leaf, intermediates, root — and the client verifies each signature upward until it reaches a root already in the device's trust store, plus checking the name and validity dates. Pinning defends against the trust store being too generous: a mis-issued certificate from any trusted CA, or an interception proxy like Charles whose root the device was told to trust, passes the chain walk but fails the pin, because the pin requires the server's key to hash to a known value. Pin-to-key hashes the SubjectPublicKeyInfo, so routine certificate rotation is invisible while the operator keeps the keypair — two certs from one key share the same SPKI hash. Pin-to-cert hashes the whole certificate, so every rotation breaks the app; either way you ship backup pins so a key change is a planned deploy, not an outage.",
+      "sets": [
+       [
+        {
+         "q": "During the TLS handshake, what makes the client trust the leaf certificate?",
+         "options": [
+          "the server proves possession by echoing back the session's random bytes signed",
+          "a valid signature path from the leaf up to a root already in the trust store",
+          "the leaf's own hash appears in a public transparency ledger",
+          "the certificate is encrypted with the client's public key"
+         ],
+         "correct": 1,
+         "explain": "Executed on a live host: leaf ← Cloudflare issuing CA ← SSL.com transit ← SSL.com root. Signatures chain the trust; name and date checks complete the walk."
+        },
+        {
+         "q": "What byte string does a standard SPKI pin actually hash?",
+         "options": [
+          "the whole DER certificate, serial number included",
+          "the certificate's subject name and issuer name concatenated together",
+          "the TLS session key negotiated in the handshake",
+          "the leaf's SubjectPublicKeyInfo — the public key structure alone"
+         ],
+         "correct": 3,
+         "explain": "Executed: `x509 -pubkey → pkey -outform der → sha256 → base64`. Because only the key is hashed, anything else about the certificate may change freely — the pin's whole point."
+        },
+        {
+         "q": "The executed demo made two certificates from one keypair. The result that matters for pinning?",
+         "options": [
+          "identical SPKI hashes, different whole-cert hashes — key pins survive rotation",
+          "identical whole-cert hashes, since the same key signed them both",
+          "both hash types differed, proving that every certificate rotation needs an app update",
+          "OpenSSL refused the second certificate as a duplicate of the first"
+         ],
+         "correct": 0,
+         "explain": "`QijDSAQO87…` twice; cert hashes bab948… vs f51eaf…. Rotation with a kept key is invisible to a key pin and fatal to a cert pin — the entire pin-to-key argument in two hashes."
+        }
+       ],
+       [
+        {
+         "q": "QA installs Charles's root and enables the proxy. The pinned app refuses every connection. Why?",
+         "options": [
+          "Charles cannot forward HTTP/2 frames, so gRPC calls stall",
+          "the app detects the system proxy setting and refuses to send any traffic on principle",
+          "the chain walk passes (device trusts the root) but Charles's key fails the pin",
+          "the installed root expired and broke the system trust store"
+         ],
+         "correct": 2,
+         "explain": "Charles IS the attack pinning models — a middlebox with a locally-trusted root. The trust walk was satisfied; the pin, which checks the KEY, was not. Debug builds disable pinning precisely for this."
+        },
+        {
+         "q": "A rotation with a new keypair bricked the pinned app for all users. The one server-side action that restores service today?",
+         "options": [
+          "re-issuing the certificate from the OLD keypair the shipped pins accept",
+          "extending the new certificate's validity period by a year",
+          "switching the endpoint to a different CA with better roots",
+          "returning grpc-status 0 from a dedicated health endpoint to reset stuck clients"
+         ],
+         "correct": 0,
+         "explain": "The pin set in shipped binaries is immutable until users update; only presenting a key they already accept reconnects them. Backup pins exist so this scramble never happens."
+        },
+        {
+         "q": "Security review asks: 'we pin — are stored tokens safe now?' The correct scoping answer?",
+         "options": [
+          "yes — pinning encrypts local storage alongside the transport",
+          "pinning secures the pipe's endpoint identity; on-device storage is still b4-07's Keychain problem",
+          "yes — provided the pin set also covers the intermediate CA's key in addition to the leaf's own key",
+          "no, because pinning actually weakens the system trust walk"
+         ],
+         "correct": 1,
+         "explain": "Threat models don't transfer: pinning answers 'am I talking to my server?', not 'is my disk safe?'. Tokens still belong in the Keychain, which b7-11 picks up directly."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find the work app's pin configuration (search for pin hashes, NSPinnedDomains, or TLS config in the channel setup). Answer three questions from this loop: is it pinning SPKI or whole certs? how many backup pins ship? and does the debug configuration disable pinning (how else does QA use Charles)? If any answer is 'no/none', you've found this loop's incident waiting to happen — raise it.",
+     "verify": "// executed on this Mac 2026-07-18 (openssl/LibreSSL + live host):\n// chain: CN=example.com ← Cloudflare TLS Issuing ECC CA 3 ← SSL.com TLS\n//   Transit ECC CA R2 ← SSL.com TLS ECC Root CA 2022 (trust store)\n// leaf validity: 2026-05-31 → 2026-08-29 (~90 days — rotation is routine)\n// live SPKI pin extracted: tdjz7o5j27MAN6uFM2/pKGMGSbSyBMSiSU1r5qw4JDM=\n// two certs generated from ONE local key:\n//   SPKI hashes IDENTICAL (QijDSAQO87…) · whole-cert hashes DIFFERENT\n//   (bab948… vs f51eaf…) — pin-to-key survives rotation, pin-to-cert doesn't\n// documented: SecTrust/ATS evaluation flow, NSPinnedDomains, grpc-swift TLS\n// config, backup-pin practice (need a device + real MITM setup to observe)",
+     "goDeeper": "Apple's \"Identity Pinning: How to configure server certificates for your app\" (the NSPinnedDomains route). OWASP's certificate-pinning guidance — the backup-pin discipline comes from here. RFC 7469 (HPKP) for the SPKI-hash format everyone reuses. b4-11's measured TLS setup cost; b4-07 for where the secrets this pipe carries actually live. Next: b7-10, keeping the connection itself alive."
+    },
+    {
+     "id": "b7-10",
+     "title": "Connection lifecycle: keepalive, backoff, and waiters",
+     "concept": {
+      "definition": "A gRPC channel is a state machine wrapped around b4-11's fragile pipe: idle → connecting → ready, dropping to transient-failure when the connection dies and climbing back through exponential-backoff reconnects. Keepalive PINGs turn silent death into detected death, and callers who arrive before the channel is ready don't fail — they park as waiters and resume together the moment it is.",
+      "code": "// the waiters pattern, executed (APIClient's exact shape):\nactor ConnectionGate {\n    private var ready = false\n    private var waiters: [CheckedContinuation<Void, Never>] = []\n    func waitUntilReady() async {\n        if ready { return }                    // late callers sail through\n        await withCheckedContinuation { waiters.append($0) }\n    }\n    func becomeReady() {\n        ready = true\n        for w in waiters { w.resume() }        // wake everyone at once\n        waiters.removeAll()\n    }\n}\n// executed: calls 1–3 arrive at 0.00s and park · channel READY at 0.31s\n// → all three TRANSMIT at 0.31s · late call 4 arrives 0.41s, no parking",
+      "underlying": "The states are worth knowing by name because grpc-swift reports them: IDLE (no connection — channels connect lazily, on the first call), CONNECTING (b4-11's handshake plus b7-09's TLS in flight), READY, TRANSIENT_FAILURE (an attempt failed; a backoff timer is running), SHUTDOWN. Two wire events drive the sad path: the connection dying — which b4-11 proved is SILENT — and the server sending GOAWAY (b7-03's frame), the polite version that says 'finish your streams elsewhere, I'm draining' during every server deploy. A client that handles GOAWAY reconnects and replays; one that doesn't turns routine deploys into user-visible errors.\n\nSilent death is why keepalive exists: the channel sends PING frames (b7-03 captured the type) on an interval and demands acknowledgment within a timeout; a missed PING is the proof-of-death b4-11 showed you never get for free, flipping the channel to TRANSIENT_FAILURE so reconnection can begin — BEFORE a user's call has to be the probe that discovers the corpse. The tuning tension: aggressive keepalive detects fast but costs radio (b7-08's power story) and annoys servers — gRPC servers enforce minimum ping intervals and answer abuse with GOAWAY code ENHANCE_YOUR_CALM (really — documented). Reconnection then follows b4-08's discipline one level down: executed schedule with base 1s, ×1.6, ±20% jitter — 1.02s, 1.53s, 3.06s, 3.94s, 7.33s… — jitter because a regional outage ending must not become a synchronized reconnect stampede from every phone at once.\n\nThe waiters pattern is what makes all this invisible to callers. Executed above: three calls arrived while the channel was CONNECTING and parked as CheckedContinuations (b3-08's bridge — a suspended async call is just a value you can store in an array); becomeReady() resumed all three at 0.31s, and a caller arriving after readiness never parked at all. That's the exact shape of the work app's APIClient — `static let shared` on an actor, waiters gated on channel readiness — and b3-13 will formalize it as the actor-as-singleton pattern. One honest edge from b7-05: a parked caller's deadline keeps ticking, which is correct (the user's promise doesn't pause for your infrastructure), and it's why gRPC offers wait-for-ready as a PER-CALL choice — park until the channel heals, or fail fast with UNAVAILABLE and let retry policy decide (documented).",
+      "whyItMatters": "This loop is why the work app survives server deploys (GOAWAY), dead hotel Wi-Fi (keepalive), and cold starts where five screens fire calls before the channel finishes connecting (waiters). When you see calls all complete in a burst right after 'channel ready' in logs — that's the gate opening."
+     },
+     "exercise": {
+      "prompt": "Trace the timeline. Cold app start at t=0: three screens fire gRPC calls immediately; the channel (idle) starts connecting and reaches ready at t≈0.3s. At t=60s the phone's network dies silently (b4-11 style). Keepalive pings every 20s with a 5s timeout; backoff base is 1s (×1.6, jittered). Walk the channel states and what each call experiences, to the first successful reconnect at t≈81s.",
+      "code": "// t=0     app launches; 3 calls fire; channel: IDLE\n// t≈0.3s  channel: READY\n// t=60s   network dies — no error, no packet, nothing (b4-11)\n// keepalive: every 20s, 5s ack timeout · backoff: 1s base, ×1.6, jitter\n// (network returns at t≈80s)",
+      "solution": "t=0: first call moves the channel IDLE → CONNECTING (lazy connect). All three calls park as waiters — none fails, none transmits. t≈0.3s: READY; the gate opens; all three transmit together (executed: parked at 0.00s, all TRANSMIT at 0.31s).\n\nt=60s: the pipe is dead but SILENT — the channel still believes READY (b4-11: nothing announces death). Any call sent now buffers into the void, its b7-05 deadline ticking.\n\nt≈60–80s: the next keepalive PING (whenever the 20s cadence lands, say t=80s at the latest) goes unanswered; at ack-timeout (+5s worst case) the channel flips READY → TRANSIENT_FAILURE. In-flight calls fail UNAVAILABLE; new calls either park (wait-for-ready) or fail fast, per call policy.\n\nThen backoff: reconnect attempt ~1s later (executed jitter: 1.02s), succeeds since the network is back at t≈80s — channel CONNECTING → READY at t≈81s, parked waiters resume together, and the burst of queued calls transmits. Without keepalive, discovery would have waited for the NEXT user-initiated call to hang on the corpse — detection is the feature.",
+      "explanation": "Notice where every piece came from: silent death (b4-11, executed), PING (b7-03, captured), deadline still ticking while parked (b7-05, executed), backoff shape (b4-08, executed here with jitter). This loop invented almost nothing — it assembled the block's machinery into a lifecycle, which is what a channel IS."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: walk the gRPC channel states, explain what keepalive adds to b4-11's silent-death problem, and describe the waiters pattern for calls that arrive before the channel is ready.",
+      "modelAnswer": "A channel is idle until the first call, then connecting, then ready; a failed connection drops it to transient-failure, where exponential backoff with jitter schedules reconnects, and a server's GOAWAY triggers a graceful move to a new connection during deploys. TCP connections die silently, so keepalive sends periodic PING frames and treats a missed acknowledgment as proof of death — flipping the channel to transient-failure proactively instead of letting some user's call discover the corpse. Callers that arrive before readiness park as stored continuations and are resumed together the moment the channel becomes ready, so cold-start calls neither fail nor race — though their deadlines keep ticking while parked, which is why wait-for-ready is a per-call decision. It's the actor-with-waiters shape our APIClient uses.",
+      "sets": [
+       [
+        {
+         "q": "A fresh channel receives its first call. The state sequence?",
+         "options": [
+          "READY from construction — channels connect eagerly at startup",
+          "CONNECTING immediately at app launch, READY well before any call can fire",
+          "IDLE at first, CONNECTING only when a call arrives, then READY — lazy",
+          "TRANSIENT_FAILURE until the first keepalive PING succeeds"
+         ],
+         "correct": 2,
+         "explain": "Channels don't pay b4-11's handshake tax (plus b7-09's TLS) until someone actually needs the pipe. The first caller triggers the climb and parks while it happens — executed as the gate."
+        },
+        {
+         "q": "What does keepalive actually DO about b4-11's silent connection death?",
+         "options": [
+          "prevents it entirely, by keeping NAT mappings warm indefinitely on every network path",
+          "converts it to detected death: an unacked PING flips the channel to failure",
+          "retransmits lost application bytes until the network heals fully",
+          "hands the socket to the OS so death is reported by the kernel"
+         ],
+         "correct": 1,
+         "explain": "Nothing PREVENTS silent death (the middle forgets regardless — keeping mappings warm helps but guarantees nothing). Keepalive's real product is proof: a missed ack is the death certificate that triggers reconnection."
+        },
+        {
+         "q": "Why jitter the reconnect backoff instead of using clean 1s, 1.6s, 2.56s steps?",
+         "options": [
+          "jitter makes each retry substantially cheaper for the client's radio to schedule",
+          "so an outage's end isn't a synchronized reconnect stampede from every client",
+          "clean exponential steps overflow the server's timer resolution",
+          "randomness defeats middleboxes that throttle periodic traffic"
+         ],
+         "correct": 1,
+         "explain": "Ten thousand phones lost the same server at the same moment; without jitter they'd all return in the same second, re-killing it. Executed schedule: 1.02s, 1.53s, 3.06s… — the randomness IS the mercy."
+        }
+       ],
+       [
+        {
+         "q": "During every backend deploy, some users see a burst of errors; the server logs show GOAWAY frames sent. The client-side diagnosis?",
+         "options": [
+          "the client isn't honoring GOAWAY — it should drain onto a new connection instead of failing calls",
+          "normal and unavoidable — GOAWAY always terminates in-flight work",
+          "keepalive is too slow to detect the deploy's connection loss",
+          "the deploy rotated the TLS keys at the same time, so certificate pinning (b7-09) rejects every reconnect"
+         ],
+         "correct": 0,
+         "explain": "GOAWAY is the POLITE path: 'open a new connection, finish there.' Handled well, a deploy is invisible; surfacing errors means the client treats drain as death. That's a client bug with a server-shaped alibi."
+        },
+        {
+         "q": "Five cold-start calls fire while the channel is CONNECTING. With the waiters pattern, what happens?",
+         "options": [
+          "the first call proceeds; the other four fail fast with UNAVAILABLE",
+          "each call retries independently on its own timer until the channel reports ready",
+          "all five park as stored continuations and transmit together at READY",
+          "they queue on the EventLoop thread, blocking it until connected"
+         ],
+         "correct": 2,
+         "explain": "Executed: parked at 0.00s, all transmitted at 0.31s, and a later call skipped parking entirely. Suspended async calls are just storable values (b3-08) — the gate is an array of them."
+        },
+        {
+         "q": "A parked caller waits 4s of its 5s deadline for the channel to heal, then transmits. What's true?",
+         "options": [
+          "parking paused the deadline clock, so the server still sees the full 5s of budget",
+          "the deadline was cancelled when the channel left READY",
+          "wait-for-ready always extends deadlines by the parked duration",
+          "the server sees ~1s in grpc-timeout — waiting spent the user's budget"
+         ],
+         "correct": 3,
+         "explain": "b7-05's clock answers to the user, not the infrastructure. This is precisely why wait-for-ready is per-call: parking is right for a background sync and wrong for a checkout button."
+        }
+       ]
+      ]
+     },
+     "transfer": "In the work app, find the channel's keepalive configuration (interval and timeout) and the reconnect/backoff settings — then find APIClient's readiness gating and match it line-for-line against this loop's executed ConnectionGate: where do early callers park, what resumes them, and do late callers skip the wait? Note anything the executed pattern has that APIClient lacks (or vice versa) — that diff is b3-13's homework.",
+     "verify": "// executed on this Mac 2026-07-18 (plain swift):\n// ConnectionGate actor (CheckedContinuation waiters):\n//   calls 1–3 arrived 0.00s and parked · becomeReady() at 0.31s →\n//   all three TRANSMIT at 0.31s · late call 4 (0.41s) passed with no parking\n// jittered backoff schedule (base 1s, ×1.6, ±20%, cap 30s):\n//   1.02s · 1.53s · 3.06s · 3.94s · 7.33s · 10.36s\n// silent-death floor: b4-11 executed (write succeeds, EPIPE one write late)\n// PING frame type: captured in b7-03's executed dump\n// documented: channel state names, GOAWAY/ENHANCE_YOUR_CALM semantics,\n// wait-for-ready flag, server minimum-ping enforcement (gRPC core docs)",
+     "goDeeper": "gRPC core documentation: \"Connectivity Semantics and API\" (the five states, verbatim) and the keepalive guide (including ENHANCE_YOUR_CALM). b3-08 for the continuation machinery the gate stores. b4-08 for backoff's first appearance. Next: b7-11 finishes the block — the token that rides every one of these calls."
+    },
+    {
+     "id": "b7-11",
+     "title": "Auth over gRPC: tokens, refresh, and the single flight",
+     "concept": {
+      "definition": "Authentication over gRPC is metadata: an interceptor attaches `authorization: Bearer <token>` to every call, the token itself lives in the Keychain, and a failure comes back as `grpc-status` 16, UNAUTHENTICATED, in the trailers. The hard part is expiry under concurrency: the refresh must be single-flighted — however many calls fail at the same moment, exactly one refresh runs, everyone shares its result, and each failed call retries once with the new token.",
+      "code": "// single-flight refresh, executed (an actor + a shared Task):\nactor TokenVault {\n    private var inFlight: Task<String, Never>?\n    func freshToken() async -> String {\n        if let running = inFlight {          // a refresh is already flying:\n            return await running.value       // piggyback on THAT one\n        }\n        let flight = Task { await self.performRefresh() }\n        inFlight = flight\n        let token = await flight.value\n        inFlight = nil\n        return token\n    }\n}\n// executed: 5 calls hit status 16 at the same instant →\n//   all five retry with token-v1 · total refresh requests sent: 1",
+      "underlying": "The delivery mechanism is everything this block already built: the token rides as a header (b7-04's metadata), attached in ONE place by an interceptor (b7-07 — executed there: call sites never mention it), sitting INSIDE the retry layer so every attempt re-reads the current token (b7-07's executed ordering rule, and now you see what it was for). TLS (b7-09) is what makes a bearer token sane at all — 'bearer' means whoever holds it IS you, so the pipe it crosses must be authenticated and encrypted. And at rest it lives in the Keychain (b4-07, executed there with real error codes), never UserDefaults: a plist is plaintext inside backups and trivially readable on a jailbroken device, while Keychain items get hardware-backed encryption and survive with access-control policies (b9 will add biometric gating).\n\nThe single flight is the concurrency heart, and it's built from three Block 3 pieces: an actor (b3-06) serializes access to the vault's state; a Task is a VALUE you can store and await multiple times (b3-05); so 'is a refresh already running?' becomes 'is there a stored Task?' — executed: five simultaneous callers, the first created the flight, four piggybacked, all five received `token-v1`, and the counter read ONE. Why this matters beyond tidiness: refresh endpoints commonly ROTATE the refresh token — each use invalidates the previous one — so five racing refreshes means four carry a just-invalidated refresh token, fail, and in the classic bug, force-log-out the user. The single flight doesn't just save four round trips; it prevents the session from eating itself.\n\nThe policy edges: retry a 16 exactly ONCE after a successful refresh — if the retried call still says 16, the token isn't stale, it's WRONG (revoked, banned), and looping refresh-retry-refresh is a hot loop wearing a trench coat. If the REFRESH call itself returns 16, the session is over: clear the vault, clear the Keychain entry, drain to the login screen — that's a state transition, not an error to swallow. Proactive refresh (checking expiry before attaching, from the JWT's exp claim) saves the failed round trip, but the reactive path stays mandatory: server clocks skew, tokens get revoked server-side mid-lifetime, and only `grpc-status: 16` in trailers is ground truth. Every piece of this — status in trailers, deadline still governing the refresh call, the channel gate ahead of it — is the block's earlier loops, assembled.",
+      "whyItMatters": "This loop is the work app's APIClient auth path, mechanism by mechanism — and the refresh-storm-forces-logout bug is one of the most common real defects in token-based mobile apps. 'Walk me through token refresh with concurrent requests' is a favorite senior interview question precisely because it needs actors, task-sharing, retry policy, AND storage answered together."
+     },
+     "exercise": {
+      "prompt": "The access token expired one minute ago; the refresh endpoint rotates refresh tokens (each use invalidates the previous). Five screens fire calls simultaneously; all five come back `grpc-status: 16`. Predict the full sequence — wire and code — for (A) a naive client where each call refreshes on its own failure, and (B) the executed single-flight vault. Then: in design B, the retried call fails 16 AGAIN — what must the client conclude and do?",
+      "code": "// refresh endpoint contract:\n//   refresh(refreshToken) → { newAccess, newRefresh }\n//   using a refreshToken INVALIDATES it — one use each\n//\n// A: each call, on 16: refresh(storedRefreshToken); retry\n// B: each call, on 16: await vault.freshToken(); retry once",
+      "solution": "A: five refresh requests race out carrying the SAME stored refresh token. One wins and rotates it; the server invalidates that token as used. The other four refreshes arrive bearing a now-dead token and fail — and the standard naive handler treats refresh-failure as session-over: four force-logout paths fire for a user who did nothing wrong. Even when the logout is debounced, four wasted round trips and a corrupted stored-token state remain. This bug ships constantly because it needs five SIMULTANEOUS failures to reproduce — a race you only meet in production (b3-03's lesson wearing auth clothes).\n\nB (executed): all five callers hit the vault; one flight runs (counter read 1), the refresh token rotates exactly once, five callers share `token-v1` and each retries once with it. Five successes, one round trip, stored state consistent.\n\nThe second 16: the new, definitely-fresh token was rejected — this isn't expiry, it's invalidity: the account is revoked/banned or the session was killed server-side. The client must NOT refresh again (that loop never terminates); it clears the vault and Keychain entry and transitions to logged-out. One retry after refresh is the policy line between resilience and a hot loop.",
+      "explanation": "Notice the trap's shape: the naive design is CORRECT for one call at a time and only fails under simultaneity — which is why it survives code review and QA. Concurrency bugs in policy code hide exactly where b3-03's counter races hid, and the fix has the same form too: put the shared mutable decision behind an actor."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: how does a token travel over gRPC, where does it live at rest and why, and how do you handle expiry when many calls fail UNAUTHENTICATED at the same moment?",
+      "modelAnswer": "The token rides as metadata — an authorization Bearer header attached by a client interceptor inside the retry layer, so call sites never touch it and every attempt re-reads the current value; failures come back as grpc-status 16 in the trailers. At rest it belongs in the Keychain, not UserDefaults, because defaults are a plaintext plist that backups expose, while Keychain entries are hardware-encrypted with access-control policies. On concurrent 16s the refresh must be single-flighted: an actor stores the in-flight refresh Task, later failures await that same Task instead of launching their own — critical when refresh tokens rotate, since racing refreshes invalidate each other and force spurious logouts. Each failed call retries once with the new token; a second 16 means the token is invalid rather than stale, so the client clears credentials and transitions to logged-out.",
+      "sets": [
+       [
+        {
+         "q": "On the wire, the app's auth token is…",
+         "options": [
+          "a field appended to every protobuf request message",
+          "an `authorization` metadata header, attached by an interceptor",
+          "a parameter negotiated once during the TLS handshake",
+          "a session cookie the channel stores after the first successful call"
+         ],
+         "correct": 1,
+         "explain": "Metadata is headers (b7-04), and the interceptor (b7-07) is the one place that attaches it — executed there: the transport saw `authorization` on every attempt while call sites mentioned nothing."
+        },
+        {
+         "q": "Why Keychain rather than UserDefaults for the stored token?",
+         "options": [
+          "UserDefaults is a plaintext plist — backups and jailbroken devices read it; Keychain is hardware-encrypted",
+          "UserDefaults is far too slow for a value that must be read synchronously on every single network call the app makes",
+          "tokens exceed the size limit UserDefaults places on strings",
+          "Keychain items sync to the server for session recovery"
+         ],
+         "correct": 0,
+         "explain": "b4-07's machinery earning its keep: a bearer token IS the session, so at-rest protection is the whole game. Speed and size are non-issues — secrecy is the issue."
+        },
+        {
+         "q": "In the executed vault, what does 'is a refresh already running?' physically check?",
+         "options": [
+          "a Bool the first caller sets and the last caller clears",
+          "a mutual-exclusion lock acquired and held around the entire refresh network round trip",
+          "whether the actor stores an in-flight Task to await — the Task IS the flight",
+          "a timestamp comparing now against the last refresh time"
+         ],
+         "correct": 2,
+         "explain": "b3-05's insight applied: a Task is a value, storable and awaitable by many. Five callers, one stored flight, counter read 1 — the executed proof that state-as-Task beats state-as-flag."
+        }
+       ],
+       [
+        {
+         "q": "Refresh tokens rotate (one use each). Five calls refresh independently after simultaneous 16s. The signature production symptom?",
+         "options": [
+          "the server detects and merges the five refreshes into one safe rotation",
+          "users get randomly logged out under load, unreproducible in QA",
+          "five valid new tokens are issued and the last write wins",
+          "the refresh endpoint rate-limits and all five calls back off"
+         ],
+         "correct": 1,
+         "explain": "Four refreshes carry a just-invalidated token, fail, and trip session-over handling. It needs true simultaneity to reproduce — which is why it ships, and why the single flight exists."
+        },
+        {
+         "q": "A call retried with a freshly-refreshed token fails 16 again. Correct next move?",
+         "options": [
+          "refresh once more — the token may have expired in transit",
+          "retry the call on a new connection to rule out b7-10 issues",
+          "queue the failed call until the next scheduled refresh cycle completes successfully",
+          "stop: the token is invalid, not stale — clear credentials, go to logged-out"
+         ],
+         "correct": 3,
+         "explain": "Fresh-and-rejected means revoked or banned; refreshing again is a hot loop wearing a trench coat. One retry after refresh is the policy line — past it, the session is a state machine, and it just transitioned."
+        },
+        {
+         "q": "Proactive expiry checks (reading the JWT's exp before each call) make the reactive 16-handling path…",
+         "options": [
+          "removable — an expired token can no longer be encountered by an in-flight call",
+          "still mandatory: clock skew and server-side revocation only surface as 16",
+          "needed only in debug builds, for testing the refresh flow",
+          "replaceable by the channel's keepalive detecting stale auth"
+         ],
+         "correct": 1,
+         "explain": "Proactive is an optimization (saves a doomed round trip); reactive is correctness — the server's verdict in trailers is the only ground truth about a token. Both paths, always."
+        }
+       ]
+      ]
+     },
+     "transfer": "Audit the work app's auth path against this loop's four checkpoints: (1) is the token attached by an interceptor inside retry? (2) does it live in the Keychain — check for any UserDefaults token reads; (3) is the refresh single-flighted — find the actor/lock, or find the bug; (4) what happens on a second consecutive 16 — is there a policy line, or could it loop? Write down which checkpoint APIClient handles differently than the executed vault, and why.",
+     "verify": "// executed on this Mac 2026-07-18 (plain swift):\n// TokenVault actor, stored in-flight Task, 5 concurrent freshToken() calls\n// (simulating simultaneous grpc-status 16 on five in-flight requests):\n//   call 1 retries with token-v1 … call 5 retries with token-v1\n//   total refresh requests sent: 1        ← the single flight, proven\n// supporting executed floors: interceptor attachment + auth-inside-retry\n// ordering (b7-07) · Keychain CRUD with real error codes (b4-07) · status\n// codes in trailers (b7-04 byte math)\n// documented: refresh-token rotation semantics (server-dependent), JWT exp\n// claim layout, Keychain access-control/biometry options (b9 ahead)",
+     "goDeeper": "gRPC's authentication guide (metadata-based auth, per-call credentials). RFC 6749 §1.5 and §10 — refresh tokens and their rotation, from the OAuth source. Apple's Keychain Services docs on access control. b3-05/b3-06 for the Task-as-value and actor machinery the vault is made of. BLOCK 7 COMPLETE — b2-19 (KVC) is next on the roadmap, then Block 8: Core Data."
+    }
+   ]
+  },
+  {
+   "id": "b8",
+   "name": "Data That Survives",
+   "tagline": "Core Data from the stack down — promises, contexts, and rows",
+   "loops": [
+    {
+     "id": "b8-01",
+     "title": "The Core Data stack",
+     "concept": {
+      "definition": "Core Data is not a database — it is an object-graph manager with a persistence layer. The stack is four layers: the model (`NSManagedObjectModel`, your entities compiled), contexts (`NSManagedObjectContext`, in-memory scratchpads of objects), the persistent store coordinator (the translator between graph and storage), and the store itself — by default a SQLite file Core Data owns. `NSPersistentContainer` assembles the whole tower in one call.",
+      "code": "let container = NSPersistentContainer(name: \"Notes\")  // model+coordinator\ncontainer.loadPersistentStores { _, error in … }       // + store on disk\nlet ctx = container.viewContext                        // + main-queue context\n\nlet note = NSManagedObject(entity: …, insertInto: ctx)\nnote.setValue(\"buy milk\", forKey: \"title\")   // b2-19's KVC, live\n// executed: fresh container over the same file sees 0 rows here —\ntry ctx.save()                                //  …and 1 row after save\n\n// executed, on disk:   notes.sqlite  notes.sqlite-shm  notes.sqlite-wal\n// executed, sqlite3 .tables:  ZNOTE  Z_METADATA  Z_MODELCACHE  Z_PRIMARYKEY\n// executed, SELECT:    1|buy milk|0     ← your object, as a row",
+      "underlying": "Walk the tower bottom-up. The STORE is genuinely SQLite — executed: opening the file with the sqlite3 CLI showed Core Data's private schema, your `Note` entity as a `ZNOTE` table (Z-prefixed columns, `Z_PK` as its own primary key) beside bookkeeping tables like `Z_PRIMARYKEY` and `Z_METADATA`, and the row `1|buy milk|0`. The three files are one store: SQLite runs in WAL mode, so `-wal` holds recent commits and `-shm` coordinates readers — which is why 'delete the database' means deleting ALL three, and why copying just the `.sqlite` file can miss the newest writes. The COORDINATOR owns this file and translates: object changes in, SQL transactions out; fetch requests in, rows out. You never write SQL — that's the contract, not a limitation.\n\nThe MODEL is the schema the coordinator translates against: entities, attributes, relationships — normally compiled from your `.xcdatamodeld` into a `.momd`, built here programmatically (executed) to prove there's no magic: an `NSEntityDescription` plus `NSAttributeDescription`s is all a model is. The store remembers which model shaped it, which is why a model change meets an old file with a crash at `loadPersistentStores` — b8-06's migration story, previewed.\n\nThe CONTEXT is where you live: a scratchpad graph of objects. Inserts, edits, deletes happen in MEMORY — executed: with changes pending (`hasChanges == true`), a second container over the same file saw ZERO rows; after `save()`, a fresh stack saw the row. `save()` is the moment of translation — the context's change set crosses the coordinator into one SQL transaction. `viewContext` is the main-queue context for UI reads; its siblings and their laws are b8-03's subject. In b4-06's persistence menu, this stack is the 'object graph + queries + migrations' option — heavier than files or UserDefaults, and what the work app runs.",
+      "whyItMatters": "Debugging Core Data means knowing WHICH layer misbehaved: a crash at load is model-vs-store, silent data loss is a missing save, a threading crash is context misuse. And 'is Core Data a database?' is a real interview question whose correct answer — an object-graph manager OVER one — is this loop's definition."
+     },
+     "exercise": {
+      "prompt": "Using the executed stack: (1) the app inserts three objects and the user force-quits before any `save()` — what's on disk at next launch, and why? (2) A teammate 'resets' the app by deleting `notes.sqlite` but leaves `-wal` and `-shm` behind — what risk did they just create? (3) In the sqlite3 output, `Z_PK` = 1 — who owns that number, and should your code ever store it?",
+      "code": "// executed facts to reason from:\n//   hasChanges: true → fresh container saw 0 rows\n//   save()          → fresh container saw 1 row\n//   on disk: notes.sqlite + notes.sqlite-shm + notes.sqlite-wal\n//   sqlite3: ZNOTE has Z_PK|ZTITLE|ZDONE — 1|buy milk|0",
+      "solution": "(1) Nothing new — the three inserts lived only in the context's in-memory scratchpad. Executed: a parallel container saw zero rows while `hasChanges` was true. Unsaved context = data that dies with the process; every 'my data vanished' bug starts by asking WHERE save() was supposed to happen.\n\n(2) The three files are ONE store in WAL mode. Deleting only the main file can leave SQLite to reunite the orphaned `-wal` with a re-created database — resurrecting 'deleted' data — or fail outright. Correct reset: destroy all three (Core Data offers `destroyPersistentStore(at:ofType:)` for exactly this).\n\n(3) `Z_PK` is Core Data's PRIVATE primary key inside its PRIVATE schema. Your code should treat the entire SQL layer as an implementation detail: the public identity of a record is its `NSManagedObjectID` (b8-02). Storing Z_PK — or querying ZNOTE directly in production — couples you to a format Apple documents nowhere and may change; the sqlite3 peek is a debugging tool, not an API.",
+      "explanation": "The pattern across all three answers: Core Data draws a hard line between the OBJECT world it promises you (contexts, managed objects, IDs) and the SQL world it merely uses (Z-tables, WAL files, row keys). Every classic stack bug is someone standing on the wrong side of that line."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: name the four layers of the Core Data stack, what each does, and what physically happens when you call save() on a context.",
+      "modelAnswer": "The model is the compiled schema — entities, attributes, relationships; contexts are in-memory scratchpads where objects are inserted and edited; the persistent store coordinator translates between the object graph and storage; and the store is by default a SQLite file Core Data owns, complete with WAL journaling. Changes live only in the context until save() — at that moment the context's change set crosses the coordinator and becomes one SQL transaction against the store. Core Data is therefore an object-graph manager over a database rather than a database itself: you get entities as rows in Z-prefixed tables underneath, but the contract is objects, fetches, and object IDs — never SQL.",
+      "sets": [
+       [
+        {
+         "q": "'Is Core Data a database?' The precise answer:",
+         "options": [
+          "yes — it is essentially Apple's SQLite distribution with an ORM veneer",
+          "no — it is a network-backed sync engine with local caching",
+          "no — an object-graph manager that USES a database as its store",
+          "yes, but an in-memory one that snapshots to disk periodically"
+         ],
+         "correct": 2,
+         "explain": "Executed both halves: real SQLite underneath (ZNOTE, Z_PK rows via sqlite3) and an object contract on top. The graph manager is the product; SQLite is one of its storage formats."
+        },
+        {
+         "q": "You insert an object and set its attributes. Before save(), where does that data exist?",
+         "options": [
+          "only in the context's in-memory scratchpad — no other layer knows",
+          "in the store's WAL file, pending its next checkpoint pass",
+          "in the coordinator's row cache, awaiting transaction commit",
+          "on disk immediately — save() only fences the transaction boundary"
+         ],
+         "correct": 0,
+         "explain": "Executed: a second container over the SAME file saw zero rows while hasChanges was true. The context is a scratchpad; save() is the only door to the coordinator and disk."
+        },
+        {
+         "q": "The store directory holds notes.sqlite, -shm, and -wal. What are the extra two?",
+         "options": [
+          "automatic backups Core Data rotates on every save",
+          "SQLite's WAL journal and shared-memory index — parts of ONE store",
+          "the compiled model cache and the coordinator's lock file",
+          "temporary files left over from the last migration, always safe to delete"
+         ],
+         "correct": 1,
+         "explain": "Write-ahead logging: recent commits live in -wal until checkpointed. All three files ARE the store — which is why partial deletion or copying just the .sqlite is a classic data-loss bug."
+        }
+       ],
+       [
+        {
+         "q": "A teammate ships analytics that queries ZNOTE via raw SQL in production. Review verdict?",
+         "options": [
+          "fine — the executed sqlite3 peek proves the schema is stable",
+          "perfectly fine if the queries are strictly read-only and use WAL-aware connections",
+          "acceptable only for entities without relationships",
+          "no — the Z-schema is private; reads bypass the row cache and coordinator contract"
+         ],
+         "correct": 3,
+         "explain": "The peek is a debugging superpower and an API violation: the schema is undocumented, WAL coordination is the coordinator's job, and fetched state may live in contexts, not rows. Use fetch requests."
+        },
+        {
+         "q": "After a model change, the app crashes inside loadPersistentStores on existing installs. The layer conversation that failed?",
+         "options": [
+          "context vs coordinator — unsaved changes blocked the load",
+          "the store file was silently corrupted midway through the previous WAL checkpoint pass",
+          "coordinator vs store — the file was shaped by a model that no longer matches",
+          "model vs context — stale objects reference deleted entities"
+         ],
+         "correct": 2,
+         "explain": "The store remembers the model that shaped it; the coordinator refuses a mismatch. Fresh installs work (new file, new shape) while updates crash — b8-06's migration machinery exists for exactly this."
+        },
+        {
+         "q": "Choosing storage for the work app's order history (queryable, relational, needs migrations). b4-06's menu says…",
+         "options": [
+          "UserDefaults — simplest API and automatically synced",
+          "Core Data — the object-graph + queries + migrations slot is exactly this",
+          "flat JSON files — Codable already handles the types",
+          "an in-memory cache — order history can always be re-fetched from the server anyway"
+         ],
+         "correct": 1,
+         "explain": "Relationships, predicates, and schema evolution are the stack's whole value proposition — the weight is justified when you need all three. Files and defaults win for blobs and flags, not graphs."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find the work app's stack setup: who creates the NSPersistentContainer, where does loadPersistentStores handle errors (crash? silent?), and which model version is current. Then — on a simulator or scratch copy, never a device — locate the actual .sqlite file, open it with the sqlite3 CLI, and read your real entities as Z-tables once. The object-vs-row line becomes permanent after you've seen both sides of it.",
+     "verify": "// executed on this Mac 2026-07-19 (plain swift, programmatic NSManagedObjectModel):\n// container built from NSEntityDescription/NSAttributeDescription — no Xcode\n// hasChanges true → parallel fresh container saw 0 rows (context = scratchpad)\n// save() → fresh container over same file: 1 row, title 'buy milk'\n// on disk: notes.sqlite + notes.sqlite-shm + notes.sqlite-wal (WAL mode)\n// sqlite3 .tables: ZNOTE Z_METADATA Z_MODELCACHE Z_PRIMARYKEY\n// SELECT Z_PK, ZTITLE, ZDONE FROM ZNOTE → 1|buy milk|0\n// documented: .xcdatamodeld→momd compilation; destroyPersistentStore;\n// model/store mismatch behavior at load (executed in spirit by b8-06 ahead)",
+     "goDeeper": "Apple's \"Core Data Programming Guide\" — the stack chapter (old but still the clearest layer diagram). WWDC 2018 \"Core Data Best Practices\" for NSPersistentContainer idioms. objc.io's \"Core Data\" book ch. 1–2 — the best stack-from-first-principles walk in print. b4-06 for where this sits in the persistence menu; b8-02 next: what fetches actually return."
+    },
+    {
+     "id": "b8-02",
+     "title": "Managed objects and faulting: the promise, not the data",
+     "concept": {
+      "definition": "An `NSManagedObject` fresh from a fetch is a FAULT: a stub that knows its identity (`objectID`) but holds no attribute data. The first touch of a property fires the fault — the runtime-provided accessor pulls the row into memory — and `refresh(_:mergeChanges: false)` turns the object back into a promise. `@NSManaged` is the language-level mark of this deal: no stored ivar, accessors supplied at runtime.",
+      "code": "let notes = try ctx.fetch(request)      // objects return as STUBS\nlet n = notes[0]\n\n// executed, the full life cycle of a promise:\nprint(n.isFault)                        // true  — identity, no data\nlet t = n.value(forKey: \"title\")        // touch fires the fault…\nprint(n.isFault, t)                     // false, 'note 1' — realized\nctx.refresh(n, mergeChanges: false)     // forget the data, keep identity\nprint(n.isFault)                        // true  — a promise again\n\nprint(n.objectID)                       // permanent identity (…/Note/p1)\n// @NSManaged var title: String?        // ← the mark of runtime accessors",
+      "underlying": "Why promises instead of data: Core Data manages object GRAPHS, and graphs pull. Load one Order eagerly and its customer, the customer's orders, every order's items would follow — the whole database, one relationship at a time. Faults cut the graph at every edge: a fetch of 10,000 rows materializes 10,000 lightweight stubs, and each relationship you haven't touched is itself a fault (a to-many is a lazy set that knows only how to populate itself). You pay for exactly the objects you look at — b1-18's laziness, scaled to a database.\n\nThe mechanics stand directly on b2-19: `@NSManaged` compiles to NO stored property — it is the promise that accessors will exist at runtime, and Core Data supplies them. Executed: `value(forKey:)` — pure KVC — fired the fault and returned 'note 1', flipping `isFault` from true to false; `refresh(_:mergeChanges: false)` flipped it back. Where the data comes from when a fault fires is the subtle part: the coordinator keeps a ROW CACHE of recently loaded rows, so firing a fault is often a memory copy, not a disk trip — but a cold cache means SQL, which is why the same code is instant in one scroll and janky in another. The `objectID` is the identity that outlives all of this — note one wrinkle: an object inserted but not yet saved carries a TEMPORARY id that becomes permanent at save (documented), a trap for anyone caching ids of unsaved objects.\n\nTwo failure shapes complete the picture. The fault STORM: a list binds `.title` on every row of a 10,000-fault fetch — each touch fires individually, potentially 10,000 round trips (the classic scroll-jank whose fix is telling the fetch what you'll need: `returnsObjectsAsFaults = false`, or `relationshipKeyPathsForPrefetching`, b8-04's territory). And the DANGLING promise: hold a fault, let the underlying row be deleted (another context, a batch delete), then touch it — 'Core Data could not fulfill a fault' (documented), the crash that means you kept a promise past the death of its data.",
+      "whyItMatters": "Faulting is why the work app's lists scroll over huge tables without loading them — and why 'it's slow sometimes' bugs trace to storms and cold caches. 'Why is an NSManagedObject not just a struct with the row's data?' is an interview question this loop answers in one word: graphs."
+     },
+     "exercise": {
+      "prompt": "Predict precisely. (1) After the executed fetch, `notes[0].isFault` — and what does the debugger show for its attributes? (2) A list of 8,000 fetched objects binds `cell.title = note.title` during scroll — describe the I/O pattern and the one-line fix. (3) Screen A holds objects fetched an hour ago; a cleanup job batch-deletes old rows; the user scrolls Screen A and it crashes. Name the exception and explain the mechanism.",
+      "code": "// (1) let notes = try ctx.fetch(request)   // defaults\n//     notes[0].isFault == ?\n// (2) for row in visibleRows { cell.title = notes[row].title }\n// (3) NSBatchDeleteRequest ran elsewhere; Screen A still holds\n//     its fetched objects and now touches one",
+      "solution": "(1) `true` — executed. The stub knows its objectID and nothing else; the debugger shows the object as 'fault' with no attribute values until something touches it. That's not a bug in the debugger — the data genuinely isn't there.\n\n(2) Every `.title` touch fires that object's fault individually: worst case 8,000 separate row loads interleaved with scrolling — instant on a warm row cache, janky on a cold one (the executed warm/cold distinction is why it's intermittent). Fix: `request.returnsObjectsAsFaults = false` — one trip materializes what the list will certainly display. Faulting is a default, not a law; you override it when you KNOW you'll touch everything.\n\n(3) 'Core Data could not fulfill a fault' — the dangling promise. Batch deletes work at the STORE level (b8-07 ahead), so Screen A's contexts were never told; its stubs still promise rows that no longer exist, and the first touch tries to redeem the promise against a missing row. The fixes are all forms of 'tell the contexts': merge batch-delete results into contexts, or refetch on appear.",
+      "explanation": "One inch deeper on (2): the fix is a trade, not an upgrade — `returnsObjectsAsFaults = false` loads attributes eagerly but relationships stay faults; prefetching key paths is the separate dial for those. Reading Core Data performance is always asking 'which promises fire, when, against which cache'."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what is a fault, why does Core Data return faults instead of loaded objects, and what does @NSManaged actually mean on a property?",
+      "modelAnswer": "A fault is a managed object that knows its identity but holds no data — a stub whose first property access fires, pulling the row from the coordinator's row cache or disk into memory. Core Data returns faults because it manages object graphs, and eagerly loading one object would pull its entire relationship web; faults cut the graph at every edge so you pay only for what you touch. @NSManaged means the property has no stored ivar — the accessors are supplied by the runtime at fault-firing time, which is KVC's stringly machinery under a typed surface. The costs are the fault storm — thousands of individual firings during a scroll, fixed by returnsObjectsAsFaults = false or prefetching — and the dangling fault, where touching a promise whose row was deleted crashes with 'could not fulfill a fault'.",
+      "sets": [
+       [
+        {
+         "q": "Immediately after a default fetch returns, what do you hold?",
+         "options": [
+          "empty placeholder objects that re-fetch themselves on a timer",
+          "stubs that know their objectID and nothing else — data loads on first touch",
+          "fully-loaded objects; laziness applies only to relationships",
+          "immutable value-type snapshots copied straight out of the coordinator's row cache"
+         ],
+         "correct": 1,
+         "explain": "Executed: isFault == true right after the fetch, false only after touching .title. Attributes AND relationships both start as promises — that's the default deal."
+        },
+        {
+         "q": "Core Data chose faulting as the default because…",
+         "options": [
+          "the SQLite engine cannot efficiently return more than one row per query round trip",
+          "iOS memory limits forbid loading over 1,000 objects at once",
+          "faults make objects thread-safe to pass between queues",
+          "graphs pull: one eager object would drag its whole relationship web into memory"
+         ],
+         "correct": 3,
+         "explain": "Order → customer → orders → items — eager loading transits the database. Cutting the graph at every edge (b1-18's laziness at scale) is what makes 'fetch 10,000 rows' a cheap sentence."
+        },
+        {
+         "q": "`@NSManaged var title: String?` differs from a normal property how?",
+         "options": [
+          "no stored ivar exists — the runtime supplies accessors that fetch row data",
+          "the compiler generates a thread-safe atomic wrapper around its storage for it",
+          "it is stored in the model file rather than in the class layout",
+          "it can only be read inside the context's perform block"
+         ],
+         "correct": 0,
+         "explain": "b2-19's promise, kept by Core Data: accessors appear at runtime and route through the fault machinery. (Legal access DOES also require the right queue — but that's b8-03's law, not what @NSManaged means.)"
+        }
+       ],
+       [
+        {
+         "q": "A list is instant on some scrolls and janky on others, profiler shows repeated tiny Core Data work. The mechanism?",
+         "options": [
+          "SQLite's WAL checkpoints are pausing all reads at unpredictable intervals mid-scroll",
+          "fault firings per row — warm row cache makes them free, cold cache makes them SQL",
+          "the context is auto-saving after every cell configuration",
+          "objectIDs are being regenerated as temporary ids expire"
+         ],
+         "correct": 1,
+         "explain": "Same code, different cache temperature — the executed warm/cold distinction. The fix is declaring intent: returnsObjectsAsFaults = false for attributes you'll certainly show."
+        },
+        {
+         "q": "'Core Data could not fulfill a fault' in production. What sequence produced it?",
+         "options": [
+          "two contexts saved conflicting values for one attribute and the merge policy failed",
+          "a fetch ran before loadPersistentStores had completed",
+          "a held stub's row was deleted elsewhere; touching the stub redeemed a dead promise",
+          "an @NSManaged property was accessed before the model compiled"
+         ],
+         "correct": 2,
+         "explain": "Batch deletes bypass contexts (store-level, b8-07), so held faults never hear the news. The crash is the promise's redemption failing — fixed by merging delete results into contexts or refetching."
+        },
+        {
+         "q": "You cache `objectID`s to re-materialize records later (the b8-03 handoff). The wrinkle to respect?",
+         "options": [
+          "objectIDs are only ever valid within the single context that originally fetched them",
+          "objectIDs change on every app launch as the store remaps rows",
+          "caching ids disables faulting for the objects involved",
+          "unsaved objects carry TEMPORARY ids that change at save — cache only after saving"
+         ],
+         "correct": 3,
+         "explain": "Documented trap: the id you grabbed before save() is not the id the row ends up with. Save first, then cache — or convert with obtainPermanentIDs. Cross-context identity is otherwise exactly what ids are for."
+        }
+       ]
+      ]
+     },
+     "transfer": "In the work app, find one list backed by a fetch and check: does the fetch set returnsObjectsAsFaults or prefetch relationships, or is it riding cache warmth? Then find one crash report or defensive check around 'could not fulfill a fault' (search the codebase and crash logs) — if there's a batch delete anywhere, trace whether its results are merged into live contexts. One of these two searches usually finds a real latent bug.",
+     "verify": "// executed on this Mac 2026-07-19 (plain swift, programmatic model):\n// after fetch:            isFault = true\n// after touching .title:  isFault = false — got 'note 1'  (via value(forKey:),\n//                         b2-19's KVC firing the runtime accessor)\n// after refresh(_:mergeChanges: false):  isFault = true again\n// objectID printed:       …/Note/p1 — permanent identity\n// documented: row-cache behavior at fault-fire time; temporary→permanent id\n// transition at save; 'could not fulfill a fault' on deleted rows;\n// returnsObjectsAsFaults / relationshipKeyPathsForPrefetching semantics",
+     "goDeeper": "Apple's Core Data guide, \"Faulting and Uniquing\" — the canonical chapter, worth reading twice. objc.io \"Core Data\" ch. on performance (the storm patterns). b1-18 for laziness as a principle; b2-19 for the accessor machinery; b8-04 will put numbers on fetch shaping. Instruments' Core Data template shows fault firings live — the storm becomes visible."
+    },
+    {
+     "id": "b8-03",
+     "title": "Contexts and threads: the queue confinement law",
+     "concept": {
+      "definition": "Every `NSManagedObjectContext` — and every object it owns — belongs to ONE queue: `viewContext` to the main queue, background contexts to their own private queues, and the only legal access is on that queue, which `perform { }` guarantees. Cross the line and you get silent corruption, or with `-com.apple.CoreData.ConcurrencyDebug 1`, an immediate assertion crash. Data moves between contexts by saving-and-merging or by passing `objectID`s — never by sharing objects.",
+      "code": "let bg = container.newBackgroundContext()\nbg.perform {                              // ON bg's private queue:\n    let n = NSManagedObject(entity: …, insertInto: bg)\n    n.setValue(\"from background\", forKey: \"title\")\n    try! bg.save()\n    let id = n.objectID                   // the legal export\n}\n// viewContext.automaticallyMergesChangesFromParent = true\n// executed: viewContext sees 1 row — merged automatically\n// executed: view.object(with: id) → 'from background'\n\n// the ILLEGAL move, executed with ConcurrencyDebug 1:\nDispatchQueue.global().async {\n    _ = mainQueueObject.value(forKey: \"title\")\n}   // ↑ crash: _PFAssertSafeMultiThreadedAccess_impl aborts the process",
+      "underlying": "The law exists because contexts are b3-03's lesson institutionalized: a context is a mutable object graph with internal bookkeeping (pending changes, snapshots, the fault machinery), none of it locked — two threads touching it interleave exactly like the executed `+=` races, except the corrupted state is your user's data. Core Data's answer predates Swift actors but has the same shape: confine each context to one serial queue and make `perform { }` the only door — b3-06's actor islands, enforced by discipline and a debug assertion instead of the compiler. Executed: with `-com.apple.CoreData.ConcurrencyDebug 1`, touching a main-queue object from a dispatch worker thread aborted inside `_PFAssertSafeMultiThreadedAccess_impl`. Run Debug builds with that flag ALWAYS — without it the same line doesn't crash, it just corrupts quietly and files the bug three screens later.\n\nThe executed session also caught the law's subtlest wrinkle: the first 'illegal' attempt used `DispatchQueue.global().sync { }` from the main thread — and SURVIVED, legitimately, because sync from the main thread runs the block ON the main thread (b3-02's optimization). Queue confinement is about which queue actually EXECUTES the access, not where the code was written — worth remembering when a violation report seems impossible or an 'obviously wrong' snippet refuses to crash.\n\nMoving data legally has exactly two shapes, both executed. SAVE-AND-MERGE: the background context saves; with `automaticallyMergesChangesFromParent = true`, the viewContext folds those committed changes into its own graph (executed: the row appeared without any fetch) — under the hood, a did-save notification carrying the change set, applied on the receiving context's queue. And the ID HANDOFF: `objectID` is immutable and queue-free — export it from the background block, call `object(with:)` on the main context, and you hold the SAME record as a separate object owned by the right queue (executed: 'from background' read on main). What you never do is let the managed object itself cross — an object is a view into ONE context's graph, and b8-02's temporary-id wrinkle adds the footnote: save before you export ids. Merge CONFLICTS — two contexts editing the same row — are real and policy-governed (`NSMergeByPropertyObjectTrumpMergePolicy` and friends), but they're b8-07's import-pipeline story; today's law is simpler: right queue, right door, ids across the wall.",
+      "whyItMatters": "This is the most crashed-into law in Core Data — every 'works on my phone, corrupts on QA's' bug and half of all Core Data crash reports are queue violations. The work app runs background imports against a live UI (b8-07 ahead); this loop is the safety briefing, and 'how do you pass a managed object between threads?' (answer: you don't — you pass its ID) is a stock interview question."
+     },
+     "exercise": {
+      "prompt": "Verdict each snippet — LEGAL, ILLEGAL, or LEGAL-BUT-SUBTLE — with the reasoning. (a) A background `perform` block fetches objects, then hops to `DispatchQueue.main.async` to assign `label.text = objects[0].value(forKey: \"title\") as? String`. (b) The executed pattern: bg saves, exports `objectID`, main context calls `object(with:)`. (c) `DispatchQueue.global().sync { _ = viewContextObject.title }` written in a viewDidLoad. (d) With ConcurrencyDebug off, does snippet (a) crash?",
+      "code": "// (a) bg.perform { let objs = try! bg.fetch(req)\n//         DispatchQueue.main.async { label.text = objs[0].title } }\n// (b) bg.perform { …save…; id = n.objectID }\n//     view.object(with: id)                       // on main\n// (c) global().sync { _ = viewContextObject.title } // from viewDidLoad\n// (d) same as (a), Release build, no debug flag",
+      "solution": "(a) ILLEGAL — the objects belong to `bg`'s private queue; reading `.title` on the main queue violates confinement even though UI work 'should' be on main. Both things are true: UI on main AND bg-objects on bg — which is why the handoff exists. Fix: read the string INSIDE the perform block, hop to main carrying the plain String (values are free to travel; managed objects are not).\n\n(b) LEGAL — executed: the id crossed, `object(with:)` produced the main context's own object for that record ('from background'). This is THE pattern.\n\n(c) LEGAL-BUT-SUBTLE — executed: it survived ConcurrencyDebug, because `global().sync` from the main thread executes the block ON the main thread (b3-02). The code is still a review flag: one refactor to `async` makes it the executed abort. Confinement judges the executing queue, not the source location.\n\n(d) No crash — and that's worse: the read races the context's bookkeeping silently (b3-03's corruption, not b3-02's deadlock), surfacing later as impossible values or 'could not fulfill a fault'. The flag converts heisenbugs into stack traces at the guilty line; that's why it belongs in every Debug scheme.",
+      "explanation": "The deep rule under all four: managed objects are VIEWS into one queue's graph, but the VALUES you read from them (strings, ints, ids) are ordinary Sendable data. Cross the wall with values and ids, never with the views — the same value-vs-reference instinct b1-09 built, applied to persistence."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: state Core Data's queue confinement rule, the two legal ways to move data between contexts, and what -com.apple.CoreData.ConcurrencyDebug 1 changes.",
+      "modelAnswer": "Every context and its objects are confined to one queue — viewContext to main, each background context to its own private queue — and perform { } is the only guaranteed-legal door; managed objects must never be touched from another queue. Data crosses by save-and-merge (a background save whose change set the viewContext folds in via automaticallyMergesChangesFromParent) or by exporting an objectID and re-materializing with object(with:) in the destination context — values and ids travel, objects don't. Without the debug flag a violation corrupts silently and surfaces far from the cause; with -com.apple.CoreData.ConcurrencyDebug 1 the runtime asserts at the guilty access, so the flag belongs in every Debug build. It's the actor-isolation idea from Swift concurrency, enforced at runtime instead of compile time.",
+      "sets": [
+       [
+        {
+         "q": "The confinement rule, stated precisely:",
+         "options": [
+          "each context and its objects are accessed only on that context's queue, via perform",
+          "all Core Data work must happen off the main thread for scrolling performance reasons",
+          "contexts may be shared across queues if reads are wrapped in locks",
+          "only save() is queue-restricted; reads are safe from anywhere"
+         ],
+         "correct": 0,
+         "explain": "Reads count — executed: a background-thread READ of a main-queue object aborted the process under the debug flag. perform { } is the door; everything else is trespassing."
+        },
+        {
+         "q": "Why does an unflagged violation usually NOT crash?",
+         "options": [
+          "Core Data detects cross-queue access at runtime and serializes it internally as a safe fallback",
+          "it's a data race on unlocked bookkeeping — corruption, not a trap; the flag adds the trap",
+          "the runtime retries the access on the correct queue automatically",
+          "modern SQLite makes concurrent object access safe by design"
+         ],
+         "correct": 1,
+         "explain": "b3-03's law: races corrupt silently. The assertion flag exists to convert that silence into a stack trace at the guilty line — which is why Debug schemes should always carry it."
+        },
+        {
+         "q": "The legal currency for handing a record from a background context to the viewContext is…",
+         "options": [
+          "the managed object itself, if it has been saved first",
+          "a copy made with NSCopying before the queue hop",
+          "the original fetch request, re-armed with the object's identifying predicate",
+          "its objectID, re-materialized with object(with:) on the receiving side"
+         ],
+         "correct": 3,
+         "explain": "Executed: id exported from the bg block, object(with:) on main read 'from background'. Two objects, two queues, one record — with b8-02's footnote: save first, temporary ids mutate."
+        }
+       ],
+       [
+        {
+         "q": "Code review: `bg.perform { let items = try! bg.fetch(r); DispatchQueue.main.async { cell.title = items[0].title } }`. Verdict?",
+         "options": [
+          "correct — UI assignment happens on main, as required",
+          "illegal — bg's objects are being read on the main queue; extract the String inside perform instead",
+          "correct, because perform blocks extend to nested closures",
+          "illegal only in the specific case where the fetch returned faults rather than fully realized, materialized objects"
+         ],
+         "correct": 1,
+         "explain": "Both rules bind at once: UI on main AND bg-objects on bg. Values travel, views don't — read the string inside the block, then hop. (Fault state doesn't change whose object it is.)"
+        },
+        {
+         "q": "`global().sync { _ = viewObject.title }` from viewDidLoad passed ConcurrencyDebug. Why — and is it fine?",
+         "options": [
+          "sync from main ran the block ON main, so it was legal — but a refactor to async makes it the abort",
+          "the flag only checks writes, and this was a read",
+          "viewDidLoad runs early enough that queue confinement is not yet being enforced by the Core Data runtime",
+          "global queues share the main thread's context registration"
+         ],
+         "correct": 0,
+         "explain": "Confinement judges the EXECUTING queue — b3-02's sync optimization made this one legal by accident. Code whose legality depends on a dispatch subtlety is a review finding even when it runs."
+        },
+        {
+         "q": "After enabling automaticallyMergesChangesFromParent, background saves appear in the viewContext because…",
+         "options": [
+          "both contexts share one object graph guarded by a lock",
+          "the viewContext continuously polls the persistent store for new changes on each runloop tick",
+          "a did-save notification's change set is applied on the view context's own queue",
+          "the coordinator redirects all reads to the newest WAL frame"
+         ],
+         "correct": 2,
+         "explain": "Merge = replaying a committed change set through the right door (the receiving queue) — executed: the row appeared on main with no fetch. Conflicts between edits are b8-07's merge-policy story."
+        }
+       ]
+      ]
+     },
+     "transfer": "First: check the work app's Debug scheme for -com.apple.CoreData.ConcurrencyDebug 1 — if it's absent, adding it is a one-line change that may surface real latent violations within a day of QA. Then find one background write path (import, cleanup, sync) and audit it against today's law: is every access inside perform? does anything exported cross as an object instead of an id or value? does the viewContext merge automatically or is someone refetching by hand?",
+     "verify": "// executed on this Mac 2026-07-19 (plain swift, programmatic model):\n// flag armed: 'CoreData: annotation: Core Data multi-threading assertions enabled.'\n// LEGAL: bg.perform insert+save → viewContext (automaticallyMergesChangesFromParent)\n//   counted 1 row with no fetch; objectID handoff read 'from background' on main\n// SUBTLE: global().sync from main ran ON main (b3-02) → no violation — executed\n// ILLEGAL: global().async touch of a main-queue object →\n//   abort inside _PFAssertSafeMultiThreadedAccess_impl, from a dispatch worker\n//   thread (stack captured) — the process died at the guilty line\n// documented: merge-policy options; did-save notification mechanics",
+     "goDeeper": "WWDC 2018 \"Core Data Best Practices\" — the concurrency segment is this loop from Apple's mouth. Apple's Core Data guide, \"Concurrency\" chapter. b3-02/b3-03/b3-06 — the dispatch, race, and actor machinery this law is made of. b8-07 ahead for merge policies under real import load. The flag, one more time: every Debug scheme, always."
+    },
+    {
+     "id": "b8-04",
+     "title": "Fetching: the query you didn't write",
+     "concept": {
+      "definition": "An `NSFetchRequest` is a query DESCRIPTION that the coordinator compiles to SQL: the predicate becomes WHERE, sort descriptors become ORDER BY, `fetchLimit` becomes LIMIT, and `count(for:)` becomes SELECT COUNT — all executed inside SQLite, not in your process. The cardinal rule follows: push the work into the store, because fetch-everything-and-filter-in-Swift drags every row into memory just to throw most of them away.",
+      "code": "// executed with -com.apple.CoreData.SQLDebug 1 — the compiled queries:\nreq.predicate = NSPredicate(format: \"score == %d\", 7)\n// → SELECT … FROM ZNOTE t0 WHERE t0.ZSCORE = ?\nreq.sortDescriptors = [.init(key: \"score\", ascending: false)]\nreq.fetchLimit = 3\n// → SELECT … ORDER BY t0.ZSCORE DESC LIMIT 3\ntry ctx.count(for: req)\n// → SELECT COUNT( DISTINCT t0.Z_PK) FROM ZNOTE t0 WHERE …\n\n// executed against 50,000 seeded rows (50 matches):\n// predicate fetch:      0.002s\n// fetch all + .filter:  0.034s — 18x slower, and its SQL has NO WHERE",
+      "underlying": "The captures make the division of labor visible. A predicate is not a closure — `NSPredicate(format: \"score == %d\", 7)` is a tiny query language parsed at runtime, and that restriction is its power: because Core Data can SEE the comparison (rather than executing opaque Swift), it can translate it to `WHERE t0.ZSCORE = ?` and let SQLite — with its indexes, its page cache, its decades of query planning — do the discarding. `.filter { }` on a fetched array is the opposite deal: executed, the SQL came back with no WHERE at all, 50,000 objects materialized (b8-02's faults deliberately disabled in both arms for fairness), and Swift threw away 49,950 of them — 18x slower at this size, and the gap grows with the table.\n\nEach fetch dial maps to a SQL clause and a moment to use it. Sort descriptors → ORDER BY, executed with `LIMIT 3` for a top-N query that never loads the other 49,997 rows. `count(for:)` → SELECT COUNT, executed — answering 'how many?' without materializing one object (badges, empty-states). `fetchLimit`/`fetchOffset` page; `fetchBatchSize` is the list-backing tool — the returned array is a façade that loads rows in batches as you index it (documented) — and `returnsObjectsAsFaults`/prefetching are b8-02's dials on the same panel. For big text searches, predicate OPERATORS have costs too: `CONTAINS[cd]` forces case/diacritic normalization SQLite can't index its way out of, where a prefix `BEGINSWITH` can use an index (documented; the model's attribute indexes are one checkbox — without one, every WHERE is a full scan, fine at 50k on a Mac, felt at 500k on a phone).\n\nThe x-ray that proves all of this is one launch argument: `-com.apple.CoreData.SQLDebug 1` (levels up to 4 add row counts and timings) — every claim above was read from its output. One executed wrinkle worth keeping: the flag works on real app targets and compiled binaries; the `swift` script interpreter swallowed it silently. When a screen is slow, this flag turns 'Core Data is slow' into 'THIS query, with THIS shape, ran THIS many times' — which is usually a fault storm (b8-02) or an in-memory filter wearing a fetch's clothes.",
+      "whyItMatters": "The difference between a list that opens instantly and one that spins is usually WHERE the filtering ran — the executed 18x is the small-scale preview of a phone-sized disaster. And 'what does an NSPredicate actually become?' is an interview question with a one-word answer you've now read off the wire: SQL."
+     },
+     "exercise": {
+      "prompt": "Four ways to put 'the 20 newest unread messages, and a total unread count' on screen. For each: what SQL shape does it compile to (or not), and rank the four by cost on a 100k-row table. (a) fetch all, sort and filter in Swift, take 20, count the filtered array. (b) predicate `isRead == NO`, sort by date desc, fetchLimit 20; separate count(for:) with the same predicate. (c) same as (b) but no fetchLimit — slice [0..<20] in Swift. (d) predicate fetch with returnsObjectsAsFaults = true, then read every message's text to build previews.",
+      "code": "// 100,000 rows, ~3,000 unread. Executed reference points:\n//   predicate fetch of 50/50k:   0.002s   (WHERE in SQLite)\n//   fetch-all + filter, 50k:     0.034s   (no WHERE — Swift discards)\n//   count(for:):                 SELECT COUNT, zero objects materialized",
+      "solution": "(b) is the design: `WHERE ZISREAD = 0 ORDER BY ZDATE DESC LIMIT 20` materializes exactly 20 objects, and the count runs as SELECT COUNT — zero objects. Cheapest by far.\n\n(c) is the sneaky middle: the WHERE and ORDER BY still run in SQLite, but ~3,000 objects come back so Swift can keep 20 — 150x the materialization for nothing. The executed lesson in miniature: every clause you leave out of the request becomes object traffic.\n\n(d) compiles to the right WHERE but then fires ~3,000 faults one by one while building previews — b8-02's storm dressed as a fetch. Either set returnsObjectsAsFaults = false (one trip) or fetch only what the preview needs.\n\n(a) is the disaster: no WHERE, no ORDER BY — 100k objects materialized, sorted, and filtered in Swift, on whatever queue this ran. The executed 18x at 50k rows understates it at 100k with sort included.\n\nRank, cheap → catastrophic: b, c, d, a.",
+      "explanation": "The grading rubric generalizes: count the OBJECTS each design materializes (20+0, ~3k, ~3k+storm, 100k) — object materialization, not query execution, is where Core Data fetch time actually goes. SQLite is nearly free; NSManagedObject construction is not."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what happens to an NSPredicate at fetch time, why is fetch-all-then-filter an anti-pattern, and which fetch-request dials keep a big list fast?",
+      "modelAnswer": "At fetch time the coordinator compiles the request to SQL — the predicate becomes a WHERE clause, sort descriptors become ORDER BY, fetchLimit becomes LIMIT — so SQLite does the discarding and only matching rows come back to be materialized as objects. Fetch-all-then-filter ships no WHERE at all: every row is materialized as a managed object just so Swift can throw most away, which measured 18x slower at 50k rows and scales worse. For big lists the dials are: a real predicate and sort in the request, fetchLimit or fetchBatchSize so the array loads in pages, count(for:) when you only need a number, returnsObjectsAsFaults = false or prefetching when you'll touch every returned object, and an index on hot attributes. SQLDebug 1 shows the compiled SQL when you need proof.",
+      "sets": [
+       [
+        {
+         "q": "Why can a predicate become SQL when a Swift `.filter` closure cannot?",
+         "options": [
+          "predicates always run faster because they're precompiled at application build time",
+          "closures could become SQL too, but Apple hasn't shipped it yet",
+          "filter is allowed only on arrays, never on fetch requests",
+          "a predicate is inspectable query syntax; a closure is opaque compiled code"
+         ],
+         "correct": 3,
+         "explain": "Core Data can read `score == 7` and emit `WHERE t0.ZSCORE = ?` (executed capture). It cannot look inside arbitrary Swift. The predicate's restricted language IS the feature."
+        },
+        {
+         "q": "The executed 18x gap between predicate fetch and fetch-all+filter mostly measures…",
+         "options": [
+          "SQLite parsing the WHERE clause on every row",
+          "materializing 50,000 managed objects versus 50",
+          "the two extra saves the filtering approach requires",
+          "predicate caching that skips repeated query compilation"
+         ],
+         "correct": 1,
+         "explain": "Query execution is cheap; object construction isn't. The anti-pattern's cost is hauling 49,950 objects into existence to discard them — and it grows linearly with the table."
+        },
+        {
+         "q": "You need an unread-count badge. The right call?",
+         "options": [
+          "fetch with the predicate and read the array's .count property",
+          "fetch with fetchLimit = 1 and simply check whether anything came back",
+          "count(for:) — it compiles to SELECT COUNT and materializes nothing",
+          "keep a running counter in UserDefaults, updated on each save"
+         ],
+         "correct": 2,
+         "explain": "Executed: `SELECT COUNT( DISTINCT t0.Z_PK) … WHERE` — the store answers the arithmetic. Fetching to count is paying object-materialization prices for a number."
+        }
+       ],
+       [
+        {
+         "q": "SQLDebug shows a screen's fetch compiling correctly — WHERE and all — yet the screen still hitches. Likeliest culprit?",
+         "options": [
+          "faults firing one-by-one as cells read attributes — the storm after the fetch",
+          "the compiled WHERE clause re-executes each time a cell scrolls into visibility",
+          "SQLDebug logging itself is what's blocking the main thread",
+          "ORDER BY forces SQLite to lock the table during scrolls"
+         ],
+         "correct": 0,
+         "explain": "The query was right; the materialization strategy wasn't (b8-02). SQLDebug level 4 would show the follow-up row loads — returnsObjectsAsFaults=false or prefetching is the fix."
+        },
+        {
+         "q": "Search-as-you-type over 300k notes uses `CONTAINS[cd]`. It's slow. The honest diagnosis?",
+         "options": [
+          "the predicate format string is being recompiled on every keystroke — cache the whole request object",
+          "fetch requests can't run while the keyboard animates",
+          "case/diacritic-insensitive substring match defeats indexes — every keystroke is a full scan",
+          "300k rows exceeds what a fetch request may examine at once"
+         ],
+         "correct": 2,
+         "explain": "CONTAINS[cd] normalizes every row's text, unindexable by construction. Real fixes change the data: a normalized search column with BEGINSWITH, or SQLite FTS via a search index — not request tweaks."
+        },
+        {
+         "q": "A teammate benchmarks fetches in a `swift` script with -com.apple.CoreData.SQLDebug 1 and reports 'the flag does nothing'. Your correction?",
+         "options": [
+          "the flag was renamed to SQLiteDebug in recent iOS releases",
+          "the script interpreter swallows it — compile the binary (or a real target) and it prints",
+          "SQLDebug only logs on device builds, never on the Mac",
+          "it only takes effect when -com.apple.CoreData.ConcurrencyDebug 1 is also enabled alongside it"
+         ],
+         "correct": 1,
+         "explain": "The exact wall this loop hit: interpreted mode dropped the launch argument silently; `swiftc` + running the binary printed every query. Tooling claims deserve the same verification as code claims."
+        }
+       ]
+      ]
+     },
+     "transfer": "Add -com.apple.CoreData.SQLDebug 1 to the work app's Debug scheme for one session and read what your busiest screen actually compiles to: count the queries per screen-load, find any SELECT with no WHERE (an in-memory filter wearing a fetch's clothes), and check whether the hottest predicate's attribute has an index in the model. One of those three findings is usually a real fix.",
+     "verify": "// executed on this Mac 2026-07-19 (compiled binary + SQLDebug 1, 50k rows):\n// predicate  → SELECT … FROM ZNOTE t0 WHERE t0.ZSCORE = ?\n// sort+limit → SELECT … ORDER BY t0.ZSCORE DESC LIMIT 3 (top-3: 999,999,999)\n// count(for:) → SELECT COUNT( DISTINCT t0.Z_PK) FROM ZNOTE t0 WHERE …\n// fetch-all  → SELECT with NO WHERE — the anti-pattern's fingerprint\n// timings: predicate 0.002s vs fetch-all+filter 0.034s = 18x; seed 50k 0.28s\n// wrinkle: SQLDebug prints from compiled binaries; the swift interpreter\n// swallowed the flag silently — executed both ways\n// documented: fetchBatchSize façade behavior; index/CONTAINS[cd] costs",
+     "goDeeper": "Apple's Core Data guide, \"Fetching Objects\". WWDC 2018 \"Core Data Best Practices\" — the fetch-shaping segment. The NSPredicate Programming Guide for the format-string language. b8-02 for the materialization half of every fetch's cost; b8-05 next: the fetch that stays alive."
+    },
+    {
+     "id": "b8-05",
+     "title": "NSFetchedResultsController: the fetch that stays alive",
+     "concept": {
+      "definition": "An `NSFetchedResultsController` is a fetch that keeps watching: `performFetch()` materializes the sorted, optionally sectioned result, and from then on it observes its context's changes and reports precise deltas — insert, delete, move, and update with exact index paths, plus section inserts and deletes — which a table or collection view replays as animated updates. It's the standard bridge from Core Data changes to list UI.",
+      "code": "let frc = NSFetchedResultsController(\n    fetchRequest: req,                    // sorted: category, then title\n    managedObjectContext: ctx,            // a MAIN-queue context (b8-03)\n    sectionNameKeyPath: \"category\",       // sections = grouping key\n    cacheName: nil)\nfrc.delegate = self\ntry frc.performFetch()\n\n// executed transcript — three context mutations, five delegate events:\n// sections: [home(1), work(2)]\n// insert 'call bank' →  INSERT at - → [0, 1]\n// delete 'review PR' →  DELETE at [1, 1]\n// re-categorize 'fix bug' work→home:\n//   SECTION DELETE 'work' at index 1\n//   MOVE [1, 0] → [0, 2]\n// final sections: [home(3)]",
+      "underlying": "The machinery is a diff engine bolted onto b8-03's merge plumbing: the controller listens for its context's objects-did-change notifications, re-evaluates each changed object against its predicate and sort, and computes what moved where. Index paths are DERIVED from the sort descriptors — executed: 'call bank' arrived at [0, 1] because it sorts after 'buy milk' inside the home section, not because anyone said 'row 1'. That derivation is the whole contract: the FRC owns the ordering, your data source just reads it — which is why every FRC bug report that says 'rows are in the wrong place' traces to a sort descriptor that doesn't match what the UI assumes, and why the first sort key MUST be the `sectionNameKeyPath` (documented requirement — sections are contiguous runs of the sort, and violating it scrambles sectioning).\n\nThe executed transcript's best moment is the re-categorization: ONE attribute change (`category`: work→home) produced TWO coordinated deltas — a SECTION DELETE (work became empty and died) and a MOVE ([1,0] → [0,2], the object landing in sort position within its new section). That's the FRC doing the bookkeeping every hand-rolled solution gets wrong: emptied sections, moves that are really delete+insert pairs, batch mutations arriving interleaved. UIKit consumes these in `performBatchUpdates` — or, modern and simpler, via the snapshot delegate method (`controller(_:didChangeContentWith:)` handing you an `NSDiffableDataSourceSnapshot`, documented) where the diffable data source animates the whole delta set at once and the classic four-callback dance disappears.\n\nThe boundaries complete the picture. The FRC watches a CONTEXT, so it inherits b8-03's laws — main-queue context for UI, and background saves reach it through the merge (executed there: `automaticallyMergesChangesFromParent`), while store-level operations that bypass contexts — b8-07's batch inserts and deletes — are invisible to it until their results are merged in. And it's lazy like everything Core Data: with `fetchBatchSize` set, the FRC pages rows as the table scrolls (b8-04's façade), so a 100k-row table costs what's on screen, not what's in the store.",
+      "whyItMatters": "This is how the work app's storyboard-first list screens stay in sync with a live database — one FRC per list, deltas animating in as imports land (b8-07). It also kills the refetch-and-reloadData habit: O(changes) animated updates instead of O(n) rebuilds. 'How do you drive a table from Core Data?' has been an interview staple for a decade, and FRC is the expected first word."
+     },
+     "exercise": {
+      "prompt": "Using the executed setup (sections by category; sorted category then title): predict the exact delegate events for each mutation, index paths included. Start state: home = [buy milk, call bank], work = [fix bug]. (1) insert 'answer email' with category work. (2) rename 'call bank' to 'zz call bank' (title change only). (3) delete 'fix bug'. (4) a background context batch-inserts 50 tasks via NSBatchInsertRequest and does NOT merge — what does the FRC report?",
+      "code": "// sections: [0] home = [buy milk, call bank]\n//           [1] work = [fix bug]\n// sort: category ASC, then title ASC\n// executed reference: one category change produced\n//   SECTION DELETE + MOVE with derived index paths",
+      "solution": "(1) INSERT at → [1, 0] — 'answer email' sorts before 'fix bug' in work. (No section event: work already exists.)\n\n(2) MOVE [0, 1] → [0, 1]… no — the title change alters sort position WITHIN home: 'zz call bank' sorts after 'buy milk', and it was already there, so the FRC reports an UPDATE at [0, 1] (position unchanged, content changed). Had it been renamed 'aa call bank', it would sort before 'buy milk' — a MOVE [0, 1] → [0, 0]. The event TYPE depends on whether the sort position moved, which is exactly the derivation the executed transcript showed.\n\n(3) DELETE at [1, 0] — and because 'fix bug' was work's last row (after 1's insert there'd be 'answer email' left, so with mutation 1 applied: just the row DELETE; if work HAD emptied, a SECTION DELETE would follow, as executed with the re-categorization).\n\n(4) NOTHING. Batch inserts happen at the store level, beneath every context — the FRC's context never posted a change notification, so the FRC still shows the old world. The 50 tasks appear only when the batch result's objectIDs are merged into the context (b8-07's closing step) — the single most common 'my import works but the list doesn't update' bug.",
+      "explanation": "Mutation (2) is the sharpest edge: UPDATE vs MOVE isn't about what you changed, it's about whether the sort position changed — the FRC re-derives placement from sort descriptors on every event. Reading FRC deltas means thinking in the sort's coordinates, never in 'what I did'."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what does an NSFetchedResultsController do beyond a plain fetch, how does it decide index paths and event types, and why does a batch insert leave it silent?",
+      "modelAnswer": "Beyond the one-shot fetch, an FRC subscribes to its context's change notifications, re-evaluates changed objects against its predicate and sort descriptors, and emits precise deltas — insert, delete, move, update, plus section inserts and deletes — that a table view replays as animations. Index paths are derived from the sort order (and sections from sectionNameKeyPath, which must lead the sort), so whether an edit is an UPDATE or a MOVE depends on whether the object's sorted position changed, not on what attribute was touched. It watches a context, not the store — so background saves reach it through context merging, but batch inserts and deletes operate at the store level and are invisible until their result IDs are merged in. That context-boundary rule is also why it must run on a main-queue context for UI work.",
+      "sets": [
+       [
+        {
+         "q": "How does the FRC know a row's index path?",
+         "options": [
+          "the table view's data source assigns paths and reports them back to the controller",
+          "it derives position from the sort descriptors — order is computed, not recorded",
+          "insertion order: objects keep the path they first appeared at",
+          "the store returns rowids that map one-to-one onto index paths"
+         ],
+         "correct": 1,
+         "explain": "Executed: 'call bank' landed at [0,1] purely because of where it sorts inside home. The FRC owns ordering; every 'wrong row position' bug is a sort descriptor disagreeing with an assumption."
+        },
+        {
+         "q": "Why must the first sort descriptor match the sectionNameKeyPath?",
+         "options": [
+          "sections are contiguous runs of the sorted result — sorting by anything else scrambles them",
+          "the store can only index one grouping column at a time",
+          "section names are computed lazily from the first sort key's internal cache and reused across fetches",
+          "it's a performance hint, not a correctness requirement"
+         ],
+         "correct": 0,
+         "explain": "Sectioning is slicing, not bucketing: the FRC walks the sorted list and cuts where the key changes. Sort by title-first with category sections and objects land in impossible slices — the documented rule exists for correctness."
+        },
+        {
+         "q": "Changing one object's section attribute (work→home) produced SECTION DELETE + MOVE. Why two events?",
+         "options": [
+          "a Core Data quirk: attribute writes always fire twice through KVO",
+          "the delegate coalesced an insert and a delete into one MOVE plus cleanup",
+          "the object moved AND its old section emptied — two facts, two deltas",
+          "section events always accompany every MOVE as bookkeeping"
+         ],
+         "correct": 2,
+         "explain": "Executed transcript: work died (its last member left) and 'fix bug' needed a new derived position in home. The FRC reports every structural consequence — precisely the bookkeeping hand-rolled diffing forgets."
+        }
+       ],
+       [
+        {
+         "q": "After a successful NSBatchInsertRequest, the FRC-driven list shows nothing new. The mechanism?",
+         "options": [
+          "the FRC caches aggressively; a cacheName reset is required",
+          "batch inserts write below every context — no change notification ever fired for the FRC to hear",
+          "batch-inserted rows carry only temporary object IDs until the next full app relaunch finally completes",
+          "the insert ran on a background queue, which FRCs cannot observe"
+         ],
+         "correct": 1,
+         "explain": "Store-level operations bypass the context layer entirely (b8-07). The fix is merging the batch result's objectIDs into the FRC's context — the import pipeline's mandatory last step."
+        },
+        {
+         "q": "A rename changes a title but the FRC reports UPDATE, while another rename reports MOVE. What separates the cases?",
+         "options": [
+          "whether the new title changed the object's position under the sort descriptors",
+          "whether the rename was fully saved to the store or only processed as a pending change",
+          "UPDATE fires for faulted objects, MOVE for realized ones",
+          "string attributes report UPDATE; indexed attributes report MOVE"
+         ],
+         "correct": 0,
+         "explain": "Event types describe consequences in sort-space, not the edit itself: same-position content change = UPDATE; position change = MOVE with both paths. Think in the sort's coordinates."
+        },
+        {
+         "q": "A teammate replaces the four delegate callbacks + performBatchUpdates with the snapshot delegate method and a diffable data source. Trade-offs?",
+         "options": [
+          "snapshots lose animation entirely — the four callbacks are required for motion",
+          "snapshots are main-thread-only, unlike the classic callbacks",
+          "simpler, safer batching; you lose per-event hooks — usually the right trade",
+          "identical behavior; the choice is pure style"
+         ],
+         "correct": 2,
+         "explain": "controller(_:didChangeContentWith:) hands one snapshot; the diffable source animates the whole delta safely (no more 'invalid number of rows' crashes from mis-batched callbacks). You give up per-event hooks — rarely missed."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one FRC in the work app (or the list screen that SHOULD have one and refetches instead). Check three things against this loop: does the first sort descriptor match the sectionNameKeyPath? does the delegate use the four callbacks with performBatchUpdates or the snapshot method? and when the import pipeline runs (b8-07), how do its rows reach this FRC's context — merge, or a manual refetch someone added after a bug?",
+     "verify": "// executed on this Mac 2026-07-19 (plain swift, programmatic model):\n// FRC with sectionNameKeyPath 'category', sort [category, title]:\n//   performFetch → sections [home(1), work(2)]\n//   insert 'call bank'      → delegate INSERT at - → [0, 1]  (derived position)\n//   delete 'review PR'      → delegate DELETE at [1, 1]\n//   re-categorize 'fix bug' → SECTION DELETE 'work' + MOVE [1, 0] → [0, 2]\n//   final sections [home(3)]\n// events fired on ctx.processPendingChanges() — the notification machinery\n// documented: first-sort-key-matches-sectionNameKeyPath rule; snapshot\n// delegate (didChangeContentWith); fetchBatchSize paging under an FRC",
+     "goDeeper": "Apple's NSFetchedResultsController docs — including the snapshot-based delegate. WWDC 2019 \"Advances in UI Data Sources\" for the diffable half of the modern pairing. b8-03 for the context laws the FRC inherits; b8-07 next-but-one for the import pipeline that feeds it. objc.io's Core Data book on the FRC's diff machinery."
+    },
+    {
+     "id": "b8-06",
+     "title": "Migrations: the model the store remembers",
+     "concept": {
+      "definition": "A store is stamped at creation with hashes of the model that shaped it; opening it later requires a compatible model, or Core Data refuses with error 134100 — 'the model used to open the store is incompatible with the one used to create the store.' Lightweight migration infers the mapping between versions (additions, removals, and renames that carry a renaming identifier) and rewrites the store in place; a rename WITHOUT the identifier is inferred as delete-plus-add — silent data loss.",
+      "code": "// executed: V1 store (title) opened with V2 model (title + createdAt),\n// migration options OFF:\n//   error 134100 — 'The model used to open the store is incompatible\n//   with the one used to create the store'\n//   metadata: NSStoreModelVersionHashes { Note = <32 bytes…> }  ← the stamp\n\n// same open with automatic lightweight migration ON (the defaults):\n//   OK — title = 'precious data', createdAt now in the schema\n\n// the rename trap, executed both ways (title → heading):\n//   without renamingIdentifier:  heading = nil        ← DATA LOST\n//   with    renamingIdentifier:  heading = 'precious data'",
+      "underlying": "The stamp is real and you've seen it: the executed error dump printed `NSStoreModelVersionHashes` — a 32-byte hash per entity, stored in the file's metadata at save time. Compatibility is hash equality, which is why ANY entity change — a new attribute, a changed optionality — trips 134100: the store isn't comparing your model semantically, it's comparing fingerprints. This is the crash your USERS meet at first launch after an update if migration isn't in place: fresh installs sail (new file, new stamp) while upgrades die — the same asymmetry b8-01 previewed, now with its mechanism visible.\n\nLightweight migration is Core Data diffing the two models and writing the transformation itself. Executed: with `shouldMigrateStoreAutomatically` + `shouldInferMappingModelAutomatically` (NSPersistentContainer's defaults — the executed failure required turning them OFF), the V1 store opened under V2 with data intact and the new column in the schema. What's inferable is the documented list — add/remove attributes and entities, optionality and default changes, renames — but renames come with the executed trap: the inference engine cannot tell 'title became heading' from 'title died, heading was born'. Without help it picks the second: executed, `heading = nil`, the value gone with no error anywhere. The help is one field: the renaming identifier (`renamingIdentifier` in code, the Renaming ID box in Xcode's attribute inspector) — executed: same migration, data preserved. One invisible inspector field is the entire difference between an update and a data-loss incident.\n\nThe discipline that follows: model VERSIONS, never edits — a shipped model version is frozen forever, because editing it changes the hashes and strands every existing store (the executed 134100, shipped to production); new schema = new version added beside the old, with the current version pointer moved. Heavier transformations — splitting entities, deriving values, restructuring relationships — exceed inference and need a mapping model (`NSMappingModel`/`NSMigrationManager`) or a staged walk through intermediate versions; know they exist, reach for them rarely. And migration is TESTABLE (b5-04): keep old-version store files as fixtures, open each under the current model in a unit test, assert the data survived — that test would have caught the executed rename loss at review time instead of in a support ticket.",
+      "whyItMatters": "Every schema change the work app ships runs this machinery on every user's device at next launch — 134100 and the silent rename loss are two of the most expensive production incidents Core Data offers, and both executed here on demand. 'What can lightweight migration handle, and what happens on a rename?' is a precision interview question separating users from understanders."
+     },
+     "exercise": {
+      "prompt": "Two incidents, one prevention. (1) After shipping v2.4, upgraded users crash at launch; fresh installs are fine; the diff shows an attribute added to the existing model version rather than a new version. Explain the mechanism and why fresh installs escape. (2) v3.1 renamed `Task.title` to `Task.heading` in a proper new model version — migration ran 'successfully', but users report every task lost its name. Explain, and give the one-field fix. (3) Design the unit test that catches both classes of incident before review.",
+      "code": "// executed artifacts to reason from:\n//   NSStoreModelVersionHashes { Note = <32 bytes> }  — the stamp\n//   error 134100 when hashes mismatch and migration is off\n//   rename without renamingIdentifier → heading = nil (no error!)\n//   rename with    renamingIdentifier → value preserved",
+      "solution": "(1) Editing the SHIPPED version changed its entity hashes, so every existing store's stamp (the executed NSStoreModelVersionHashes) no longer matches any model version the app carries — automatic migration has no source version to map FROM, and the load fails (the executed 134100 surfaces as a launch crash if unhandled). Fresh installs create new stores stamped with the edited model — no mismatch, no crash. That asymmetry (upgrades crash, QA's clean installs pass) is the fingerprint of an edited shipped model.\n\n(2) The inference engine read the diff as 'delete title, add heading' — executed: value nil, migration 'successful', nothing logged. Lightweight migration is structure-preserving, not meaning-preserving; identity across a rename must be declared. Fix: set heading's Renaming ID to 'title' in the new model version (one inspector field / `renamingIdentifier` in code — executed: data preserved). Users who already migrated are harder: their stores now genuinely lack the data — which is why this must be caught BEFORE shipping.\n\n(3) A migration fixture test: commit an old-version store file (created by the last shipped build, with known data) as a test resource; in the test, copy it to temp, open it under the CURRENT model with automatic migration, and assert both that the load succeeds (catches incident 1) and that the known values survived under their new names (catches incident 2). One fixture per shipped version, run in CI — b5-04's assertions guarding b8's most expensive failure mode.",
+      "explanation": "Note what both incidents share: no error at the moment the damage was decided — the hash change and the identifier omission were silent at edit time, loud (or worse, silent) only on users' devices. Migration safety is a review-time and test-time property; runtime is too late."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: how does a store know its model, what can lightweight migration infer, and what exactly goes wrong with an undeclared rename?",
+      "modelAnswer": "The store's metadata carries per-entity hashes of the model that shaped it — compatibility is hash equality, so any change to a shipped model version strands existing stores with error 134100, which is why schema changes ship as new model versions beside frozen old ones. Lightweight migration diffs the source and destination versions and infers the mapping — added and removed attributes and entities, changed defaults and optionality, and renames if the new property declares a renaming identifier pointing at the old name. Without that identifier, a rename is indistinguishable from delete-plus-add, and the inference picks that: migration succeeds, the column is new, and the data is silently gone. Heavier transformations need explicit mapping models, and every migration path deserves a fixture test — an old store file opened under the current model asserting the data survived.",
+      "sets": [
+       [
+        {
+         "q": "How does a store detect that the app's model no longer matches it?",
+         "options": [
+          "per-entity hashes stamped in the store's metadata no longer equal the model's",
+          "a schema version integer the developer bumps by hand",
+          "SQLite's own schema_version pragma differs from the model's",
+          "the coordinator replays the model's entire version history against the WAL journal"
+         ],
+         "correct": 0,
+         "explain": "Executed in the 134100 dump: NSStoreModelVersionHashes, 32 bytes per entity. Fingerprint equality — not semantic comparison — which is why ANY entity change trips it."
+        },
+        {
+         "q": "Why must a shipped model version never be edited?",
+         "options": [
+          "Xcode locks model files after an archive build is exported",
+          "editing changes its hashes, stranding every existing store with no migration source",
+          "the App Store review process rejects binaries whose models differ from the previous release",
+          "edits invalidate the momd cache and slow every subsequent launch"
+         ],
+         "correct": 1,
+         "explain": "Migration maps FROM a known version TO the current one; editing the old version makes user stores match nothing the app carries. Upgrades crash while fresh installs pass — the executed asymmetry."
+        },
+        {
+         "q": "Lightweight migration handles a rename correctly when…",
+         "options": [
+          "the old and new names share a common prefix it can match",
+          "the attribute keeps exactly the same type and optionality across both versions",
+          "the new property declares a renaming identifier naming the old property",
+          "never — renames always require a manual mapping model"
+         ],
+         "correct": 2,
+         "explain": "Executed both ways: without the identifier, heading = nil (inferred delete+add); with renamingIdentifier = 'title', preserved. One inspector field is the whole difference."
+        }
+       ],
+       [
+        {
+         "q": "Upgraded users crash at launch after an update; QA's fresh installs never reproduced it. The likeliest cause?",
+         "options": [
+          "the WAL file failed to checkpoint during the App Store install",
+          "a shipped model version was edited in place — old stores match no version the app knows",
+          "the new build's momd failed code signing on older devices",
+          "the lightweight migration pass timed out on larger stores and was killed by the launch watchdog"
+         ],
+         "correct": 1,
+         "explain": "The fingerprint of the incident: fresh stores carry the new stamp, upgraded stores carry an orphaned one. QA testing only clean installs is how it escapes — migration fixtures in CI are how it doesn't."
+        },
+        {
+         "q": "A migration 'succeeded' but a renamed field's data vanished, with nothing in the logs. Why silent?",
+         "options": [
+          "migration errors are only ever written to the console when SQLDebug is explicitly enabled first",
+          "the data survives in the WAL and reappears after checkpoint",
+          "delete-plus-add IS a valid migration — the engine did exactly what the diff described",
+          "the renaming identifier was set but spelled with the wrong case"
+         ],
+         "correct": 2,
+         "explain": "Executed: no error exists to log because nothing failed — the inferred mapping was legitimately 'remove title, add heading'. Meaning-preservation is the developer's declaration, not the engine's guess."
+        },
+        {
+         "q": "The migration fixture test worth its CI minutes:",
+         "options": [
+          "assert the current model loads in-memory without throwing",
+          "open a committed old-version store under the current model; assert load and data both survived",
+          "diff the .xcdatamodeld XML between consecutive release git tags looking for any undeclared renames",
+          "run the app in the simulator once per release and tap through"
+         ],
+         "correct": 1,
+         "explain": "The only test that exercises the real machinery: real old store, real inference, real data. It catches both the edited-version crash and the rename loss — before a user's device becomes the test."
+        }
+       ]
+      ]
+     },
+     "transfer": "In the work app: count the model versions in the .xcdatamodeld and find which is current. Then audit the last schema change in git — was it a new version or an edit to a shipped one? Check every renamed attribute for a Renaming ID. Finally, look for a migration fixture test; if none exists, creating one old-store fixture from the current release build is an afternoon that prevents this loop's two incidents permanently.",
+     "verify": "// executed on this Mac 2026-07-19 (programmatic V1/V2 models, three stores):\n// V2-open with migration OFF → NSCocoaErrorDomain 134100, reason verbatim:\n//   'The model used to open the store is incompatible with the one used to\n//    create the store' — metadata dump showed NSStoreModelVersionHashes\n//   (32-byte hash for entity Note) — the stamp itself\n// V2-open with automatic lightweight migration (container defaults) →\n//   loaded; 'precious data' intact; createdAt present in schema\n// rename title→heading WITHOUT renamingIdentifier → heading = nil (LOST,\n//   no error) · WITH renamingIdentifier('title') → 'precious data' preserved\n// documented: inferable-change list; NSMappingModel/staged migration;\n//   in Xcode the identifier is the attribute inspector's 'Renaming ID'",
+     "goDeeper": "Apple's Core Data Model Versioning and Data Migration guide — the inference rules, verbatim. WWDC 2022 \"Evolve your Core Data schema\" — staged migrations, the modern telling. b5-04 for the fixture-test pattern. b8-07 next: the import pipeline that fills the store these migrations protect."
+    },
+    {
+     "id": "b8-07",
+     "title": "The import pipeline: batch, dedupe, merge",
+     "concept": {
+      "definition": "A server import is a pipeline: a background context receives decoded rows, `NSBatchInsertRequest` streams them into the store at constant memory, uniqueness constraints turn re-imports into upserts instead of duplicates, a merge policy decides who wins when records collide — and a final merge step tells the UI contexts what happened, because batch operations happen beneath them. Skip any stage and you get a signature bug: memory spikes, duplicate rows, or a list that never updates.",
+      "code": "entity.uniquenessConstraints = [[\"serverID\"]]     // identity, declared\n\nbg.perform {\n    let req = NSBatchInsertRequest(entityName: \"Item\",\n        dictionaryHandler: { dict in                // rows STREAM through\n            guard let row = pages.next() else { return true }\n            dict.setDictionary(row); return false\n        })\n    let result = try bg.execute(req) as! NSBatchInsertResult\n    // …then merge result objectIDs into the view context\n}\n\n// executed, 200k rows:\n//   naive object import:   1.31s, memory +107 MB\n//   streaming batch:       1.10s, memory  +5 MB    ← the real win\n// executed, re-import of 10 overlapping rows: total unchanged,\n//   'reimport 9997' won — the constraint upserted, no duplicates",
+      "underlying": "The honest numbers first, because they correct a common myth. At 10k small rows, batch insert was NOT faster than object inserts on this Mac (0.147s vs 0.096s — executed); wall clock is roughly a wash. The real product is MEMORY: 200k rows imported naively — objects accumulating until one save — grew the process by +107 MB, while the streaming `dictionaryHandler` variant grew it by +5 MB (executed; and note the first 'batch' attempt that pre-built a dictionary array measured +114 MB — the streaming handler, not the word 'batch', is what delivers the win). Why: batch requests run at the STORE level — no NSManagedObjects materialize, no change tracking, no undo registration, no did-change notifications. On a memory-limited phone importing a large payload, +107 MB is a jetsam kill (b2-13); +5 MB is a non-event.\n\nDedupe is declared, not coded. `uniquenessConstraints = [[\"serverID\"]]` makes the attribute an identity at the store level (a unique index underneath — b8-01's SQL world enforcing b8-04's index advice). Executed: re-importing 10 overlapping rows left the total EXACTLY unchanged — no duplicates — and the overlapping row's name became the newer value: the batch insert upserted. The same constraint also governs ordinary context saves: a second object with serverID 42 saved under `NSMergeByPropertyObjectTrumpMergePolicy` produced one row with the new name (executed) — the constraint defines WHO collides, the merge policy defines who WINS (ObjectTrump: incoming beats store; StoreTrump: store beats incoming — per PROPERTY, not per record). This pair is why replayed server pages (b4-08's retries redelivering) are safe: re-import is idempotent by construction, the persistence twin of idempotency keys.\n\nThe bypass that buys the speed is also the pipeline's trap: store-level writes tell no context anything. b8-05's executed prediction (4) is the symptom — the FRC stays silent, lists don't update, and stale contexts can even hold b8-02's dangling faults if a batch DELETE ran. The closing stage is therefore mandatory: request `.objectIDs` as the batch result type and call `NSManagedObjectContext.mergeChanges(fromRemoteContextSave: [NSInsertedObjectsKey: ids], into: [viewContext])` — the store-level change replayed through b8-03's legal door, FRC deltas firing, list animating. The full pipeline reads as this block's tour: background context (b8-03) → decode resiliently (b4-04) → stream batch inserts with constraints (here) → merge into the UI context (b8-03) → FRC animates (b8-05).",
+      "whyItMatters": "This pipeline IS the work app's sync path — every gRPC page (b7-06) lands through some version of it, and each stage's omission is a bug you've probably seen: the import that OOMs, the duplicated rows after flaky-network retries, the list that updates only after restart. 'Design the import path for 100k records on a phone' is a senior interview question graded stage by stage."
+     },
+     "exercise": {
+      "prompt": "Triage three import bugs using the executed evidence. (1) The app imports a 150k-row catalog with a for-loop of object inserts and one save; field devices die mid-import, TestFlight Macs don't. (2) After users on bad networks retry a failed sync, support sees duplicated orders; the model has no uniqueness constraints — 'we dedupe by checking before insert'. Why does the check-then-insert dedupe still race, and what replaces it? (3) The import 'works' (rows in sqlite3) but the order list updates only after force-quit. Name the missing stage.",
+      "code": "// executed reference:\n//   naive 200k object import: +107 MB   · streaming batch: +5 MB\n//   overlapping re-import with constraint: no dupes, newer value won\n//   b8-05 executed: FRC hears NOTHING from store-level batch writes",
+      "solution": "(1) The naive shape holds every inserted object in the context until the save — executed: +107 MB at 200k rows. Phones jetsam the process at thresholds Macs never feel (b2-13), so field devices die exactly where TestFlight-on-Mac sails. Fix: the streaming dictionaryHandler batch insert (+5 MB executed) — or, minimum, chunked saves with context resets, the b8-01-era pattern the batch API obsoletes.\n\n(2) Check-then-insert is a read-then-write race (b3-03 wearing sync clothes): two imports — or an import racing a user action — both check, both find nothing, both insert. The replacement is declaring identity where writes are serialized anyway: a uniqueness constraint at the store level. Executed: overlapping re-import left zero duplicates with no checking code at all, and the merge policy chose the winner. Retries become replays, replays become upserts.\n\n(3) The merge stage is missing. Batch inserts write beneath every context — sqlite3 shows the rows because the STORE has them; the FRC's context was never told (b8-05's executed silence). Force-quit 'fixes' it because relaunch refetches everything. The one missing call: merge the batch result's objectIDs into the view context via mergeChanges(fromRemoteContextSave:) — after which the FRC animates the new rows in like they'd been saved normally.",
+      "explanation": "All three bugs share a diagnosis pattern: each pipeline stage exists to pay a cost SOMEWHERE deliberate — memory at the store level, identity at the schema level, visibility at the context level. The bugs are what the costs look like when they land somewhere accidental instead."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: walk the import pipeline for a large server payload — what runs where, how duplicates are prevented, and why a final merge step is mandatory.",
+      "modelAnswer": "Decode the payload on a background context's queue, then stream rows into the store with NSBatchInsertRequest's dictionary handler — it writes at the store level with no managed objects materialized, which measured +5 MB for 200k rows against +107 MB for naive object inserts. Duplicates are prevented by declaring identity: a uniqueness constraint on the server's ID makes re-imports upsert — replayed pages leave the row count unchanged and the merge policy (object-trump or store-trump, per property) decides which values win. Because batch writes bypass every context, nothing observing the data hears about them — so the final stage merges the batch result's objectIDs into the UI context with mergeChanges(fromRemoteContextSave:), which fires the notifications the FRC needs to animate the list. Store level for throughput, schema level for identity, context level for visibility.",
+      "sets": [
+       [
+        {
+         "q": "The executed 200k-row comparison showed batch insert's real advantage is…",
+         "options": [
+          "SQL generation: batches compile to one multi-row INSERT statement",
+          "wall-clock speed: batches finished an order of magnitude faster",
+          "memory: +5 MB streaming vs +107 MB of accumulated managed objects",
+          "durability: batch writes checkpoint the WAL synchronously"
+         ],
+         "correct": 2,
+         "explain": "Time was nearly a wash (1.10s vs 1.31s — executed); the 20x difference was resident memory, because nothing materializes at the store level. On a phone that gap is the line between importing and being jetsammed."
+        },
+        {
+         "q": "What does `uniquenessConstraints = [[\"serverID\"]]` actually create?",
+         "options": [
+          "store-level identity — a unique index that makes colliding writes upsert",
+          "a validation rule that rejects duplicate saves with an error",
+          "an in-memory registry of already-seen server IDs, consulted on every single save",
+          "a fetch-time filter that hides duplicate rows from results"
+         ],
+         "correct": 0,
+         "explain": "Executed: re-importing overlapping rows changed nothing but the values — no code checked anything. Identity enforced where writes serialize (the store) can't race; that's the whole design."
+        },
+        {
+         "q": "The merge POLICY (ObjectTrump vs StoreTrump) decides…",
+         "options": [
+          "whether batch or object inserts are used for a given save",
+          "which colliding record's values win, property by property",
+          "the order in which contexts receive change notifications",
+          "whether a constraint violation throws or silently drops the write"
+         ],
+         "correct": 1,
+         "explain": "Constraint = who collides; policy = who wins. Executed: ObjectTrump let the incoming 'context upsert' beat the stored name. Per-property resolution is what makes it a merge, not an overwrite."
+        }
+       ],
+       [
+        {
+         "q": "'We dedupe by fetching first to check existence, then inserting.' The review response?",
+         "options": [
+          "correct, provided both steps share one perform block",
+          "correct in principle, though the existence check should use count(for:) instead of a full fetch for speed",
+          "it races — concurrent imports both check, both miss, both insert; declare a constraint instead",
+          "it fails only when the check's predicate is unindexed"
+         ],
+         "correct": 2,
+         "explain": "Read-then-write is b3-03's race shape regardless of framework (one perform block serializes one context — not two contexts, not import-vs-user). The constraint moves identity to where writes already serialize."
+        },
+        {
+         "q": "Rows verifiably in the store (sqlite3 shows them), but the FRC list is stale until relaunch. Missing stage?",
+         "options": [
+          "merging the batch result's objectIDs into the UI context",
+          "a WAL checkpoint to make the rows visible to readers",
+          "calling processPendingChanges on the background import context",
+          "resetting the FRC's cache after the import completes"
+         ],
+         "correct": 0,
+         "explain": "Store-level writes skip the notification machinery contexts live on — b8-05's executed silence. mergeChanges(fromRemoteContextSave:) replays them through the legal door and the FRC animates."
+        },
+        {
+         "q": "A sync retry re-sends a page the server already processed (b4-08). With the full pipeline, the client-side result is…",
+         "options": [
+          "duplicate rows that a nightly cleanup job removes",
+          "an upsert — row count unchanged, values refreshed; the replay is idempotent",
+          "a merge-policy error surfaced to the user for resolution",
+          "the page is skipped entirely via a client-side bookkeeping table of seen pages"
+         ],
+         "correct": 1,
+         "explain": "Executed: 10 overlapping rows re-imported, total unchanged, newer values won. Constraints make replays harmless by construction — the persistence twin of idempotency keys, no bookkeeping required."
+        }
+       ]
+      ]
+     },
+     "transfer": "Trace the work app's sync path against the four stages: where does decoding run (which queue)? are inserts streamed, batched, or object-by-object (and did anyone measure memory)? is identity a uniqueness constraint or a check-then-insert (find out — one of these races)? and how do imported rows reach the UI context — merge call, refetch, or the force-quit bug waiting to be filed? Write down the weakest stage; it's b8's most actionable review finding.",
+     "verify": "// executed on this Mac 2026-07-19 (programmatic model, uniquenessConstraints):\n// 10k rows:  object-by-object 0.096s vs NSBatchInsertRequest 0.147s — a wash\n// 200k rows: naive objects 1.31s, +107 MB · pre-built dict array +114 MB ·\n//            streaming dictionaryHandler 1.10s, +5 MB  ← the actual win\n// dedupe: re-import of 10 overlapping rows → total exactly unchanged;\n//         serverID 9997's name became 'reimport 9997' (newer value won)\n// context-level upsert: duplicate serverID 42 saved under\n//         NSMergeByPropertyObjectTrumpMergePolicy → 1 row, incoming name won\n// documented: NSBatchInsertResult .objectIDs + mergeChanges(fromRemote\n//         ContextSave:) visibility step (its absence executed in b8-05)",
+     "goDeeper": "WWDC 2019 \"Making Apps with Core Data\" — the batch-insert-with-handler pipeline, from Apple. Apple's docs on batch processing and NSMergePolicy. b3-03 for why check-then-insert races; b4-08 for the retry semantics this pipeline absorbs; b8-05 for the FRC this pipeline must feed. Next: b8-08 closes the block — layered caching, implementation-level."
+    },
+    {
+     "id": "b8-08",
+     "title": "Layered caching: NSCache, disk, and the decode tax",
+     "concept": {
+      "definition": "An image cache is layers trading in different currencies: `NSCache` in memory holds DECODED bitmaps (cost = width × height × 4 bytes, evicted under a budget and under memory pressure), a disk layer holds encoded bytes keyed by a hash of the URL, and the network sits beneath both. The two implementation truths that b6-03's design table abstracted away: a 393 KB JPEG is a 45 MB bitmap once decoded, and a cache key must name every rendering variant — pixel size and scale — or two screens will fight over one entry.",
+      "code": "// executed — the decode tax:\n// JPEG on disk:      393 KB   (4000×3000)\n// full decode:       4000×3000 → 45 MB bitmap in memory\n// downsampled decode: 200×150  → 117 KB — via ImageIO, never touching 45 MB:\nlet opts: [CFString: Any] = [\n    kCGImageSourceCreateThumbnailFromImageAlways: true,\n    kCGImageSourceThumbnailMaxPixelSize: 200,\n    kCGImageSourceShouldCacheImmediately: true]\nlet thumb = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary)\n\n// executed — NSCache accounting:\ncache.totalCostLimit = 10_000_000              // a 10 MB budget\ncache.setObject(bitmap, forKey: key, cost: w * h * 4)  // cost is DECLARED\n// four 4 MB items into the 10 MB budget → img1 EVICTED, img2 EVICTED,\n// img3 present, img4 present",
+      "underlying": "The decode tax is the number that explains every image-related jetsam: the FILE is compressed (393 KB executed), but rendering needs a bitmap — width × height × 4 bytes of RGBA, 45 MB for one 4000×3000 photo (executed: `bytesPerRow × height`). 'We only show small thumbnails' is no defense if the code decodes full-size and scales down in the view: the 45 MB existed either way. The fix is decoding AT the target size — ImageIO's thumbnail API (executed: 200 px cap → 117 KB bitmap) renders from the compressed data directly to the small bitmap; the 45 MB version is never materialized. That's the difference between a feed costing 30 × 1.4 MB and one costing 30 × 45 MB — the second number is a memory-pressure kill (b2-13) with 'small images' in the postmortem.\n\nNSCache is a dictionary that understands this economy, and the executed runs show its three edges over `Dictionary`. It's cost-aware: you DECLARE each entry's cost (the framework can't know 100 bytes of NSData 'means' a 4 MB bitmap — executed: declared 4 MB costs against a 10 MB budget evicted the two oldest entries). It's thread-safe: 10,000 concurrent set/gets executed with no locks in caller code — cells and background decoders share it directly. And it cooperates with the OS: entries evaporate under memory pressure (documented — which is also the contract: an NSCache entry is a HINT, and every read must handle nil by falling through to the next layer). Set the cost as decoded bytes and `totalCostLimit` becomes a real megabyte budget instead of a superstition.\n\nKeys and layers close the design. The key must encode the VARIANT, not just the source: the same URL rendered at cell size and full screen is two entries (`url + pixelSize + scale`), or the feed's 200 px decode gets stretched blurry into the detail view — and missing the `scale` term means @3x devices render @1x mush. Layer currencies differ on purpose: disk stores ENCODED bytes (cheap per item, thousands fit, keyed by URL hash, evicted by age/LRU), memory stores DECODED bitmaps (expensive, dozens fit, keyed by variant) — the read path is memory → disk-then-decode-at-size → network-then-both. b4-05's URLCache already provides an honest HTTP disk layer; a custom disk tier buys variant-aware keys and eviction you control — which is precisely the shape of Kingfisher/Nuke, now legible as machinery instead of magic.",
+      "whyItMatters": "This is b6-03's cache table with the numbers filled in — and the numbers are the interview: 'design an image cache' answered with decode-at-size, declared costs, and variant keys is a senior answer. It's also the autopsy for the most common feed-scrolling memory kill in production apps, including the class the work app's photo lists risk."
+     },
+     "exercise": {
+      "prompt": "A feed shows 30 visible cells, each 200×200 pt on an @3x device, images arriving as 4000×3000 JPEGs (~400 KB each). Compute and diagnose: (1) memory cost if cells decode full-size, and the OS's likely response. (2) The correct decode size and its 30-cell cost. (3) The user taps into a full-screen detail view and the image is blurry — the cache 'worked'; what's the bug? (4) Why does the memory layer store bitmaps while the disk layer stores JPEG bytes, and not vice versa?",
+      "code": "// executed reference points:\n//   393 KB JPEG → 45 MB decoded at 4000×3000 (w × h × 4)\n//   downsampled to 200 px → 117 KB bitmap\n//   NSCache: cost declared per entry, budget enforced by eviction",
+      "solution": "(1) 30 × 45 MB ≈ 1.35 GB of bitmaps for one screenful. Long before that allocates, memory pressure evicts every NSCache on the device and then jetsam kills the app (b2-13) — the crash report says nothing about images, just an out-of-memory kill mid-scroll.\n\n(2) 200 pt @3x = 600×600 pixels → 600 × 600 × 4 ≈ 1.4 MB per cell, ~43 MB for all thirty — comfortably inside a sane budget. The decode-at-size call (executed shape: `kCGImageSourceThumbnailMaxPixelSize: 600`) is the entire fix; nothing else changes.\n\n(3) The key lacked the variant: detail view asked for the same URL, got the feed's 600 px bitmap, and stretched it across ~1200×2600 px of screen. One URL, two render sizes, must be two cache entries — `url + pixelSize + scale`. (The mirror-image bug — full-screen decode reused by cells — 'works' visually while silently costing 45 MB per cell.)\n\n(4) Each layer stores what its budget can afford and its consumer needs: memory serves the render path, which needs bitmaps NOW (re-decoding on every scroll would burn CPU and battery — decode once, reuse); disk serves durability, where encoded bytes are 100x smaller so thousands of images fit, and the decode-at-needed-size happens on the way up. Reversing them — bitmaps on disk, JPEGs in memory — would waste 100x disk and re-decode on every single display.",
+      "explanation": "The general law under (4): a cache layer's stored FORM should match the cost structure of the layer, not the convenience of the code. Getting the form right is why the executed numbers work out — and why 'just cache it' is a design decision wearing casual clothes."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: explain the decode tax with rough numbers, what NSCache adds over a plain dictionary, and what a correct image-cache key contains.",
+      "modelAnswer": "A compressed image file is small — hundreds of KB — but rendering needs a decoded bitmap at width × height × 4 bytes, so a 4000×3000 JPEG is roughly 45 MB in memory regardless of its file size; the fix is decoding at the target size with ImageIO's thumbnail API, which produces the small bitmap without ever materializing the big one. NSCache over a dictionary buys three things: declared per-entry costs against a totalCostLimit so the budget is real bytes, thread safety without caller locks, and automatic eviction under memory pressure — which also means every entry is a hint and reads must handle misses. A correct key names the source AND the rendering variant — URL plus pixel size plus screen scale — because one URL rendered at two sizes is two cache entries. The memory layer stores decoded bitmaps for the render path; the disk layer stores encoded bytes for capacity.",
+      "sets": [
+       [
+        {
+         "q": "A 400 KB JPEG of a 4000×3000 photo costs how much RAM to display full-size?",
+         "options": [
+          "about 400 KB — the compressed file is simply memory-mapped for the GPU to draw from",
+          "about 45 MB — decoded bitmaps are width × height × 4 bytes, file size irrelevant",
+          "about 4 MB — decoding compresses the color space tenfold",
+          "it depends on the JPEG's quality setting at encode time"
+         ],
+         "correct": 1,
+         "explain": "Executed: 393 KB on disk, 45 MB decoded. Rendering needs every pixel as RGBA; compression only ever lived on disk. This single number explains most image-related memory kills."
+        },
+        {
+         "q": "ImageIO downsampling (thumbnail-at-index with a max pixel size) avoids the 45 MB because…",
+         "options": [
+          "it renders from compressed data straight to the small bitmap — full size is never materialized",
+          "it decodes the full-size bitmap once, scales it down, then frees the original immediately afterward",
+          "JPEGs store a pre-made thumbnail that the API extracts directly",
+          "it uses the GPU's texture memory, which doesn't count against the app"
+         ],
+         "correct": 0,
+         "explain": "Executed: 200 px cap → 117 KB bitmap, no 45 MB spike. (Some formats do embed thumbnails, but CreateThumbnailFromImageAlways renders from the source data at target size — that's the guarantee.)"
+        },
+        {
+         "q": "Why must you pass `cost:` when caching a decoded image in NSCache?",
+         "options": [
+          "cost sets the entry's priority in the LRU eviction order",
+          "it's optional — NSCache measures object sizes via malloc introspection",
+          "the cache can't know your 100-byte wrapper 'means' a 4 MB bitmap — cost is declared, not measured",
+          "the declared cost pre-reserves cache capacity up front so that later inserts of that size can never fail"
+         ],
+         "correct": 2,
+         "explain": "Executed: tiny NSData objects declared at 4 MB each — the 10 MB budget evicted two. Declare decoded bytes and totalCostLimit becomes a real megabyte budget; declare nothing and it's a superstition."
+        }
+       ],
+       [
+        {
+         "q": "Feed thumbnails are crisp, but tapping into full-screen shows the same image blurry. The cache bug?",
+         "options": [
+          "NSCache evicted the full-size image under memory pressure, leaving only the thumbnail",
+          "the disk layer re-encoded the image at feed quality on write",
+          "memory pressure downsampled the cached entry in place",
+          "one key per URL — the detail view received the feed's small-size decode"
+         ],
+         "correct": 3,
+         "explain": "One URL, two render sizes, one entry: whoever writes first poisons the other screen. The key must carry the variant — url + pixelSize + scale — making them separate entries by construction."
+        },
+        {
+         "q": "An image-heavy app dies mid-scroll on devices; the crash report shows an out-of-memory kill, no stack in app code. First hypothesis?",
+         "options": [
+          "cells are decoding source-size images — the decode tax times visible cells",
+          "the NSCache lock is deadlocking against the scroll's display link",
+          "the disk cache filled the sandbox and writes began to fail",
+          "too many concurrent URLSession tasks are holding their response buffers alive at once"
+         ],
+         "correct": 0,
+         "explain": "The executed math: 30 cells × 45 MB ≈ 1.35 GB attempted. Jetsam kills without an app stack — 'small thumbnails' in the UI, full-size decodes in the profiler. Decode-at-size is the one-line cure."
+        },
+        {
+         "q": "Why is NSCache the right memory layer for cells and background decoders sharing images, versus a locked Dictionary?",
+         "options": [
+          "NSCache is faster than Dictionary for all key types",
+          "thread-safe without caller locks, cost-budgeted, and evicts itself under memory pressure",
+          "a Dictionary deep-copies its image values on every single insert, while NSCache never does",
+          "NSCache persists entries across launches automatically"
+         ],
+         "correct": 1,
+         "explain": "All three executed or documented: 10k lock-free concurrent ops ran clean; declared costs enforced the budget; pressure eviction is the OS contract (and why every read must expect nil and fall through)."
+        }
+       ]
+      ]
+     },
+     "transfer": "Profile one image-heavy screen of the work app with the Allocations instrument: find the decoded-bitmap allocations (IOSurface/CGImage backing stores), compare their sizes against the pixel sizes actually rendered, and check the cache key composition in code (does it include pixel size and scale?). If the app uses Kingfisher, find where it configures downsampling — and whether the feed actually passes a processor that decodes at cell size.",
+     "verify": "// executed on this Mac 2026-07-19 (plain swift: CoreGraphics + ImageIO):\n// generated 4000×3000 JPEG → 393 KB on disk\n// CGImageSourceCreateImageAtIndex (full decode) → 45 MB bitmap (bytesPerRow×h)\n// CGImageSourceCreateThumbnailAtIndex, MaxPixelSize 200 → 200×150, 117 KB\n// NSCache: totalCostLimit 10 MB, four entries declared cost 4 MB each →\n//   img1 EVICTED, img2 EVICTED, img3 present, img4 present\n// 10,000 concurrent set/get via concurrentPerform → no crash, no caller locks\n// documented: pressure-driven eviction; keys not copied (vs Dictionary);\n//   URLCache as the HTTP disk layer (b4-05)",
+     "goDeeper": "WWDC 2018 \"Image and Graphics Best Practices\" — the decode-tax talk; the downsampling code here is its pattern. NSCache documentation (short, worth reading whole). Kingfisher's source: DiskStorage and ImageCache map one-to-one onto this loop's layers. b6-03 for the design table these numbers plug into; b2-13 for what jetsam does with your mistakes. BLOCK 8 COMPLETE."
+    }
+   ]
+  },
+  {
+   "id": "b9",
+   "name": "The Device's Senses",
+   "tagline": "Location, push, biometrics — the frameworks that touch the world",
+   "loops": [
+    {
+     "id": "b9-01",
+     "title": "CoreLocation: permission as a state machine",
+     "concept": {
+      "definition": "Location access is governed by a state machine your code never drives directly: `authorizationStatus` moves from `notDetermined` through the ONE-time system prompt to `authorizedWhenInUse`, `authorizedAlways`, `denied`, or `restricted` — and a second axis, `accuracyAuthorization`, may be `reducedAccuracy` (a few kilometers) even when you are 'authorized'. Status can change while the app runs, so the delegate's `locationManagerDidChangeAuthorization` is the source of truth, and modern code bridges the delegate into an AsyncStream.",
+      "code": "let mgr = CLLocationManager()\n// executed on this Mac — reading is free, requesting is the commitment:\nprint(mgr.authorizationStatus)      // notDetermined (no prompt fired)\nprint(mgr.accuracyAuthorization)    // reducedAccuracy — authorized ≠ precise\n\n// the delegate → AsyncStream bridge (b3-10, CoreLocation edition) — executed:\nfinal class LocationBridge: NSObject, CLLocationManagerDelegate {\n    let stream: AsyncStream<CLLocation>\n    private let continuation: AsyncStream<CLLocation>.Continuation\n    func locationManager(_ m: CLLocationManager,\n                         didUpdateLocations locs: [CLLocation]) {\n        for l in locs { continuation.yield(l) }   // callbacks → stream\n    }\n}\n// consumer:  for await location in bridge.stream { updateMap(location) }\n// executed: two yields received in order, loop exited on finish()",
+      "underlying": "The machine's transitions are asymmetric in a way that shapes every location UX. `notDetermined` is spendable exactly once: `requestWhenInUseAuthorization()` shows the system prompt, and after the user answers, no API can ever show it again — every later change happens in Settings, which is why 'ask again' flows are really deep-links (`UIApplication.openSettingsURLString`, documented). The other states each carry a design instruction: `denied` means build the Settings-link UI, `restricted` means parental controls or MDM said no — it was never the user's choice, so don't nag them. 'Allow Once' grants a temporary `authorizedWhenInUse` that REVERTS to `notDetermined` when the session ends (documented) — the one legitimate path back. And `authorizedAlways` is best requested as an escalation: when-in-use first, the always-upgrade later, in the moment the feature needs it (documented two-step). Executed here: a fresh process read `notDetermined` without any prompt — READING status is free; REQUESTING is the one-shot commitment, which is why request timing is a product decision, not boilerplate.\n\nThe accuracy axis is the modern trap: executed, this environment reports `reducedAccuracy` — the user (or platform) granted location but only approximately, a few-kilometer grid updated a handful of times per hour (documented). Every 'the pin is 2 km off and snaps around a grid' bug is this state unhandled. When a feature genuinely needs precision (navigation, check-in), request temporary full accuracy with a purpose key from the plist (documented). And the plist is load-bearing generally: calling `request*Authorization` WITHOUT `NSLocationWhenInUseUsageDescription` does NOTHING — no prompt, no error, no callback (the classic silent bug; documented). The description string is also the pitch the user reads — write it like one.\n\nDelivery is delegate-only, and the executed bridge is the modern consumption shape: store the AsyncStream's continuation, `yield` from `didUpdateLocations`, and the UI becomes `for await location in stream` — b3-10's pattern, identical to how b7-06's gRPC streams surfaced, cancellation and all (screen leaves → task cancels → stop updates). Authorization changes arrive through the SAME delegate — `locationManagerDidChangeAuthorization` fires once at manager creation and again on every change — so the robust architecture treats that callback as the single entry point for the whole state machine, rather than reading status imperatively at launch and caching a value the user can invalidate from Settings at any moment. The stale-cached-status spinner is this block's first production bug, and it's a b8-03-style lesson: observe the change, don't poll the snapshot.",
+      "whyItMatters": "The work app's location features live and die by this machine — the never-reappearing prompt, the silent missing-plist-key bug, and the reduced-accuracy pin-drift are three of the most common location defects in shipped apps. 'Walk me through location permissions' is an interview question where mentioning the accuracy axis and the one-shot prompt separates practitioners from tutorial-readers."
+     },
+     "exercise": {
+      "prompt": "Four field reports, one state machine. (1) `requestWhenInUseAuthorization()` is called on button tap; nothing ever appears, no callback, no error — works on a teammate's branch. (2) A delivery map shows the courier ~2 km away on a grid that 'jumps' every few minutes; the courier's phone shows the app as authorized. (3) A user chose 'Allow Once' yesterday; today the PM asks 'can we re-prompt them?' — for THIS user, and for a user who tapped 'Don't Allow'? (4) The app reads authorizationStatus in AppDelegate, stores it in a global, and shows location UI accordingly; QA revokes permission mid-session in Settings and the app spins forever. Name each mechanism and fix.",
+      "code": "// executed reference:\n//   fresh process: authorizationStatus = notDetermined (reading is free)\n//   accuracyAuthorization = reducedAccuracy (authorized ≠ precise)\n//   bridge: delegate yields → for-await consumer, clean finish\n// the machine: notDetermined →(one prompt)→ whenInUse | always | denied\n//   'Allow Once' → whenInUse for the session, then BACK to notDetermined",
+      "solution": "(1) The Info.plist is missing `NSLocationWhenInUseUsageDescription` (the teammate's branch has it). Without the key, the request call silently no-ops — no prompt, no error, by design. Fix: add the key with a real pitch sentence; nothing else changes.\n\n(2) `accuracyAuthorization == .reducedAccuracy` — executed as this environment's own state. The user granted approximate location: a few-km grid, refreshed a few times an hour, exactly matching the 'jumping pin'. Fix: detect the state, and for the precision-critical flow request temporary full accuracy with a purpose key — plus honest UI for the approximate case.\n\n(3) 'Allow Once' reverted to `notDetermined` when that session ended — so YES for that user: the next `request*` call may show the system prompt again, legitimately. The 'Don't Allow' user is `denied`: no API will ever prompt again; the only path is your own UI deep-linking to Settings. Same question, opposite answers — the machine's one-shot rule with its one exception.\n\n(4) The global is a snapshot of a machine that moved. Revocation in Settings kills and relaunches state delivery — `locationManagerDidChangeAuthorization` fires with the new status, but nobody was listening; the cached `authorizedWhenInUse` kept the spinner alive. Fix: make the delegate callback the single source of truth (it also fires once at manager creation, covering launch), route it through the bridge, and derive UI from the streamed state.",
+      "explanation": "Note that all four bugs share one root: treating a LIVE state machine as a one-time configuration read. CoreLocation's design assumes the answer changes — sessions expire, users revoke, accuracy varies — and every robust location feature is written as a reaction to state, never as a consequence of it."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: walk the CoreLocation authorization states and their transitions, explain the accuracy axis, and describe how modern code should consume both locations and status changes.",
+      "modelAnswer": "A fresh install is notDetermined; the request call spends the single system prompt, landing on authorizedWhenInUse, authorizedAlways, or denied — after which changes only happen in Settings, so denied users get a deep-link, not a re-prompt; restricted means MDM or parental controls decided, and 'Allow Once' is the exception that reverts to notDetermined after the session. Orthogonally, accuracyAuthorization can be reducedAccuracy — a few-kilometer grid even while authorized — with temporary full accuracy available per purpose. Delivery is delegate-only, so modern code bridges didUpdateLocations into an AsyncStream and consumes it with for-await, and treats locationManagerDidChangeAuthorization — which fires at manager creation and on every change — as the single source of truth for status, never a cached launch-time read. Missing the plist usage description makes the request call silently do nothing.",
+      "sets": [
+       [
+        {
+         "q": "After a user taps 'Don't Allow', what can bring the system prompt back for your app?",
+         "options": [
+          "calling requestWhenInUseAuthorization after a full app relaunch",
+          "waiting 24 hours, after which iOS quietly re-arms the system prompt automatically",
+          "nothing — denied is final; your only move is deep-linking to Settings",
+          "requesting always-authorization, which uses a separate prompt budget"
+         ],
+         "correct": 2,
+         "explain": "The prompt is spent once per install (the 'Allow Once' revert is the lone exception). Every 'ask again' UX you've seen is custom UI plus openSettingsURLString — by platform design."
+        },
+        {
+         "q": "The app is authorizedWhenInUse, yet the location is kilometers off and moves in steps. The state?",
+         "options": [
+          "accuracyAuthorization is reducedAccuracy — approximate grid, by user choice",
+          "the GPS is still warming up its satellite fix indoors",
+          "desiredAccuracy was left at its default coarse value",
+          "the manager is silently receiving cell-tower fallback locations instead of GPS fixes"
+         ],
+         "correct": 0,
+         "explain": "Executed as this environment's own reading: authorization and accuracy are separate axes. A few-km grid updated a few times hourly is reduced accuracy's documented signature — handle the state, or request temporary full accuracy with a purpose."
+        },
+        {
+         "q": "`requestWhenInUseAuthorization()` runs, and nothing whatsoever happens. Most likely?",
+         "options": [
+          "the call was made off the main thread, so the system prompt was silently dropped",
+          "the Info.plist lacks the usage-description key — the call silently no-ops",
+          "another app's location prompt is queued ahead of yours",
+          "the status was already notDetermined, which suppresses prompting"
+         ],
+         "correct": 1,
+         "explain": "The classic silent failure: no key, no prompt, no error, no callback. The description string is mandatory — and it's also your one sentence of persuasion on the prompt itself."
+        }
+       ],
+       [
+        {
+         "q": "Why should locationManagerDidChangeAuthorization be the app's single entry point for status, rather than reading authorizationStatus at launch?",
+         "options": [
+          "reading the authorizationStatus property itself triggers the system prompt as a side effect",
+          "the property is async and may return stale values mid-launch",
+          "the callback delivers coordinates along with each status change",
+          "it fires at manager creation AND on every change — launch read plus revocations, one path"
+         ],
+         "correct": 3,
+         "explain": "The callback covers the launch case (fires once on creation) and the mid-session case (Settings revocation, Allow Once expiry) with one code path. A cached read covers only the moment it ran — the executed exercise's spinner bug."
+        },
+        {
+         "q": "The PM wants always-authorization for background arrival alerts. The recommended request choreography?",
+         "options": [
+          "request always-authorization at first launch so the capability is never missing later",
+          "when-in-use first; escalate to always later, in the moment the feature needs it",
+          "request both in sequence on the onboarding screen's completion",
+          "skip when-in-use — always-authorization includes it implicitly"
+         ],
+         "correct": 1,
+         "explain": "The documented two-step: users grant an in-context upgrade far more readily, and iOS itself defers the always-grant into a provisional flow. Front-loading the scariest ask burns the one prompt at peak distrust."
+        },
+        {
+         "q": "The delegate→AsyncStream bridge's payoff when the map screen is dismissed mid-update:",
+         "options": [
+          "the for-await task cancels with the screen, ending consumption — b3-05's tree, no manual teardown",
+          "the stream buffers updates until the screen returns to foreground",
+          "CoreLocation detects the dismissal and pauses the hardware directly",
+          "the stored continuation strongly retains the screen until the stream has finished draining entirely"
+         ],
+         "correct": 0,
+         "explain": "Executed mechanics, b3-10's shape: the consumer is a task in the view's lifetime; dismissal cancels it exactly like b7-05's RPC calls. The bridge makes delegate callbacks inherit structured concurrency's cleanup for free."
+        }
+       ]
+      ]
+     },
+     "transfer": "Audit the work app's location flow against the machine: find where request*Authorization is called (is the timing a product decision or app-launch boilerplate?), confirm both plist keys and read the description strings as a user would, search for any cached authorizationStatus (the exercise-4 bug), and check whether reducedAccuracy has ANY handling. Then find the delegate — is it bridged to async/await (b3-10) or still callback-spaghetti worth refactoring?",
+     "verify": "// executed on this Mac 2026-07-19 (plain swift + CoreLocation):\n// CLLocationManager().authorizationStatus → notDetermined (read fired no prompt)\n// accuracyAuthorization → reducedAccuracy (the axis, live in this environment)\n// delegate→AsyncStream bridge: didUpdateLocations yielded 2 locations into\n//   a stored continuation; for-await consumed both in order; finish() exited\n//   the loop cleanly (bridge invoked directly — headless Mac can't authorize)\n// documented (device required): the prompt flow and its one-shot rule,\n//   'Allow Once' reversion, Settings deep-link, temporary full-accuracy\n//   requests, missing-plist-key silent no-op, always-escalation choreography",
+     "goDeeper": "Apple's CLLocationManager and 'Requesting authorization' documentation — the state semantics, verbatim. WWDC 2020 \"What's new in location\" — the reduced-accuracy model's introduction. b3-10 for the bridge pattern; b9-06 ahead for what always-authorization actually buys in the background. The CLLocationUpdate.liveUpdates async API (iOS 17+) — Apple shipping this loop's bridge as a built-in."
+    },
+    {
+     "id": "b9-02",
+     "title": "Maps and geocoding: degrees, cameras, and names",
+     "concept": {
+      "definition": "A map shows a region — a center coordinate plus a span — through a camera, and its coordinates are DEGREES, which are not meters: a degree of longitude shrinks toward the poles, so distance work uses great-circle helpers, never degree arithmetic. Geocoding converts between the two naming systems — forward (address → coordinates) and reverse (coordinates → placemark) — through a rate-limited NETWORK service, not a local lookup.",
+      "code": "// executed — degrees are latitude-dependent:\n// 10 km span at the equator: lat 0.0904°   lon 0.0898°\n// 10 km span at 60°N:        lat 0.0898°   lon 0.1801°  ← ~2x the degrees\nlet region = MKCoordinateRegion(center: helsinki,\n    latitudinalMeters: 10_000, longitudinalMeters: 10_000)\n\n// executed — real distance is great-circle, not degree math:\ndhaka.distance(from: office)          // 3362 m\n\n// executed — geocoding round-trips the network:\ntry await geocoder.geocodeAddressString(\"1 Apple Park Way, Cupertino, CA\")\n// → 37.3349, -122.0090 (Cupertino)\ntry await geocoder.reverseGeocodeLocation(dhaka)\n// → country: Bangladesh, area: Dhaka — locality was NIL (data is patchy)",
+      "underlying": "The degree trap first, because it ships constantly. Latitude degrees are near-constant (~111 km each — executed: 0.0904° ≈ 10 km at both test latitudes), but longitude lines CONVERGE: at 60°N a degree of longitude covers about half the meters it does at the equator, which is why the executed 10 km region needed 0.1801° of longitude there against 0.0898° at the equator — the cos(latitude) factor made visible. Any hand-rolled 'within radius' filter written as degree subtraction is silently latitude-dependent: correct in Dhaka, half-sized in Helsinki. The APIs that do it right are the ones that speak meters — `MKCoordinateRegion(center:latitudinalMeters:longitudinalMeters:)` and `CLLocation.distance(from:)` (executed: 3362 m, computed great-circle on the ellipsoid, not from deltas).\n\nWhat the map draws divides into three vocabularies. The CAMERA is the viewpoint — modern MapKit's `MKMapCamera` is a center plus distance, heading, and pitch (the 3D generalization of the flat region; documented). ANNOTATIONS are point markers: data objects (`MKAnnotation`) rendered by views that the map DEQUEUES and reuses exactly like b2-11's cells — thousands of annotations, a handful of views, plus built-in clustering (documented). OVERLAYS are geometry drawn in map space — polylines for routes, polygons for zones — scaled with the map rather than pinned atop it. Mixing these up (an overlay job done with hundreds of annotations, a marker job done by drawing) is the usual cause of janky maps.\n\nGeocoding is a network service wearing a local API's clothes — the executed round trips prove both directions against live servers, and their latency and failure modes are b4's, not a dictionary's. Two production rules follow. It's RATE-LIMITED and serial (documented: one request in flight per geocoder; bursts error), so the scroll-triggered reverse-geocode-per-cell pattern jams within a screenful — geocode once per record, cache the result next to the coordinates, never in the render path. And placemark data is PATCHY — executed: a real Dhaka coordinate returned country and area but a nil locality — so display code composes fallbacks (`locality ?? subLocality ?? administrativeArea`) instead of force-unwrapping geography. Search-as-you-type belongs to `MKLocalSearchCompleter`, which is throttle-aware by design (documented) — the autocomplete cousin this loop's transfer inspects.",
+      "whyItMatters": "The work app draws couriers on a map: the degree trap decides whether its radius logic is honest at every latitude the business operates in, and the geocode-in-the-cell bug is one of the most common map-screen jank sources shipping today. 'Why does the distance filter behave differently in the north?' is an interview question about cos(latitude) wearing product clothes."
+     },
+     "exercise": {
+      "prompt": "Three field reports. (1) A 'nearby drivers' filter — `abs(driver.lon - user.lon) < 0.09 && abs(driver.lat - user.lat) < 0.09` — 'about 10 km', QA-approved in Dhaka (23°N); the feature launches in Helsinki (60°N). Predict the behavior with the executed numbers. (2) A list reverse-geocodes each cell's coordinates in `cellForRowAt`; the first screen looks fine, scrolling breaks: describe both failure modes and the fix. (3) `let city = placemark.locality!` crashes in production for some coordinates — why, and what does the display code become?",
+      "code": "// executed reference:\n//   10 km of longitude = 0.0898° at equator, 0.1801° at 60°N\n//   geocoder: serial + rate-limited network service\n//   real placemark: country ✓, area ✓, locality NIL",
+      "solution": "(1) At 60°N, 0.09° of longitude is ~5 km (executed: 10 km needs 0.1801°), so the east-west reach of the filter HALVES: Helsinki users see roughly half the nearby drivers they should, and the bug worsens as latitude climbs. Nothing errors — matches just quietly vanish. Fix: compare `CLLocation.distance(from:) < 10_000` (executed great-circle), or build the region with the meters-based initializer and let MapKit do the trigonometry.\n\n(2) Failure one: the geocoder is serial and rate-limited — a fast scroll queues dozens of requests, they back up, then error; late responses also land on RECYCLED cells (b2-11's classic mismatch) labeling rows with each other's neighborhoods. Failure two: jank — a network round trip per cell in the render path. Fix: geocode once per record at import/save time (b8-07's pipeline is the natural home), store the strings with the coordinates, and cells only ever read.\n\n(3) Executed: a perfectly valid coordinate returned locality = nil — geographic data is patchy by nature (rural areas, water, jurisdictions that don't use that field). The crash is b1-01's force-unwrap meeting real-world data. Display code becomes a fallback chain — `locality ?? subLocality ?? administrativeArea ?? country` — and treats 'no name' as a presentable state, not an impossible one.",
+      "explanation": "All three fixes share a shape: stop doing geometry and geography in the UI layer. Distance belongs to the great-circle helpers, names belong to the data pipeline, and the render path only reads — the same layering instinct b5-01 taught, applied to the map."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: why is degree arithmetic wrong for distance, what are the map's three drawing vocabularies, and what two production rules govern geocoding?",
+      "modelAnswer": "Longitude degrees shrink with latitude — ten kilometers is about 0.09° of longitude at the equator but 0.18° at 60°N — so any radius or distance logic written as degree subtraction is silently latitude-dependent; correct code uses great-circle helpers like CLLocation.distance or the meters-based region initializers. The map draws through three vocabularies: the camera (viewpoint — center, distance, heading, pitch), annotations (point markers, dequeued and reused like table cells, with clustering), and overlays (geometry like routes drawn in map space). Geocoding is a rate-limited, serial network service: geocode once per record and cache the strings rather than calling it per cell, and treat placemark fields as optional because real coordinates return patchy data — compose display names from a fallback chain.",
+      "sets": [
+       [
+        {
+         "q": "Why did 10 km of longitude measure 0.0898° at the equator but 0.1801° at 60°N?",
+         "options": [
+          "meridians converge toward the poles — a longitude degree covers fewer meters at high latitude",
+          "MapKit automatically pads all northern regions to compensate for the Mercator projection's distortion",
+          "the geodetic datum switches at the 45th parallel",
+          "rounding in the region initializer accumulates with latitude"
+         ],
+         "correct": 0,
+         "explain": "The cos(latitude) factor, executed: at 60°N each longitude degree spans ~half the meters, so covering 10 km needs ~double the degrees. Latitude degrees stay ~111 km everywhere — the asymmetry is the tell."
+        },
+        {
+         "q": "Hundreds of driver pins with smooth scrolling — the mechanism making that cheap is…",
+         "options": [
+          "overlays batching all of the pins into a single consolidated draw call per rendered frame",
+          "the map rasterizing pins into its tiles at zoom time",
+          "annotation view reuse — data objects are many, views are dequeued like b2-11's cells",
+          "annotations rendering off-process in the map server"
+         ],
+         "correct": 2,
+         "explain": "MKAnnotation is data; MKAnnotationView is dequeued with a reuse identifier — the exact economy of table cells, plus clustering to collapse crowds. Overlays are for drawn geometry (routes, zones), not point markers."
+        },
+        {
+         "q": "CLGeocoder's operational contract is…",
+         "options": [
+          "an on-device database lookup, fast and always available",
+          "a serial, rate-limited network service — burst it and requests error",
+          "a network service that happily parallelizes as many requests as you care to submit",
+          "on-device for reverse geocoding, network-only for forward"
+         ],
+         "correct": 1,
+         "explain": "Executed as live round trips; documented as one-at-a-time with throttling. That contract is why per-cell geocoding jams within a screenful and why results belong in the data model, cached."
+        }
+       ],
+       [
+        {
+         "q": "The 'nearby' feature works in Dhaka but shows too few results in Helsinki. The code smell to hunt for?",
+         "options": [
+          "a stale region cache pinned to the app's first launch city",
+          "MKCoordinateRegion built with degree spans instead of meters",
+          "the annotation reuse identifier colliding across pin types",
+          "degree-difference comparisons standing in for distance math"
+         ],
+         "correct": 3,
+         "explain": "The executed halving: 0.09° of longitude is ~10 km at the equator, ~5 km at 60°N. Any `abs(lon1-lon2) < k` filter is latitude-dependent by construction — great-circle distance is the replacement."
+        },
+        {
+         "q": "Reverse-geocoded labels sometimes show the WRONG neighborhood on fast scrolls. The mechanism?",
+         "options": [
+          "the geocoder silently returns stale cached results for coordinates that are merely nearby",
+          "late async responses landing on recycled cells — b2-11's mismatch, geocode edition",
+          "placemark data itself is inaccurate at scroll speeds",
+          "rate limiting reorders the responses by request size"
+         ],
+         "correct": 1,
+         "explain": "The cell moved on; the callback didn't know. Same fix family as image loading: don't do async lookups in the render path — geocode at import time and store the string (b8-07's pipeline is the home)."
+        },
+        {
+         "q": "For search-as-you-type place suggestions, the right tool is…",
+         "options": [
+          "CLGeocoder invoked on every single keystroke with the partial query string",
+          "a local prefix index built from previously geocoded results",
+          "MKLocalSearchCompleter — built for partial queries and throttle-aware",
+          "MKLocalSearch with a region covering the visible map"
+         ],
+         "correct": 2,
+         "explain": "The completer exists precisely because geocoding per keystroke hits the rate limit (and answers a different question — 'places matching this fragment', not 'this address'). MKLocalSearch then resolves the chosen completion."
+        }
+       ]
+      ]
+     },
+     "transfer": "In the work app's map screen: find every distance comparison and check its units (degrees anywhere = the Helsinki bug waiting); find where reverse geocoding happens relative to the render path and where its results are cached; and check the annotation views for reuse identifiers. Then watch the map with the Network instrument while scrolling — geocode traffic during scroll is this loop's bug, live.",
+     "verify": "// executed on this Mac 2026-07-19 (CoreLocation + MapKit, live network):\n// forward geocode '1 Apple Park Way' → 37.3349, -122.0090 (Cupertino)\n// reverse geocode 23.8103, 90.4125 → Bangladesh · Dhaka · locality NIL\n//   (real patchy data — the force-unwrap trap, live)\n// MKCoordinateRegion 10km×10km: equator lat 0.0904°/lon 0.0898°;\n//   60°N lat 0.0898°/lon 0.1801° — meridian convergence, measured\n// CLLocation.distance: 3362 m great-circle\n// (first attempt deadlocked: completion-handler API + semaphore on main —\n//   b3-02's lesson self-administered; the async API suspends instead)\n// documented: camera model, annotation reuse/clustering, rate limits,\n//   MKLocalSearchCompleter",
+     "goDeeper": "WWDC 2022 \"What's new in MapKit\" — the modern camera and annotation APIs. Apple's CLGeocoder docs — the rate-limit paragraph everyone skips. b2-11 for the reuse economy annotations copy; b8-07 for where geocode results belong. The Mercator projection's Wikipedia page — ten minutes that makes every map API make sense."
+    },
+    {
+     "id": "b9-03",
+     "title": "APNs from the socket up",
+     "concept": {
+      "definition": "A push notification is an authenticated HTTP/2 POST: your backend sends the payload to `api.push.apple.com/3/device/<token>` with a provider JWT, and Apple relays it to the device over a single long-lived connection the system daemon keeps open — your app runs for none of it. The device token names one app install on one device and can change; alert pushes display, silent pushes (`content-available`) request a background wake; and Firebase Messaging is a layer that calls this same API, not a replacement for it.",
+      "code": "// executed — the real endpoint, poked from this Mac:\n// $ curl -v --http2 -X POST https://api.push.apple.com/3/device/00…0 \\\n//        -d '{\"aps\":{\"alert\":\"hi\"}}'\n// * ALPN: server accepted h2          ← b7-03, live at Apple's edge\n// < HTTP/2 403\n// < apns-id: 35ACB093-FAAE-7595-…    ← every push gets a receipt id\n// {\"reason\":\"MissingProviderToken\"}   ← the error taxonomy, in JSON\n\n// the payload your backend actually sends (≤ 4 KB):\n// { \"aps\": { \"alert\": { \"title\": \"New message\", \"body\": \"…\" },\n//            \"badge\": 3, \"sound\": \"default\",\n//            \"category\": \"MESSAGE\",         ← b9-04's routing hook\n//            \"mutable-content\": 1 },         ← service extension gate\n//   \"chatID\": \"c42\" }                        ← your custom keys",
+      "underlying": "The wire is Block 7, verbatim — executed: ALPN negotiated h2 with Apple's production edge, the request rode a stream, and the response was an HTTP/2 status plus a JSON body. The 403 `MissingProviderToken` is the error taxonomy answering honestly: providers authenticate with a JWT signed by the `.p8` key from the developer portal (documented), and every response carries an `apns-id` — executed — the receipt your backend logs to correlate pushes. The taxonomy is worth knowing cold: `BadDeviceToken` (malformed/wrong environment — the sandbox-token-to-production-server classic), `410 Unregistered` (this token is DEAD; stop sending), `TooManyRequests`. One connection carries thousands of pushes as multiplexed streams (b7-03's whole point), which is why provider libraries hold it open.\n\nThe token is an install-identity, not a user-identity, and its lifecycle is where push systems rot. `registerForRemoteNotifications()` → the delegate delivers the token (device required — documented here); it CHANGES on reinstall and restore, so the rule is: send it to your backend on every launch, unconditionally, and let the backend upsert (b8-07's constraint pattern serves exactly this). The other half is pruning: when APNs answers 410 for a token, the backend must stop using it — databases that never prune accumulate dead tokens until 'pushes are unreliable' becomes a permanent bug report. Note what the token is NOT: readable as anything, derivable, or shared across apps — it's an opaque routing handle.\n\nDelivery is best-effort by DESIGN, and the two priorities are different products. Alert pushes (priority 10) display without your app: the system daemon holds one always-on connection (why pushes arrive with the screen off and your app terminated — b2-13's dead process is no obstacle), shows the UI, and only involves your code if the user acts (b9-04). Silent pushes (`content-available: 1`, priority 5) are a REQUEST to wake your code in the background — throttled, budgeted, coalesced, and droppable at the system's discretion (documented) — which is the mechanical truth under b6-05's design rule that silent pushes are hints with a pull backstop, never a transport. A 200 from APNs means ACCEPTED, not delivered: there is no delivery receipt in the protocol; read-receipts are an application feature. And FCM: Firebase's SDK maps its own token to the APNs token, and Firebase's servers call this same HTTP/2 API on your behalf — a convenience layer (topics, analytics, cross-platform) whose pushes still live and die by everything above.",
+      "whyItMatters": "The work app's pushes ride Firebase, and every 'user didn't get the push' ticket triages against this loop: token freshness, environment mismatch, silent-push throttling, or honest best-effort loss. 'What does a 200 from APNs actually promise?' is an interview question that separates people who've shipped push from people who've configured it."
+     },
+     "exercise": {
+      "prompt": "Three tickets from the push-reliability backlog. (1) Backend logs show 200 + apns-id for a silent sync push, but the app never woke; support escalates 'APNs is broken'. (2) After users reinstall the app, they stop receiving pushes forever; backend logs show 410 Unregistered for them — but keeps sending. (3) A teammate proposes 'silent push every 60 seconds to keep data fresh' — predict its fate. For each: mechanism and fix.",
+      "code": "// executed reference:\n//   APNs = HTTP/2 POST; response carries apns-id + JSON reason\n//   403 MissingProviderToken observed live\n// documented reference:\n//   200 = accepted, NOT delivered; silent = priority 5, budgeted\n//   410 Unregistered = token dead; tokens change on reinstall",
+      "solution": "(1) Working as designed. 200 means Apple ACCEPTED the push (the executed apns-id is the receipt of acceptance, nothing more); a content-available push is then subject to budgeting — the system weighs battery, app usage patterns, and Low Power Mode, and may coalesce, delay, or drop it silently. Fix is architectural, not configurational: treat silent pushes as freshness HINTS with a pull-on-foreground backstop (b6-05's rule, whose mechanism this loop supplies).\n\n(2) The reinstall issued a NEW token; the backend keeps posting to the old one and APNs keeps answering 410 — which the backend ignores. Two missing halves: the app must send its current token to the backend on EVERY launch (tokens are upserted, b8-07-style, not registered once), and the backend must prune any token that earns a 410. Either half alone eventually heals new installs; both are required for hygiene.\n\n(3) The budget kills it. Silent pushes are throttled per-app — a handful of opportunistic wakes per hour on a good day, fewer for rarely-used apps — so 60/hour collapses into a trickle of coalesced deliveries at unpredictable times, worst on the battery-sensitive devices that need efficiency most. If the data must be a minute fresh while the app is OPEN, that's b7-06's streaming or polling; while CLOSED, that freshness requirement is the thing to renegotiate — no push architecture delivers it.",
+      "explanation": "The meta-skill: push debugging always starts by classifying which promise was broken — acceptance (the executed receipt), delivery (never promised), or wake (budgeted). Most 'APNs is broken' tickets dissolve once the actual promise at each stage is written down."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: describe what physically happens between your backend and a user's device when a push is sent, what the device token is, and what a 200 response does and does not promise.",
+      "modelAnswer": "The backend makes an authenticated HTTP/2 POST — a JWT signed with the provider key, the JSON payload under 4 KB — to api.push.apple.com/3/device/<token>, and APNs relays it over the single long-lived connection the device's system daemon maintains, displaying alert pushes without the app running at all. The token is an opaque handle naming one app install on one device: it changes on reinstall or restore, so clients re-send it every launch and backends upsert it, and a 410 Unregistered response means the token is dead and must be pruned. A 200 with an apns-id promises acceptance only — there is no delivery receipt, and silent content-available pushes are additionally budgeted: the system may coalesce, delay, or drop them, which is why they're freshness hints with a pull backstop rather than a transport. Firebase Messaging layers on top and calls this same API.",
+      "sets": [
+       [
+        {
+         "q": "The executed probe of api.push.apple.com established that APNs speaks…",
+         "options": [
+          "a proprietary binary protocol on port 2195",
+          "long-lived WebSockets, upgraded from an initial HTTPS handshake at connection time",
+          "HTTP/2 — ALPN-negotiated, status + JSON reasons, an apns-id per request",
+          "gRPC, with protobuf-encoded push payloads"
+         ],
+         "correct": 2,
+         "explain": "Live: ALPN accepted h2, HTTP/2 403, apns-id header, {\"reason\":\"MissingProviderToken\"}. (The binary port-2195 protocol existed — Apple retired it; b7's machinery is the current answer.)"
+        },
+        {
+         "q": "Alert pushes display while the app is terminated because…",
+         "options": [
+          "the system daemon holds the APNs connection and renders the alert — the app is not involved",
+          "iOS briefly relaunches the app in the background to draw it",
+          "the notification UI was pre-registered by the app at install time",
+          "APNs holds and retries the delivery until the app next launches and can finally display it itself"
+         ],
+         "correct": 0,
+         "explain": "One always-on connection per device, owned by the OS, alerts rendered by the system. Your code enters only when the user acts (b9-04) or for mutable-content rewriting — b2-13's dead process is no obstacle."
+        },
+        {
+         "q": "The device token is best understood as…",
+         "options": [
+          "a stable per-user identifier, kept consistent across all of that user's devices",
+          "a hash of the bundle ID valid for the app's lifetime",
+          "a session credential that expires on a fixed schedule",
+          "an opaque routing handle for one install — changeable, re-sent every launch"
+         ],
+         "correct": 3,
+         "explain": "Reinstalls and restores mint new tokens; nothing about a user is derivable from one. Client re-sends each launch, backend upserts (b8-07's constraint), and 410s prune — the full hygiene loop."
+        }
+       ],
+       [
+        {
+         "q": "Backend logs 200 + apns-id for a silent push; the app never woke. The correct reading?",
+         "options": [
+          "the token was actually stale — a 200 response silently masks unregistered device tokens",
+          "the push was accepted; the wake was budgeted away — both systems worked as designed",
+          "the payload exceeded 4 KB and was truncated in relay",
+          "the JWT expired mid-flight, downgrading delivery priority"
+         ],
+         "correct": 1,
+         "explain": "Acceptance is the only promise (the executed receipt); content-available wakes are throttled by battery, usage, and Low Power Mode. Architecture absorbs this — hints plus a pull backstop — configuration cannot."
+        },
+        {
+         "q": "Sandbox builds get pushes; TestFlight builds get silence; backend logs show BadDeviceToken. The mechanism?",
+         "options": [
+          "environment mismatch — sandbox tokens posted to the production APNs host, or vice versa",
+          "TestFlight builds strip the push-notification entitlement until the full App Store release",
+          "the provider JWT is signed with the wrong team's key",
+          "TestFlight devices rotate tokens hourly for privacy"
+         ],
+         "correct": 0,
+         "explain": "Two parallel APNs worlds (api.sandbox vs api.push), tokens valid only in their own. Debug builds register in sandbox; TestFlight/App Store in production — the backend must route by build environment."
+        },
+        {
+         "q": "Where does Firebase Messaging actually sit in the delivery path?",
+         "options": [
+          "it entirely replaces APNs with Google's own separate persistent connection to the device",
+          "it embeds a second push daemon alongside Apple's in the app",
+          "its servers call this same APNs HTTP/2 API; its SDK maps FCM tokens to APNs tokens",
+          "it uses APNs only for silent pushes, its own path for alerts"
+         ],
+         "correct": 2,
+         "explain": "On iOS there is exactly one road to the device, and Apple owns it. FCM is a convenience layer (topics, cross-platform, analytics) whose pushes inherit every constraint in this loop — including the budget."
+        }
+       ]
+      ]
+     },
+     "transfer": "Trace one push end-to-end in the work app's stack: find where the client sends its token to the backend (every launch, or the register-once bug?), ask the backend team what happens on a 410 (pruned, or accumulating?), and classify every silent push use-case against the budget — anything that NEEDS guaranteed delivery is architecture debt this loop names. Then check which APNs host each build environment's tokens reach.",
+     "verify": "// executed on this Mac 2026-07-19 (live network):\n// curl -v --http2 POST https://api.push.apple.com/3/device/00…0\n//   → ALPN 'server accepted h2' · HTTP/2 403\n//   → apns-id: 35ACB093-FAAE-7595-9262-F69F7FB9D2F5 (per-push receipt)\n//   → {\"reason\":\"MissingProviderToken\"} — the JSON error taxonomy, live\n// documented (device + paid infra required): token registration delivery,\n//   .p8 JWT signing, 410 pruning, 4 KB limit, priority 5 budgeting/coalescing,\n//   sandbox-vs-production hosts, FCM's token mapping",
+     "goDeeper": "Apple's \"Sending notification requests to APNs\" — the HTTP/2 API this loop poked, including the full reason-code table. WWDC 2020 \"Background execution demystified\" — the silent-push budget's definitive explanation (b9-06 will lean on it). b7-03/b7-04 for the wire machinery seen live here. Firebase's 'FCM via APNs' docs — read once to see the layering admitted in Google's own words."
+    },
+    {
+     "id": "b9-04",
+     "title": "Notification routing: from payload to screen",
+     "concept": {
+      "definition": "On-device, a notification's fate is three separate questions: if the app is foregrounded, `willPresent` decides whether it shows at all; when the user taps it (or an action button), `didReceive` delivers the response — the payload's `userInfo` plus an action identifier — which the app must translate into navigation; and a category declares which action buttons appear. The tap handler is the app's second front door: it can fire at cold launch, before your UI exists.",
+      "code": "// executed — the declaration side builds without any prompt:\nlet reply = UNTextInputNotificationAction(identifier: \"REPLY\",\n    title: \"Reply\", options: [], textInputButtonTitle: \"Send\",\n    textInputPlaceholder: \"Message…\")\nlet cat = UNNotificationCategory(identifier: \"MESSAGE\",\n    actions: [reply, mute], intentIdentifiers: [], options: [])\n// payload's aps.category == \"MESSAGE\" → these buttons appear\n\n// executed — routing as a pure, testable function:\nfunc route(userInfo: [AnyHashable: Any], actionID: String) -> Route\n// tap with chatID  → .chat(\"c42\")     (default action identifier)\n// tap, bad payload → .inbox           (defensive fallback)\n// REPLY action     → .none            (handled inline, no navigation)",
+      "underlying": "The delivery matrix is the part every app gets wrong once. Foreground: the system does NOT show the banner — `willPresent` is asked, and returning nothing (or not implementing it) means silence; returning `[.banner, .sound]` opts in — the entire mechanism behind 'notifications don't appear while the app is open'. Background or terminated: the system displays it (b9-03 — your code still asleep), and only a user ACTION involves you: the tap arrives at `didReceive` with `UNNotificationDefaultActionIdentifier`, a button tap arrives with that button's identifier, and dismissal is silent unless the category opted into dismiss events (documented). Silent pushes never enter this matrix at all — no UI, straight to the background handler (b9-03's budgeted wake).\n\nRouting is where payload meets architecture, and the executed router shows the shape worth copying: a PURE function from (`userInfo`, `actionID`) to a route — tap with a chatID navigates to the chat, an unknown or damaged payload falls back to the inbox instead of crashing (server-controlled dictionaries are b4-04's decoding problem wearing notification clothes — executed: the bad-payload case routed defensively), and inline actions like REPLY return no navigation at all, because the user's text arrives IN the response (`UNTextInputNotificationResponse.userText`) and is handled — often without the app ever coming to the foreground — by posting the message and completing. Purity matters because of WHEN this fires: a tap on a terminated app cold-launches it, and `didReceive` races your launch sequence — the classic crash is deep-linking into a navigation stack that doesn't exist yet. The fix is b7-10's waiter pattern one more time: the router computes the destination immediately, but the navigation QUEUES until the UI declares itself ready.\n\nThe service extension is the third act: a payload carrying `mutable-content: 1` routes through your `UNNotificationServiceExtension` — a separate process, ~30 seconds, running your code on EVERY such push before display (documented) — which is how encrypted messages decrypt and how images attach (download, attach, hand back: the mechanism under Firebase's rich pushes). It's the only guaranteed pre-display code you get (alert pushes otherwise never run you), it can fail — the system shows the ORIGINAL payload if you overrun — and it shares data with the app only through an app group container (documented). Categories, meanwhile, are REGISTERED at launch (executed construction): the payload names a category it expects the app to have declared — ship a payload with a category the installed app version never registered, and the buttons simply don't appear: a cross-version contract between backend and app, exactly like b7-02's schema discipline.",
+      "whyItMatters": "The work app's 'tap the push, land on the right screen' flow is this loop — and its two classic failures (silent foreground notifications, cold-start deep-link crashes) are among the most-filed notification bugs in production apps. 'Walk me through what happens when a user taps a push' is an interview question whose full answer spans exactly this loop's matrix."
+     },
+     "exercise": {
+      "prompt": "Four bug reports against the matrix. (1) 'Notifications work fine, but never while I'm IN the app.' (2) Tapping a push while the app is running navigates correctly; tapping when the app was killed crashes in the navigation code ~1 in 5 times. (3) Product wants WhatsApp-style inline reply — where does the user's text arrive, and does the app open? (4) After the backend adds a category to payloads, users on the previous app version see no action buttons. Mechanism and fix for each.",
+      "code": "// executed reference:\n//   router: tap+chatID → .chat, damaged payload → .inbox, REPLY → .none\n//   category/actions declared in code, matched by aps.category string\n// the matrix: foreground = willPresent's choice · background = system\n//   displays, tap → didReceive (can fire at COLD LAUNCH)",
+      "solution": "(1) Working as designed until you opt in: foreground delivery asks `willPresent`, and silence is the default answer. Return `[.banner, .sound]` (or choose per-notification — suppress the chat you're currently looking at, show everything else: the standard refinement).\n\n(2) The cold-launch race: `didReceive` fires during launch, the deep-link executes against a UI mid-construction, and the 1-in-5 is whichever finishes first (b3-03's nondeterminism at UI scale). Fix: keep the executed router pure — compute the route instantly — but QUEUE the navigation behind a UI-ready gate (b7-10's waiters, in miniature). Tap handling then works identically in all three app states.\n\n(3) Declare a `UNTextInputNotificationAction` (executed: REPLY with its send button and placeholder); the text arrives in `didReceive` as `UNTextInputNotificationResponse.userText`. The app is typically NOT foregrounded — the handler runs briefly in the background, posts the message (b7's client), and completes; the executed router returning `.none` for REPLY encodes exactly that 'no navigation' contract.\n\n(4) Categories are a cross-version contract: the payload's `aps.category` string is matched against categories the INSTALLED build registered at launch — old builds never registered \"MESSAGE\", so the system shows a plain notification (graceful, no crash, no buttons). Fix pattern is b7-02's: ship the registration first, start sending the category after adoption, and treat category strings like field numbers — append, never repurpose.",
+      "explanation": "The unifying instinct: every input to this system — the payload, the tap timing, the app version — is OUTSIDE your control, so each handler is written like a server endpoint: validate, fall back, queue behind readiness. The executed router's three lines of defense are that philosophy, compiled."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: walk through what happens when a push arrives with the app foregrounded, backgrounded, and terminated — including who displays it, when your code runs, and the cold-launch trap.",
+      "modelAnswer": "Foregrounded: the system asks willPresent, and the notification shows only if you return presentation options — silence is the default. Backgrounded or terminated: the system displays it without running your code (a service extension being the exception, for mutable-content payloads); your code enters only when the user acts — the tap or an action button's identifier arrives at didReceive along with the payload's userInfo, which you translate into navigation. The trap is that a tap on a terminated app cold-launches it, so didReceive races UI construction — robust apps compute the route immediately with a pure, defensive function but queue the navigation until the UI signals ready. Inline actions like text-input reply deliver their payload in the response itself and usually complete in the background without opening the app.",
+      "sets": [
+       [
+        {
+         "q": "Notifications never appear while the app is open because…",
+         "options": [
+          "iOS suppresses all banners for the foregrounded app, by platform policy, always",
+          "the aps payload needs a foreground=1 flag the backend isn't sending",
+          "willPresent's default answer is silence — returning options is the opt-in",
+          "the notification center only renders for backgrounded processes"
+         ],
+         "correct": 2,
+         "explain": "Foreground delivery is a question, not an event: unimplemented or empty-return means nothing shows. The per-notification refinement — suppress only the currently-open chat — lives in the same callback."
+        },
+        {
+         "q": "A payload names category \"MESSAGE\" but the installed build never registered it. The user sees…",
+         "options": [
+          "the notification fails validation and is dropped by the system",
+          "a set of default action buttons synthesized automatically from the payload's alert keys",
+          "the buttons appear but their taps arrive with empty identifiers",
+          "a plain notification — no buttons, no error; categories are a cross-version contract"
+         ],
+         "correct": 3,
+         "explain": "The category string is matched against what THIS build declared at launch (executed construction). Degradation is graceful — which also makes the bug silent. Ship registration before sending, b7-02 style."
+        },
+        {
+         "q": "The service extension (mutable-content: 1) is unique because it is…",
+         "options": [
+          "the only code of yours guaranteed to run before an alert push displays",
+          "the only notification handler allowed to modify the app's badge count directly",
+          "a way to extend the silent-push background budget",
+          "an in-process hook on the notification center's delegate"
+         ],
+         "correct": 0,
+         "explain": "Alert pushes otherwise display without you entirely (b9-03). The extension is a separate process with ~30s to decrypt or attach media — overrun it and the system shows the original payload."
+        }
+       ],
+       [
+        {
+         "q": "Deep-links from push taps crash only when the app was terminated first. The mechanism?",
+         "options": [
+          "terminated apps receive stale userInfo from the notification cache",
+          "didReceive fires during cold launch and races the UI's construction",
+          "the system delivers the tap twice on cold starts — once per process",
+          "navigation stacks can't be built inside notification handlers"
+         ],
+         "correct": 1,
+         "explain": "The second front door opens before the house is built (the 1-in-N is the race's signature, b3-03 at UI scale). Route immediately, navigate behind a readiness gate — b7-10's waiters in miniature."
+        },
+        {
+         "q": "For inline reply, the user's text reaches your code via…",
+         "options": [
+          "a full re-launch of the app with the reply text placed into its launchOptions dictionary",
+          "didReceive's response — userText on the text-input response, often without foregrounding",
+          "a follow-up silent push that Apple sends containing the reply",
+          "the shared app-group container the keyboard writes into"
+         ],
+         "correct": 1,
+         "explain": "The executed REPLY action's contract: the response IS the delivery, the handler posts the message in the background and completes — which is why the executed router returns .none rather than a navigation."
+        },
+        {
+         "q": "The executed router takes (userInfo, actionID) and returns a Route, with a fallback for damaged payloads. Why this shape?",
+         "options": [
+          "pure functions are strictly required inside all notification handlers by the framework's contract",
+          "it lets the router run inside the service extension as well",
+          "returning early from didReceive extends the background time allowance",
+          "server-controlled input + cold-launch timing demand testable, defensive, navigation-free logic"
+         ],
+         "correct": 3,
+         "explain": "Executed: three cases including the bad-payload fallback, all unit-testable with no UIKit in sight. The payload is b4-04's untrusted input; the timing is the race — purity is the answer to both."
+        }
+       ]
+      ]
+     },
+     "transfer": "In the work app, find didReceive and answer: is the route computed by testable logic or inline navigation code? What happens on a cold-start tap — is there a readiness gate, or the 1-in-5 crash waiting? Then check willPresent's policy (is the current chat suppressed?), list the registered categories against what the backend actually sends, and if rich pushes exist, read the service extension's time-budget handling.",
+     "verify": "// executed on this Mac 2026-07-19 (plain swift + UserNotifications):\n// UNMutableNotificationContent + category 'MESSAGE' with REPLY (text input,\n//   'Send' button, placeholder) and MUTE actions — constructed, no prompt\n// routing as a pure function, three cases executed:\n//   default-action tap + chatID → .chat(\"c42\")\n//   default-action tap + damaged payload → .inbox (defensive fallback)\n//   REPLY action → .none (inline handling, no navigation)\n// documented (device required): willPresent/didReceive delivery matrix,\n//   cold-launch tap timing, UNTextInputNotificationResponse.userText,\n//   service-extension 30s window + app-group sharing, dismiss events\n// note: UNUserNotificationCenter.current() needs an app bundle — the\n//   declaration objects and router logic don't, which is exactly the split\n//   that makes the router testable",
+     "goDeeper": "Apple's UNUserNotificationCenter and 'Handling notifications and notification-related actions' docs — the delivery matrix, verbatim. WWDC 2018 \"What's New in User Notifications\" for categories and the service extension's contract. b4-04 for treating userInfo as untrusted input; b7-10 for the readiness-gate pattern the cold-launch fix borrows. Next: b9-05, LocalAuthentication."
+    },
+    {
+     "id": "b9-05",
+     "title": "LocalAuthentication: biometrics and the Keychain gate",
+     "concept": {
+      "definition": "`LAContext` evaluates policies — `.deviceOwnerAuthenticationWithBiometrics` (Face/Touch ID only) or `.deviceOwnerAuthentication` (biometrics with passcode fallback) — and `canEvaluatePolicy` reports availability with precise `LAError` reasons, while `biometryType` names the hardware even when evaluation isn't currently possible. The strong pattern doesn't gate the UI, it gates the KEYCHAIN: an item stored under `SecAccessControl` with `.biometryCurrentSet` is unreadable without a scan — and becomes permanently unreadable when the enrolled biometrics change.",
+      "code": "let ctx = LAContext()\nvar error: NSError?\nlet can = ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics,\n                                error: &error)\n// executed on this Mac:\n//   canEvaluate(biometrics): false · LAError -7 (biometryNotEnrolled)\n//   biometryType: touchID           ← hardware named even though can=false\n//   canEvaluate(bio OR passcode): true — the fallback policy stands\n\n// the Keychain gate — creating it prompts nothing (executed):\nlet acl = SecAccessControlCreateWithFlags(nil,\n    kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,\n    [.biometryCurrentSet], &cfError)          // created ✓\n// attach as kSecAttrAccessControl when ADDING the item;\n// the Face/Touch ID prompt fires at SecItemCopyMatching — the READ",
+      "underlying": "The executed state of this very Mac is the API's contract in miniature: `canEvaluatePolicy(.withBiometrics)` returned FALSE with `LAError` code -7 — `biometryNotEnrolled` — while `biometryType` simultaneously reported `.touchID`. Hardware present, nothing enrolled: two different questions, two different answers, and UI should branch on BOTH — 'set up Touch ID' (an invitation) for -7 versus hiding the feature for `biometryNotAvailable` (-6) versus 'try again later' for `biometryLockout` (-8, too many failures). Meanwhile `.deviceOwnerAuthentication` — biometrics OR passcode — evaluated true (executed): the fallback policy is the one that's almost always available, and choosing between the two policies is a product decision about whether a shoulder-surfed passcode may unlock the feature. (`biometryType` is defined as valid only AFTER a `canEvaluatePolicy` call — the executed sequence, worth keeping.)\n\nThe deeper split is WHERE the gate lives. `evaluatePolicy` alone — scan succeeds, closure gets `true`, app shows the balance — is UI theater: the secret data sat readable the whole time, and anything that bypasses your `if` (a debugger, a jailbreak tweak, a code path you forgot) walks past the guard. The strong pattern moves the gate into the Keychain (b4-07's machinery, hardened): store the token with the executed `SecAccessControl` attached, and the SECRET ITSELF is inaccessible — the Secure Enclave releases it only upon successful biometric evaluation, the prompt firing automatically at the READ (`SecItemCopyMatching` blocks while Face ID runs; documented). Executed: creating the access-control object prompts nothing — the ceremony belongs to access, not setup. This is b7-11's vault given a hardware floor: the refresh token behind `.biometryCurrentSet` is protected by physics, not by an if-statement.\n\n`.biometryCurrentSet` versus `.biometryAny` is the answer to 'what happens when biometrics change'. CurrentSet binds the item to the enrollment state at WRITE time: enroll a new finger or re-enroll a face, and the item becomes permanently unreadable (documented) — by design, because 'someone who can add a fingerprint to this device' (they had the passcode) should not inherit access to the bank token. The app must treat that read failure as a session boundary: re-authenticate with the server, store a fresh token — an ARCHITECTED path, not an error dialog. `.biometryAny` survives re-enrollment and accepts exactly that risk. App-level change DETECTION exists too: `evaluatedPolicyDomainState` is an opaque enrollment fingerprint (executed: nil here, nothing enrolled) — persist it, compare on launch, and you know biometrics changed even before any Keychain read fails. Two last production notes, documented: Face ID requires `NSFaceIDUsageDescription` in the plist (its absence fails evaluation — b9-01's silent-plist lesson, third appearance), and `LAContext` reuse carries a grace period — create contexts per-decision, not per-app.",
+      "whyItMatters": "The work app's biometric unlock is either theater or a Keychain gate — this loop is how you tell, and the `.biometryCurrentSet` re-enrollment lockout is the 'users randomly logged out after adding a fingerprint' ticket, working as designed. 'What happens to your protected data when the user adds a finger?' is a security-interview classic with exactly one right answer per flag."
+     },
+     "exercise": {
+      "prompt": "Audit three designs, then handle the change. (1) `evaluatePolicy` → on success, set `isUnlocked = true` and show the vault (token was in UserDefaults all along). (2) Token in Keychain with `.biometryAny`; product asks 'is our data safe if someone who knows the passcode enrolls their own fingerprint?' (3) Token behind `.biometryCurrentSet`; a user re-enrolls Face ID after surgery and the app greets them with 'Error -25300'. Verdict and fix for each — and (4) using this Mac's executed state (touchID / can=false / -7), write the correct UI branch.",
+      "code": "// executed reference:\n//   canEvaluate(biometrics) = false, LAError -7 (notEnrolled)\n//   biometryType = .touchID (hardware present)\n//   canEvaluate(bio OR passcode) = true\n//   SecAccessControl(.biometryCurrentSet) created silently — prompt at READ",
+      "solution": "(1) Theater, twice over: the Bool gate is bypassable (debugger, tweak, forgotten code path), and the token in UserDefaults (b7-11's anti-pattern) was never protected — the scan guarded pixels, not data. Fix: token into the Keychain behind the executed access control; the biometric ceremony becomes the READ, and the 'unlock' state is simply 'the read succeeded'.\n\n(2) No — and that's `.biometryAny`'s documented trade: it survives re-enrollment, so anyone who can enroll a finger (which requires the passcode) can then pass the scan. If the threat model includes 'passcode known to someone else' — for a finance-grade feature it must — the answer is `.biometryCurrentSet`.\n\n(3) Working as designed: re-enrollment invalidated the CurrentSet-bound item — the Enclave cannot distinguish 'same human, new face data' from 'new human'. The bug is the ERROR DIALOG, not the lockout: this read failure is a session boundary, so the designed path is a friendly re-authentication flow (server login, fresh token stored under the NEW enrollment state). Detect it proactively by persisting `evaluatedPolicyDomainState` and comparing at launch.\n\n(4) The executed state decodes as 'Touch ID hardware, nothing enrolled': branch on the pair — `biometryType == .touchID && LAError == -7` → show 'Set up Touch ID in System Settings to unlock faster' (an invitation), fall back to `.deviceOwnerAuthentication` (executed: available) for today's session; hide biometric UI entirely only when the hardware itself is absent (-6).",
+      "explanation": "The through-line: every correct answer relocated a decision from UI code into the security machinery — storage gates instead of Bools, enrollment binding instead of trust, state-pair branching instead of a generic error. Biometrics done well is mostly deciding where NOT to write an if-statement."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: contrast gating the UI with gating the Keychain, explain .biometryCurrentSet versus .biometryAny, and describe what your app should do when biometrics change.",
+      "modelAnswer": "Gating the UI — evaluatePolicy returning a Bool that shows or hides content — protects nothing: the data was readable all along and the if-statement is bypassable, so the strong pattern stores the secret in the Keychain under a SecAccessControl, where the Secure Enclave releases it only on successful evaluation and the prompt fires at the read itself. .biometryCurrentSet binds the item to the enrollment state at write time: add a finger or re-enroll a face and the item is permanently unreadable — deliberate, because enrolling requires only the passcode, and passcode-holders shouldn't inherit biometric-grade access; .biometryAny survives re-enrollment and accepts that risk. When biometrics change, the app should treat the failed read as a session boundary — a designed re-authentication flow storing a fresh token — and can detect the change proactively by persisting and comparing evaluatedPolicyDomainState. And canEvaluatePolicy's error plus biometryType together drive the UI: hardware-absent, not-enrolled, and locked-out are three different screens.",
+      "sets": [
+       [
+        {
+         "q": "This Mac executed: biometryType = .touchID while canEvaluate(biometrics) = false, LAError -7. The correct reading?",
+         "options": [
+          "the framework is being internally inconsistent — trust the false and hide all biometric UI",
+          "hardware present, nothing enrolled — invite setup, fall back to passcode policy",
+          "Touch ID is locked out after too many failed attempts today",
+          "the plist usage-description key is missing, so evaluation is blocked"
+         ],
+         "correct": 1,
+         "explain": "Two questions, two answers: -7 is biometryNotEnrolled, and biometryType (valid after the canEvaluate call) names the hardware anyway. Lockout is -8, missing hardware -6 — each code is a different screen."
+        },
+        {
+         "q": "Why is 'evaluatePolicy succeeded → show the secret data' considered theater?",
+         "options": [
+          "the secret was readable regardless — the scan gated pixels, and the Bool is bypassable",
+          "evaluatePolicy has a false-accept rate too high for secrets",
+          "the success closure runs off-main and can drop the result",
+          "iOS silently caches the successful evaluation, so all later checks pass without fresh scans"
+         ],
+         "correct": 0,
+         "explain": "The gate must live where the data lives: SecAccessControl on the Keychain item means the Enclave withholds the secret itself — no successful read, no data, no if-statement to sidestep."
+        },
+        {
+         "q": "With a Keychain item behind .biometryCurrentSet, the Face ID prompt appears when…",
+         "options": [
+          "the access-control object is created during app setup",
+          "the item is first written into the Keychain",
+          "the item is READ — SecItemCopyMatching blocks while evaluation runs",
+          "the app explicitly calls evaluatePolicy by hand before any Keychain call"
+         ],
+         "correct": 2,
+         "explain": "Executed: creation was silent. The ceremony belongs to ACCESS — the read triggers the scan and the Enclave releases the value on success, which is what makes the storage itself the gate."
+        }
+       ],
+       [
+        {
+         "q": "Support ticket: 'added a fingerprint for my partner, now the app logs me out.' With .biometryCurrentSet, this is…",
+         "options": [
+          "a race between Keychain reads during the enrollment window",
+          "an iOS bug — enrollment shouldn't affect existing Keychain items",
+          "a keychain-access-group misconfiguration that only ever surfaces at biometric re-enrollment",
+          "the designed invalidation: enrollment changed, the bound item is gone — re-authenticate"
+         ],
+         "correct": 3,
+         "explain": "Enrolling requires only the passcode — CurrentSet exists so passcode-holders can't inherit biometric-grade access. The app's job is making that boundary a graceful re-login, not an error code."
+        },
+        {
+         "q": "The proactive way to detect biometric re-enrollment — before any Keychain read fails — is…",
+         "options": [
+          "persist evaluatedPolicyDomainState and compare it at launch",
+          "count enrolled biometrics via biometryType's raw value",
+          "subscribe to the biometryDidChange notification",
+          "attempt a silent evaluatePolicy check at every single app launch"
+         ],
+         "correct": 0,
+         "explain": "The domain state is an opaque enrollment fingerprint (executed: nil with nothing enrolled) — store it, diff it, and you know before the user hits the locked item. No change notification exists; polling with prompts would be hostile."
+        },
+        {
+         "q": "Choosing .deviceOwnerAuthentication (passcode fallback) over biometrics-only is really deciding…",
+         "options": [
+          "whether the evaluation happens inside the Enclave or in your own process",
+          "whether a known passcode is an acceptable key to this feature",
+          "whether the plist needs the Face ID usage description",
+          "whether lockout after failed scans can ever occur"
+         ],
+         "correct": 1,
+         "explain": "The fallback policy nearly always evaluates true (executed here, even with nothing enrolled) — availability is its virtue and its threat model: shoulder-surfed passcodes unlock it. Finance-grade flows often want biometrics-only plus CurrentSet storage."
+        }
+       ]
+      ]
+     },
+     "transfer": "Audit the work app's biometric unlock against the three-question checklist: does the secret live behind a SecAccessControl (search for SecAccessControlCreateWithFlags) or behind a Bool? Which flag — .biometryAny or .biometryCurrentSet — and does that match the feature's threat model? And what does the user experience when re-enrollment invalidates the item — a designed re-login, or error -25300? Also check the plist for NSFaceIDUsageDescription and whether LAContext objects are created per-decision or cached app-wide.",
+     "verify": "// executed on this Mac 2026-07-19 (LocalAuthentication + Security):\n// canEvaluate(.withBiometrics) → false, LAError -7 (biometryNotEnrolled)\n// biometryType → .touchID — hardware named despite can=false (contract:\n//   valid after a canEvaluatePolicy call)\n// canEvaluate(.deviceOwnerAuthentication) → true (passcode fallback stands)\n// evaluatedPolicyDomainState → nil (nothing enrolled — the fingerprint\n//   that would otherwise be persisted and diffed)\n// SecAccessControlCreateWithFlags(WhenPasscodeSetThisDeviceOnly,\n//   .biometryCurrentSet) → created, NO prompt — ceremony belongs to the read\n// documented (device + enrollment required): the read-time prompt,\n//   CurrentSet invalidation on re-enrollment, lockout codes, Face ID plist key\n// Keychain CRUD floor: executed in b4-07",
+     "goDeeper": "Apple's \"Accessing Keychain Items with Face ID or Touch ID\" — the read-gate pattern, verbatim. LAError documentation — the code-to-screen mapping. The Secure Enclave chapter of the Apple Platform Security guide — what 'protected by physics' actually means. b4-07 for the Keychain floor; b7-11 for the token this gate should protect. Next: b9-06 closes the block — background execution."
+    },
+    {
+     "id": "b9-06",
+     "title": "Background execution: the freezer and its permits",
+     "concept": {
+      "definition": "iOS doesn't run your app in the background — it FREEZES it: seconds after leaving the foreground, the process is suspended mid-instruction, threads parked, timers dead, until it's resumed or quietly killed for memory. Every real form of background work is a PERMIT with a budget: a short grace period (`beginBackgroundTask`), opportunistic scheduled windows (`BGTaskScheduler`), silent-push wakes (b9-03), or an entitlement-gated continuous mode — and 'just run a timer' fails because a frozen process runs nothing at all.",
+      "code": "// suspension, simulated with its own mechanism — SIGSTOP (executed):\n// a Timer ticking every 0.25s in a process we freeze for 2 seconds:\n//\n//   tick  1 at 0.25s wall-clock\n//   >>> SIGSTOP  (the freezer)\n//   >>> SIGCONT  (2 seconds later)\n//   tick  2 at 2.27s wall-clock     ← a 2-second HOLE, nothing fired\n//   tick  3 at 2.50s …resumes cadence\n//   TOTAL: 11 fires in 4.5s (expected ~18 if never frozen)\n//\n// the missed fires never happened — and were never made up.\n// this is what happens to every Timer, DispatchQueue.asyncAfter,\n// and 'sleep loop' the moment your app leaves the foreground.",
+      "underlying": "The transcript is the mental model: suspension is a freeze, not a slow-down. Executed with SIGSTOP — the same signal-level mechanism a suspend is built on — the ticking process showed a two-second hole with ZERO fires, resumed exactly where it stopped, and finished with 11 fires instead of ~18: a repeating Timer fires once when the runloop next runs and then resumes cadence — it does not replay the backlog (documented). The state was perfectly intact the whole time (b2-13's suspended state): freezing is cheap, which is why iOS does it aggressively — and why the freezer may silently upgrade to termination under memory pressure, with no callback, ever (b2-13's silent kill). Code that 'schedules a Timer for 5 minutes' is really scheduling 'fire whenever the process happens to be alive and looping 5+ minutes from now' — the honest primitive is a due DATE persisted to storage, checked on every wake.\n\nThe permits, in escalating order of commitment. `beginBackgroundTask(expirationHandler:)` buys a short grace period (~30 seconds) to FINISH something already started — with a mandatory expiration handler, because overrunning it is a watchdog kill (documented). `BGTaskScheduler` (BGAppRefreshTask for quick refreshes, BGProcessingTask for longer maintenance) is a REQUEST for a future window that the system grants opportunistically — timed by usage patterns, charging state, and budget, not by your schedule; 'why didn't my 15-minute refresh run overnight' has the same answer as b9-03's silent pushes: it's a hint, not cron. Silent pushes wake you on the server's initiative under that same budget. And the continuous modes — location with always-auth (b9-01), audio, VoIP — are entitlement-gated exceptions where the process genuinely keeps running, priced accordingly in review scrutiny and battery accounting.\n\nDesigning FOR the freezer collapses into three rules. Work must be RESUMABLE: b6-02's durable queue is the shape — a state machine in storage where any wake, from any permit, advances whatever is due; never 'in-memory progress a freeze would orphan'. Big transfers go to the ONE true exception: a background-configuration `URLSession`, whose downloads run in a separate system daemon while your process sits frozen, delivering results at the next launch (documented — this is how large uploads and downloads survive, and its delegate-based delivery is why b4-01's machinery still matters in an async/await world). And time is DATA, not a timer: store deadlines as dates, compare on wake — the executed transcript is exactly what happens to the alternative.",
+      "whyItMatters": "The work app's sync, upload, and 'clear the typing indicator' logic all live or die by the freezer — and 'why didn't the background refresh run?' is the single most-asked systems question in mobile teams. The executed 11-fires transcript is the two-line answer: nothing runs in a frozen process, and nothing catches up afterward."
+     },
+     "exercise": {
+      "prompt": "Four designs, one freezer. (1) A chat clears its own 'typing…' indicator with a 10-second Timer; users background the app mid-type and other users see them 'typing' for hours. (2) A 200 MB video upload must survive the user leaving the app — compare beginBackgroundTask vs background URLSession honestly. (3) Product specifies 'refresh the feed every 15 minutes, exactly' via BGAppRefreshTask. (4) Read the executed transcript: why 11 fires instead of 18, and why no burst of catch-up ticks at 2.27s?",
+      "code": "// executed reference:\n//   tick 1 at 0.25s · [frozen 2s] · tick 2 at 2.27s · cadence resumes\n//   TOTAL 11 fires, expected ~18 — no replay of missed fires\n// permits: ~30s grace (expiration handler mandatory) · BGTaskScheduler\n//   (opportunistic) · silent push (budgeted) · background URLSession\n//   (out-of-process daemon)",
+      "solution": "(1) The Timer froze with the process — the executed hole, hours long. The fix moves the decision off the device: send 'typing started at T' and let the SERVER expire it, or clear on the app-lifecycle notification before suspension (b2-13's willResignActive). Rule of thumb: any timer whose failure another USER can see must not live in a freezable process.\n\n(2) beginBackgroundTask buys ~30 seconds — enough to finish a small request already in flight, nowhere near 200 MB on real networks, and overrunning is a watchdog kill. The background URLSession is the designed answer: the transfer runs in the system's daemon while your process is frozen, survives even termination, and hands you the result at next launch. The trade: delegate-based delivery, resume-data handling, and no per-byte control while frozen — complexity that buys the only genuine 'runs while suspended'.\n\n(3) Unschedulable as specified. BGAppRefreshTask requests are granted opportunistically — usage patterns, battery, charging state decide — so 'every 15 minutes, exactly' is not a thing any permit provides. The honest design: request refresh opportunistically, AND make the feed stale-tolerant on open (b6-03's freshness policy + b8-07's fast import) so the guarantee lives where it can be kept — at foreground time.\n\n(4) The freezer holds the process mid-air: the runloop isn't spinning, so fire dates come and go unobserved (7 of them, executed). On SIGCONT the Timer fires ONCE for the missed backlog and resumes cadence — repeating timers coalesce misses by design (documented). The 2-second hole plus one un-replayed backlog is precisely 18 − 11 = 7 missing fires.",
+      "explanation": "The design instinct that generalizes: state that must advance while you're frozen belongs to someone who isn't frozen — the server (typing indicators), a system daemon (transfers), or the calendar-checked-on-wake (deadlines). The freezer isn't an obstacle to work around; it's the platform telling you where work should live."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what actually happens to your process when the user backgrounds the app, what are the permits for doing background work, and why is a Timer the wrong tool across that boundary?",
+      "modelAnswer": "Seconds after backgrounding, the process is suspended — frozen with its state intact, threads parked, the runloop stopped — and it may be silently terminated later for memory without any callback. Background work happens only through permits: beginBackgroundTask grants roughly 30 seconds to finish in-flight work with a mandatory expiration handler; BGTaskScheduler grants opportunistic future windows the system times by usage and battery, not your schedule; silent pushes wake you under a budget; and background URLSession moves transfers into a system daemon that runs while you're frozen. A Timer is wrong because a frozen runloop observes nothing: fire dates pass unnoticed, and on resume a repeating timer fires once and resumes cadence rather than replaying the backlog — so time-dependent state belongs to the server, a daemon, or a persisted date checked on wake.",
+      "sets": [
+       [
+        {
+         "q": "Moments after the user backgrounds the app, your process is…",
+         "options": [
+          "moved onto a low-priority queue where its timers fire more slowly",
+          "kept running for ten minutes, then terminated cleanly",
+          "terminated immediately and relaunched fresh on return",
+          "suspended — frozen with state intact, nothing executing at all"
+         ],
+         "correct": 3,
+         "explain": "Executed as SIGSTOP: a 2-second freeze produced a 2-second hole with zero fires and instant resume. Suspension is binary — not slow, not niced, simply not running (and silently killable, b2-13)."
+        },
+        {
+         "q": "The executed ticker fired 11 times in 4.5s instead of ~18. The missing 7 fires…",
+         "options": [
+          "queued faithfully in the kernel and then replayed as a rapid catch-up burst on the next foregrounding",
+          "never happened — the frozen runloop observed no fire dates, and repeating timers don't replay",
+          "were delivered while frozen but their prints were dropped",
+          "moved to the timer's tolerance window and fired late, unlabeled"
+         ],
+         "correct": 1,
+         "explain": "The transcript: one 2-second hole, then cadence resumed from 2.27s with no burst. A repeating Timer coalesces the backlog into at most one late fire — which is why elapsed-time logic must diff persisted dates, not count ticks."
+        },
+        {
+         "q": "beginBackgroundTask's honest contract is…",
+         "options": [
+          "unlimited background running time while the expiration handler remains registered",
+          "a scheduled window the system grants within the next hour",
+          "~30 seconds of grace to FINISH in-flight work — overrun is a watchdog kill",
+          "background time whenever the device is charging and idle"
+         ],
+         "correct": 2,
+         "explain": "It's a grace period, not a work permit — end the task promptly and treat the expiration handler as mandatory cleanup. Anything bigger belongs to BGTaskScheduler or the background URLSession daemon."
+        }
+       ],
+       [
+        {
+         "q": "A 200 MB upload must survive backgrounding AND process death. The designed tool?",
+         "options": [
+          "a background-configuration URLSession — the transfer runs in a system daemon while you're frozen",
+          "beginBackgroundTask grace periods renewed repeatedly in a loop until the whole upload finally completes",
+          "a BGProcessingTask that resumes the upload in nightly windows",
+          "chunked uploads retried from scratch at each app launch"
+         ],
+         "correct": 0,
+         "explain": "The one genuine 'runs while suspended': out-of-process, survives termination, delivers at next launch. The cost is delegate-based plumbing and resume-data handling — complexity that buys the only real guarantee."
+        },
+        {
+         "q": "'Our BGAppRefreshTask is scheduled for every 15 minutes but ran twice yesterday.' The correct diagnosis?",
+         "options": [
+          "the BGTaskScheduler task identifier is misregistered in the Info.plist's permitted-identifiers list",
+          "working as designed — grants are opportunistic; usage patterns and battery decide, not you",
+          "the 15-minute interval is below the system's allowed minimum",
+          "the scheduler was starved by the app's silent pushes"
+         ],
+         "correct": 1,
+         "explain": "Same family as b9-03's push budget: a hint the system weighs, never cron. The engineering answer is stale-tolerance at open (b6-03) so freshness doesn't depend on grants you can't control."
+        },
+        {
+         "q": "Other users see someone 'typing…' hours after they left the app. The root cause pattern?",
+         "options": [
+          "the typing notification was sent with too high a push priority",
+          "the chat socket stayed open in the background, re-sending the typing signal repeatedly",
+          "a UI-state timer lived in a freezable process — it froze before clearing",
+          "the server cached the typing state beyond its TTL"
+         ],
+         "correct": 2,
+         "explain": "The executed hole, made visible to other people. State that must change while you might be frozen belongs to someone who isn't — the server's timeout, or a clear-before-suspend in the lifecycle callback."
+        }
+       ]
+      ]
+     },
+     "transfer": "Inventory the work app's time-dependent logic: every Timer, asyncAfter, and Date comparison — for each, ask 'what happens if the process freezes right now for six hours?' Then find the upload path and classify it (grace period, background session, or the restart-from-scratch bug), and check whether any BGTaskScheduler registration exists — and whether anything in the product DEPENDS on it running, which this loop says it must not.",
+     "verify": "// executed on this Mac 2026-07-19:\n// compiled ticker (Timer @0.25s on the main runloop), frozen with\n// kill -STOP / -CONT — suspension's own mechanism:\n//   tick 1 at 0.25s · SIGSTOP · [2.0s hole, zero fires] · SIGCONT ·\n//   tick 2 at 2.27s · cadence resumes · TOTAL 11 fires vs ~18 expected\n//   — missed fires never delivered, no catch-up burst (Timer coalescing)\n// documented (device required): the ~30s grace period + watchdog,\n//   BGTaskScheduler grant heuristics, background URLSession's out-of-process\n//   transfers + relaunch delivery, entitlement-gated continuous modes\n// floors: b2-13 (lifecycle states, silent kill), b9-03 (push budget)",
+     "goDeeper": "WWDC 2020 \"Background execution demystified\" — THE talk: every permit, every budget heuristic, from the team that owns the freezer. WWDC 2019 \"Advances in App Background Execution\" for BGTaskScheduler's introduction. Apple's \"Downloading files in the background\" for the URLSession daemon's contract. b2-13 and b6-02 — the lifecycle and durable-queue floors this loop stands on. BLOCK 9 COMPLETE."
+    }
+   ]
+  },
+  {
+   "id": "b10",
+   "name": "Interface Builder and the Storyboard Machine",
+   "tagline": "XML, NSCoder, and strings — what the canvas compiles to",
+   "loops": [
+    {
+     "id": "b10-01",
+     "title": "What a storyboard actually is",
+     "concept": {
+      "definition": "A storyboard is XML that compiles (via ibtool) into a directory of binary nibs plus an index plist; at runtime, loading a scene DECODES those archives with NSCoder — every view is constructed through `init(coder:)`, outlets are wired afterward by KVC using the property names stored in the XML, and `awakeFromNib` fires only when the whole graph is connected. IBOutlet and IBAction are not magic: they are string-keyed runtime wiring, which is why a renamed outlet crashes at load.",
+      "code": "// executed: hand-written XIB → ibtool --compile → loaded in real UIKit:\n// 1. init(coder:) — the decode path (init(frame:) never runs)\n// 2. after super.init(coder:): titleLabel is NIL — outlets wire AFTER init\n// 3. awakeFromNib: titleLabel.text = 'from the nib' — wiring complete\n// 4. label frame (10, 10, 180, 30) — straight from the XML's <rect>\n\n// executed: a compiled storyboard is a FOLDER of nibs + an index:\n// $ ibtool --compile Mini.storyboardc Mini.storyboard && ls\n//   Home.nib   vc1-view-v1.nib   Info.plist\n// Info.plist: UIViewControllerIdentifiersToNibNames = { Home = Home }\n//             UIStoryboardDesignatedEntryPointIdentifier = Home\n\n// executed: rename the outlet in code, leave the XML — load crashes:\n// 'NSUnknownKeyException … setValue:forUndefinedKey: … this class is\n//  not key value coding-compliant for the key headerLabel.'",
+      "underlying": "Follow the pipeline the executed run traversed. At BUILD time, ibtool compiles the XML into binary nib archives — and a storyboard compiles into a DIRECTORY (executed: `Home.nib`, `vc1-view-v1.nib`, `Info.plist`): one nib per scene (plus separate top-level view nibs for lazy loading — b2-03's `loadView` finds its file here), and an index plist mapping storyboard identifiers to nib names with the initial scene marked. That's the entire object: a storyboard is a bag of nibs with a table of contents, and `instantiateViewController(withIdentifier:)` is a dictionary lookup in that plist before a nib load (b10-02's subject).\n\nAt LOAD time, the nib is an NSKeyedUnarchiver session, and the executed transcript is the choreography: every archived object is constructed via `init(coder:)` — which is WHY that initializer exists and why programmatic-only views crash with 'init(coder:) has not been implemented' the moment someone puts them in a storyboard; `init(frame:)` never ran (executed). Immediately after `super.init(coder:)`, outlets were NIL (executed) — decode builds each object BEFORE the graph's cross-references can be connected, so touching outlets in the initializer is the classic day-one crash. Then the runtime walks the stored connections — `<outlet property=\"titleLabel\" destination=\"lb1\"/>` in the hand-written XML — calling `setValue(_:forKey:)` for each: b2-19's machinery, doing exactly what that loop promised. Only when every connection is wired does `awakeFromNib` fire (executed: the label was populated there) — the earliest point where the object is WHOLE, and the right home for nib-time setup.\n\nThe strings are the contract, and both failure modes are now executed facts. Rename the property in code while the XML keeps the old string, and the load crashes with the exact message captured — `setValue:forUndefinedKey:` … 'not key value coding-compliant for the key headerLabel' — b2-19's crash arriving through its real production path, with only nib-loading frames on the stack (the bug lives in DATA). IBAction is the same deal on the method side: `<action selector=\"save:\">` stores a selector string performed via target-action (b2-10) at event time. The design trade is b2-19's late binding: the canvas can wire classes it never compiled against, Interface Builder needs no knowledge of your code beyond names — and every one of those names is a runtime contract the compiler cannot check, which is why Xcode's connection inspector shows warnings for dangling connections, and why storyboard-heavy teams learn to re-check connections after every rename.",
+      "whyItMatters": "The work app is storyboard-first: every screen it shows ran this exact pipeline this morning, and the two crashes this loop executed — outlets-nil-in-init and the stale-connection KVC crash — are the two most common storyboard defects in production. 'Why does init(coder:) exist, and when are outlets actually set?' is an interview pair that instantly reveals whether IB is machinery or magic to someone."
+     },
+     "exercise": {
+      "prompt": "Four incidents against the executed pipeline. (1) A custom view crashes at storyboard load with 'init(coder:) has not been implemented'. (2) A VC reads `nameField.text` inside `init(coder:)` and crashes on nil — 'but the outlet is connected, I checked!'. (3) After a refactor renames `submitButton` to `confirmButton`, the app crashes at scene load with a stack showing only UIKit nib-loading frames. (4) A teammate asks why their storyboard change shows a label's new position in Xcode but the OLD position at runtime — the build log shows ibtool was skipped due to caching. Explain each with the pipeline stage that failed.",
+      "code": "// the executed pipeline:\n//   XML —ibtool→ nib(s)+plist —NSCoder→ init(coder:) → [outlets NIL]\n//   → KVC wiring (setValue:forKey: per <outlet>) → awakeFromNib [whole]\n// executed crash: stale XML string → setValue:forUndefinedKey:",
+      "solution": "(1) The class overrode `init(frame:)` (or added any designated initializer) without implementing `init(coder:)` — Swift then supplies the fatalError stub. Decode can ONLY construct through init(coder:) (executed: init(frame:) never ran), so a storyboard-placed instance hits the stub. Fix: implement init(coder:), or keep the view programmatic-only.\n\n(2) The outlet IS connected — and connection happens AFTER construction. Executed: titleLabel was NIL immediately after super.init(coder:) and populated by awakeFromNib. 'Connected' is a statement about the XML; 'wired' is a moment in time. Move the access to awakeFromNib (or viewDidLoad for a VC's outlets, which fires after ITS decode-and-wire).\n\n(3) The XML still says `submitButton` — the executed stale-string crash verbatim. The refactor renamed the property the KVC write targets; nothing recompiled the storyboard's opinion. The all-UIKit stack is the diagnostic signature (b2-19: the bug lives in data, so no line of yours is executing). Fix: reconnect in IB — and re-check connections after every rename, mechanically.\n\n(4) Stage one of the pipeline simply didn't run: the runtime loads COMPILED nibs, not the XML, so a skipped/cached ibtool step means the device faithfully decoded last build's archive. Clean the build (or touch the storyboard) — and recognize the general form: 'Xcode shows X, runtime shows Y' about a storyboard is almost always a compile-stage question, not a code question.",
+      "explanation": "All four incidents are the same skill: knowing WHICH stage of XML→nib→decode→wire→awake failed. The pipeline has one compile step and three runtime moments, and every storyboard bug you'll ever file names exactly one of them."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what does a storyboard compile to, what happens step by step when a scene loads, and why does renaming an outlet crash the way it does?",
+      "modelAnswer": "ibtool compiles the storyboard's XML into a directory of binary nibs — one per scene, plus separate view nibs for lazy loading — with an Info.plist index mapping storyboard identifiers to nib names. Loading a scene is keyed unarchiving: every object is constructed through init(coder:), which is why that initializer exists; outlets are nil during init because the graph's connections are wired afterward, by KVC setValue(_:forKey:) calls using the property-name strings stored in the XML; awakeFromNib fires last, once the object graph is whole. Renaming an outlet in code leaves the old string in the XML, so the KVC write targets a property that no longer exists and the load throws NSUnknownKeyException — 'not key value coding-compliant' — with a stack of pure nib-loading frames, because the bug lives in the data, not the code. IBAction is the same string contract on the method side, stored as a selector for target-action.",
+      "sets": [
+       [
+        {
+         "q": "The executed ls of a compiled storyboard showed Home.nib, vc1-view-v1.nib, and Info.plist. A storyboard is therefore…",
+         "options": [
+          "a single monolithic archive decoded whole at app launch",
+          "a directory of per-scene nibs plus an identifier-to-nib index plist",
+          "XML that the device parses directly at each scene load",
+          "compiled Swift source code generated directly from the canvas at build time"
+         ],
+         "correct": 1,
+         "explain": "A bag of nibs with a table of contents — instantiateViewController(withIdentifier:) is a plist lookup, and the separate view nib is how b2-03's lazy loadView finds its file. The XML never ships."
+        },
+        {
+         "q": "Inside `init(coder:)`, after calling super, every outlet is nil because…",
+         "options": [
+          "outlets are lazily loaded on first access, like faults",
+          "the decoder deliberately zeroes properties for memory safety",
+          "IBOutlet weak references cannot legally be retained while object initialization is running",
+          "decode constructs objects first; the graph's connections are wired in a later pass"
+         ],
+         "correct": 3,
+         "explain": "Executed: NIL after super.init(coder:), populated by awakeFromNib. Cross-references can't be connected until both ends exist — construction and wiring are separate passes, and 'connected in IB' describes the XML, not the moment."
+        },
+        {
+         "q": "`awakeFromNib`'s guarantee, precisely, is…",
+         "options": [
+          "the object AND its connections are complete — the earliest whole moment",
+          "the view has already been added to its window and has been fully laid out once",
+          "all scenes of the storyboard have finished decoding",
+          "it runs before init(coder:) to prepare default values"
+         ],
+         "correct": 0,
+         "explain": "Executed: the outlet held its text there and nowhere earlier. Layout and window-attachment come later (b2-06's passes) — awakeFromNib is about the GRAPH being wired, nothing more."
+        }
+       ],
+       [
+        {
+         "q": "A crash at scene load: NSUnknownKeyException, stack shows only UIKit nib-loading frames. The near-certain cause?",
+         "options": [
+          "the storyboard file is corrupted and needs re-saving in Xcode",
+          "a connection's property-name string no longer matches any code — a rename without reconnecting",
+          "two outlets accidentally point at the same destination view",
+          "the custom class's module setting is quietly misconfigured in the storyboard's identity inspector panel"
+         ],
+         "correct": 1,
+         "explain": "The executed crash: KVC replayed 'headerLabel' from XML against a class that renamed it. No frame of yours appears because the bug is data (b2-19's signature). Wrong-module errors fail differently — the class silently decodes as its superclass."
+        },
+        {
+         "q": "A programmatic-only UIView subclass gets dropped into a storyboard and crashes with 'init(coder:) has not been implemented'. Why does that stub exist at all?",
+         "options": [
+          "Swift requires it whenever any UIKit class is subclassed",
+          "the storyboard compiler automatically injects the stub for any class not designed for Interface Builder",
+          "defining another initializer suppresses inherited ones — decode's only door needs an answer",
+          "it guards against outlets being accessed before wiring"
+         ],
+         "correct": 2,
+         "explain": "Executed: decode constructs ONLY through init(coder:). Adding init(frame:) suppressed inheritance of the required initializer, so Swift demands a decision — and the default decision is 'this class doesn't do nibs', enforced at load."
+        },
+        {
+         "q": "IBAction connections survive compilation as…",
+         "options": [
+          "raw function pointers resolved directly by the static linker at build time",
+          "closures serialized into the nib archive",
+          "protocol witness-table entries on the target class",
+          "selector strings, performed via target-action when the control fires"
+         ],
+         "correct": 3,
+         "explain": "The method-side twin of outlet strings: `<action selector=\"save:\">` stores a name, b2-10's target-action performs it at event time. Same late binding, same rename fragility, same runtime-contract nature."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open one of the work app's storyboards as source (Open As → Source Code) and read a scene end-to-end: find its <viewController>, its <outlet> and <action> connections, and its storyboardIdentifier. Then find the compiled counterpart: build the app, locate the .storyboardc in the derived-data products folder, and ls it — match the nib files to the scenes you read. Twenty minutes, and the canvas is machinery forever.",
+     "verify": "// executed on this Mac 2026-07-19 (hand-written XML + ibtool + Catalyst):\n// XIB with <outlet property=\"titleLabel\" destination=\"lb1\"/> compiled and\n// loaded via UINib — transcript in order:\n//   init(coder:) ran (init(frame:) never did) · titleLabel NIL after\n//   super.init · awakeFromNib saw 'from the nib' · frame from XML <rect>\n// stale-string crash (property renamed in code, XML untouched):\n//   NSUnknownKeyException … setValue:forUndefinedKey: … not key value\n//   coding-compliant for the key headerLabel — the REAL nib path\n// storyboard compile: ibtool → directory {Home.nib, vc1-view-v1.nib,\n//   Info.plist} with UIViewControllerIdentifiersToNibNames + designated\n//   entry point — a storyboard is nibs plus an index, executed\n// documented: NSKeyedUnarchiver internals, connection-inspector warnings",
+     "goDeeper": "Apple's archived \"Resource Programming Guide: Nib Files\" — old, and still the only complete telling of the load sequence. b2-19 — the KVC machinery this loop watched fire through its real path. b2-03 for where the lazily-loaded view nib plugs in; b2-10 for target-action's half of the string contract. Next: b10-02 — segues versus instantiateViewController, now legible as plist lookups and nib loads."
+    },
+    {
+     "id": "b10-02",
+     "title": "Segues vs manual instantiation",
+     "concept": {
+      "definition": "Both navigation styles are the same machinery with different drivers: `instantiateViewController(withIdentifier:)` is a lookup in the storyboardc's index plist followed by a nib decode — a factory returning a FRESH instance each call, view still unloaded — while a segue is that same instantiation triggered by the storyboard's own wiring, with `prepare(for:sender:)` as your one injection point, called AFTER the destination exists but BEFORE presentation. Centralizing navigation in a Router is choosing which strings live where: all identifiers in one tested object instead of scattered through view controllers.",
+      "code": "// executed against the hand-compiled two-scene storyboard:\nlet sb = UIStoryboard(name: \"Mini2\", bundle: bundle)\nlet home = sb.instantiateInitialViewController()!   // plist entry point\n// isViewLoaded: false        ← b2-03's lazy view, live\n_ = home.view                 // first touch →\n//   HomeVC.viewDidLoad — the view just materialized · isViewLoaded: true\n\nsb.instantiateViewController(withIdentifier: \"Detail\")  // fresh DetailVC\n// a fresh instance every call: true — a factory, not a registry\n\nhome.performSegue(withIdentifier: \"toDetail\", sender: nil)\n// prepare(for: 'toDetail') — destination ALREADY exists: DetailVC\n\nsb.instantiateViewController(withIdentifier: \"Hoem\")    // typo — executed:\n// 'Storyboard … doesn't contain a view controller with identifier Hoem'",
+      "underlying": "Manual instantiation, demystified by b10-01's executed artifacts: the identifier you pass is a key in the storyboardc's `UIViewControllerIdentifiersToNibNames` plist (we read it), the lookup selects a scene nib, and the decode pipeline runs — executed: the returned HomeVC reported `isViewLoaded == false`, because the VC nib and its VIEW nib are separate files (b10-01's directory listing), and the view decodes only at first `.view` touch, firing `viewDidLoad` right there (executed, b2-03's lazy contract observed through the storyboard door). Each call decodes a FRESH archive instance (executed: two 'Detail' instantiations were distinct objects) — storyboards are factories, and any 'shared screen' behavior is state you add. The failure mode is b10-01's stringly contract at a new address: a typo'd identifier crashed with the executed verbatim message, at RUNTIME, at the moment of navigation — the compiler had no opinion.\n\nSegues are the storyboard driving that same factory. The XML we wrote — `<segue destination=\"vc2\" kind=\"show\" identifier=\"toDetail\"/>` — compiles into the scene, and `performSegue` (or a canvas-wired control tap) runs the sequence the executed transcript pinned down: the DESTINATION IS INSTANTIATED FIRST, then `prepare(for:sender:)` runs with the live destination in hand (executed: `type(of: segue.destination)` printed DetailVC inside prepare), then presentation proceeds (the `kind` — show, present, custom — decides how; headless, presentation no-ops, which is itself a clean separation proof). `prepare` is therefore exactly one thing: the dependency-injection window — cast `segue.destination`, hand it its inputs, done. Its weakness is structural: one `prepare` method receives EVERY segue leaving that scene, so it grows into a switch over identifier strings, each branch force-casting — the stringly contract now multiplied by fan-out.\n\nThe Router is the answer to 'where should these strings live'. Both navigation styles bottom out in strings the compiler can't check (identifiers) plus casts the runtime must survive — so concentrate them: one object owning every identifier, exposing typed methods (`showDetail(for order: Order)`) that internally instantiate, inject, and present. View controllers then navigate by intent, not by string; the Router is unit-testable (b9-04's executed pure-router is its little sibling); and MA-2319-style runtime UI rebuilds (b10-07 ahead) get one choke point instead of forty `performSegue` call sites. Segue-heavy and router-heavy codebases are both legitimate — the difference is whether the strings are load-bearing everywhere or quarantined in one tested file.",
+      "whyItMatters": "The work app navigates both ways — canvas segues and coded pushes — and every 'crashed tapping the button' navigation bug is one of this loop's two executed crashes or the prepare-cast failing. 'When would you use a segue versus instantiating manually?' is a storyboard-shop interview standard, and 'where do your identifier strings live?' is the senior follow-up."
+     },
+     "exercise": {
+      "prompt": "Judge four navigation designs. (1) `prepare(for:)` in an 8-segue scene: a 60-line switch on `segue.identifier` with a force-cast per branch — list the failure modes this concentrates. (2) A teammate stores an instantiated 'Detail' VC in a static var to 'avoid re-creating it' — use the executed fresh-instance fact to predict the bugs. (3) Design the Router method for 'show order detail needing an Order' and state what it absorbs. (4) A tap crashes with 'doesn't contain a view controller with identifier' — but only in the German build. What class of mistake produces a LOCALE-dependent identifier crash?",
+      "code": "// executed reference:\n//   instantiateViewController: plist lookup + fresh decode per call\n//   prepare(for:): destination already instantiated — the injection window\n//   typo'd identifier: runtime crash, verbatim message captured\n//   isViewLoaded false at instantiation — view decodes on first touch",
+      "solution": "(1) Three stacked hazards: identifier typos caught only at runtime (the executed crash's cousin — a misspelled case silently never matches, so the destination goes UNCONFIGURED instead of crashing, which is worse); force-casts that detonate when a storyboard edit changes a destination's class; and the fan-out itself — every new segue grows the switch, and nothing but discipline keeps branch and storyboard in sync. This is the pattern the Router quarantines.\n\n(2) The executed fact: every instantiation is a fresh decode — so caching one instance means (a) state accumulates across visits (scroll position, stale data, retained observers), (b) presenting it twice crashes ('already presenting' / view in two hierarchies), and (c) its lazy view, once loaded, never re-runs viewDidLoad for 'fresh screen' expectations. Storyboards are factories BECAUSE screens are cheap; fighting that is manufacturing b2-03-shaped bugs.\n\n(3) `func showOrderDetail(_ order: Order, from presenter: UIViewController)` — internally: instantiate by identifier (the string lives HERE, once), cast once, inject `order`, choose presentation. It absorbs: the identifier string, the cast, the injection, and the presentation style — leaving call sites typed and the whole thing testable with a fake presenter (b5-03's seam).\n\n(4) The identifier string was localized by accident — built from user-facing text, or the storyboard duplicated per-language (an old localization style, b10-06 ahead) with identifiers drifting between copies. Identifiers are CODE, not content: they must be locale-invariant constants — another argument for the Router, where one constants file feeds every language's build.",
+      "explanation": "The meta-lesson across all four: storyboard navigation's costs are never in the happy path — they're in the strings and casts that only fail at runtime, in specific flows, on specific builds. Engineering storyboard navigation IS the discipline of putting those failure points where tests can reach them."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what actually happens in instantiateViewController(withIdentifier:), what is prepare(for:sender:)'s exact contract, and what problem does a Router solve?",
+      "modelAnswer": "instantiateViewController looks the identifier up in the compiled storyboard's index plist, picks the scene's nib, and runs the decode pipeline — returning a fresh instance every call whose view is still unloaded until first access, when viewDidLoad fires. prepare(for:sender:) runs after the segue's destination has been instantiated but before presentation — it is precisely the dependency-injection window: cast the destination, hand it its inputs; its weakness is that one method receives every segue from the scene, growing a stringly switch with force-casts. A Router solves the 'where do the strings live' problem: both styles bottom out in runtime-checked identifiers, so it concentrates them in one object exposing typed intent methods that instantiate, inject, and present — making navigation testable and giving runtime UI rebuilds a single choke point. A wrong identifier is a runtime crash either way; the Router just makes it one tested line instead of forty scattered ones.",
+      "sets": [
+       [
+        {
+         "q": "Executed: `instantiateViewController(withIdentifier: \"Detail\")` twice returned distinct objects. The API is therefore…",
+         "options": [
+          "a cache that was cold on the second call in this test",
+          "a registry that clones its prototype scene on demand",
+          "a factory — every call decodes a fresh instance from the scene's nib",
+          "reference-counted: decoded instances are shared until they finally deallocate"
+         ],
+         "correct": 2,
+         "explain": "Fresh decode per call, view unloaded (isViewLoaded false, executed). 'Shared screen' semantics are state YOU add — and caching an instance manufactures already-presenting and stale-state bugs."
+        },
+        {
+         "q": "When `prepare(for:sender:)` runs, the destination view controller is…",
+         "options": [
+          "already instantiated — this is the injection window before presentation",
+          "not yet created; you configure it via the segue's pending-info dictionary",
+          "created with its view loaded and laid out, ready to display",
+          "the previous instance, about to be replaced by a fresh one"
+         ],
+         "correct": 0,
+         "explain": "Executed: type(of: segue.destination) printed DetailVC inside prepare, headless, before any presentation. Cast it, inject dependencies, return — that's the whole contract (its view is still lazy, b2-03)."
+        },
+        {
+         "q": "Right after instantiation, the executed VC reported isViewLoaded == false because…",
+         "options": [
+          "the storyboard bundle hadn't finished loading its resources",
+          "instantiation only reserves the identifier; the actual decode happens at presentation time",
+          "Catalyst defers view loading in command-line processes",
+          "the VC and its view are separate nibs — the view decodes at first .view access"
+         ],
+         "correct": 3,
+         "explain": "b10-01's directory listing showed the split (vc1-view-v1.nib); this loop watched viewDidLoad fire exactly at the first touch. b2-03's lazy contract, observed through the storyboard door."
+        }
+       ],
+       [
+        {
+         "q": "An 8-segue scene's prepare() is a 60-line identifier switch with force-casts. The subtlest failure it hides?",
+         "options": [
+          "the switch's length slows every segue measurably",
+          "a misspelled case never matches — the destination presents UNCONFIGURED, no crash",
+          "force-casts break when the app is built for release",
+          "multiple distinct segues cannot ever safely share a single prepare method implementation"
+         ],
+         "correct": 1,
+         "explain": "The crash (executed) is the KIND failure mode; the silent one is worse — a string mismatch means the injection branch simply doesn't run, and the screen appears empty three taps later. Quarantine the strings."
+        },
+        {
+         "q": "A Router's core move is…",
+         "options": [
+          "replacing storyboards with programmatic view construction",
+          "wrapping performSegue so segues become async/await calls",
+          "typed intent methods owning the identifiers, casts, injection, and presentation",
+          "registering every view controller instance in a global dictionary at app launch time"
+         ],
+         "correct": 2,
+         "explain": "Not an anti-storyboard stance — a strings-quarantine: showOrderDetail(order) reads as intent, the runtime-checked machinery lives in one file with tests (b5-03's seams), and rebuild-the-UI flows get one choke point."
+        },
+        {
+         "q": "The executed identifier crash ('doesn't contain a view controller…') fires at…",
+         "options": [
+          "build time, when ibtool validates identifier references",
+          "the navigation moment, at runtime — the compiler never saw the string",
+          "app launch, when the storyboard index plist is loaded",
+          "archive time, during App Store Connect's validation of the compiled storyboardc"
+         ],
+         "correct": 1,
+         "explain": "Executed: the process ran happily until the lookup. Identifiers live in a plist the compiler doesn't read — which is the entire argument for constants + a Router + one test that instantiates every route."
+        }
+       ]
+      ]
+     },
+     "transfer": "Count the work app's navigation styles: grep for performSegue and instantiateViewController — how many distinct identifier strings exist, and how many places hold them? Find the longest prepare(for:) and check it for the silent-mismatch case (a branch that can't fire). If a Router exists, verify it owns ALL the strings; if not, write the one test this loop implies — iterate every identifier constant and instantiate it, so a renamed scene fails in CI instead of in a user's hand.",
+     "verify": "// executed on this Mac 2026-07-19 (hand-written 2-scene storyboard + segue\n// in XML → ibtool → real bundle → Catalyst):\n// instantiateInitialViewController → HomeVC (plist designated entry point)\n// isViewLoaded false → first .view touch → viewDidLoad fired → true\n// instantiateViewController(withIdentifier:) × 2 → distinct instances\n// performSegue('toDetail') → prepare(for:) ran with destination ALREADY\n//   instantiated (DetailVC) — before any presentation, headless\n// typo'd identifier → NSInvalidArgumentException: \"Storyboard … doesn't\n//   contain a view controller with identifier 'Hoem'\" — verbatim\n// documented: segue kinds' presentation behavior (show/present/custom),\n//   canvas-wired segues from controls, unwind segues",
+     "goDeeper": "Apple's \"Using segues\" documentation — the kinds and the unwind mechanism this loop skipped. b10-01 for the plist + nib machinery both styles drive; b9-04's executed pure router — the same quarantine pattern for notification routes; b5-03 for the testing seams a Router creates. Next: b10-03 — XIBs and reusable views, the same decode machinery scoped to single views."
+    },
+    {
+     "id": "b10-03",
+     "title": "XIBs and reusable views: the File's Owner dance",
+     "concept": {
+      "definition": "A XIB is a single-view nib, and File's Owner is its key trick: a PLACEHOLDER that stands for whatever object you pass as `owner` at load time — outlets defined on the owner wire onto that object rather than onto anything inside the archive. That's what lets a custom view placed in a storyboard load its own XIB mid-decode and adopt its contents; and wiring it wrong — making the XIB's root view the same custom class — is the classic infinite-recursion crash, because loading the nib constructs the class whose init loads the nib.",
+      "code": "// executed — the nib-in-nib dance, storyboard to XIB:\n// 1. CompositeCard.init(coder:) — constructed BY the outer (storyboard) decode\n// 2. inner XIB loaded with self as OWNER → titleLabel: 'from card2 xib'\n// 3. contentView installed — the card now owns its XIB's tree\n// 4. storyboard-placed card label reads: from card2 xib\n\nrequired init?(coder: NSCoder) {\n    super.init(coder: coder)                      // the storyboard's decode\n    let nib = UINib(nibName: \"Card2\", bundle: nil)\n    nib.instantiate(withOwner: self)              // MY outlets get wired\n    contentView.frame = bounds\n    addSubview(contentView)\n}\n\n// executed — the wrong wiring (XIB root = the class itself):\n// RecursiveCard.init(coder:) #1 · #2 · #3 · #4 · …and so on, forever…",
+      "underlying": "File's Owner is a hole in the archive, filled at load time. In the executed Card2 XIB, the root view is a PLAIN UIView and the owner placeholder carries the custom class — with outlets (`contentView`, `titleLabel`) declared FROM the placeholder TO objects inside. At `instantiate(withOwner: self)`, the decode runs b10-01's pipeline for everything in the archive, and then the wiring pass resolves owner-outlets against the object YOU passed — executed: the CompositeCard instance's `titleLabel` came back populated from a label it doesn't contain in its own class definition anywhere. Same KVC machinery (b2-19), different target: the archive describes a tree plus a contract ('my owner will have these properties'), and any object honoring the contract can adopt the tree. That's what 'reusable' means mechanically — table cells, form rows, and cards all load one XIB into many owners.\n\nThe dance exists because of a storyboard limitation: storyboards cannot embed the CONTENTS of a XIB (no nib-references for views), only a class name on a placeholder view. So the executed two-level decode is the standard bridge: the storyboard's decode constructs your CompositeCard shell via `init(coder:)` (step 1, executed), and the shell immediately loads its own XIB with `owner: self` (step 2 — its outlets wire), then installs the XIB's root as `contentView` filling its bounds (step 3). One subtlety worth naming: the shell view and the content view are BOTH in the hierarchy — the storyboard-placed view is a container whose visual tree came from elsewhere, which is why background color set on the storyboard view vanishes behind the content, and why the pattern pairs with `@IBDesignable` when you want the canvas to render it (documented — requires the dance to also run for `init(frame:)`).\n\nThe executed recursion is what happens when the two roles collapse into one. Set the XIB's ROOT VIEW to the custom class (instead of using File's Owner) while init(coder:) loads that XIB: decode constructs a RecursiveCard → its init loads the nib → the nib's root is a RecursiveCard → decode constructs another → executed: the depth counter climbed #1, #2, #3, #4, unbounded — on a device this dies as a stack overflow with a screenful of identical frames, the diagnostic signature. The two correct configurations, side by side: root-view-as-class works when the XIB is loaded EXPLICITLY and the class doesn't self-load (b10-01's CardView — loaded from outside); File's-Owner-as-class is mandatory the moment the class loads its own nib. Confusing them is this crash; knowing which you're in is the entire skill.",
+      "whyItMatters": "Every reusable styled view in the work app's storyboard-first codebase runs this dance — and the recursion crash is the rite of passage every storyboard team has shipped once. 'How does a custom view load its own XIB, and why does File's Owner exist?' is an interview pair that cleanly separates people who've built reusable views from people who've copy-pasted the snippet."
+     },
+     "exercise": {
+      "prompt": "Four incidents in the reusable-view mill. (1) A new card view: XIB root set to `PromoCard`, and `PromoCard.init(coder:)` calls `loadNibNamed(\"PromoCard\", owner: self)` — predict the launch, with the executed transcript's shape. (2) Same XIB, but root changed to plain UIView with File's Owner = PromoCard — the app runs, yet every outlet is nil. The connections were never moved. Explain. (3) The card renders in the app but shows as a blank rectangle in the storyboard canvas. Is that a bug? (4) The card's storyboard-set backgroundColor never appears at runtime. Why, mechanically?",
+      "code": "// executed reference:\n//   File's Owner = a load-time placeholder; owner-outlets wire onto\n//   the passed object (titleLabel arrived from a tree the class\n//   doesn't declare)\n//   root-view-as-class + self-loading = init #1, #2, #3, #4, … forever\n//   the shell view CONTAINS the XIB's root as contentView",
+      "solution": "(1) The executed death spiral: decode constructs PromoCard, init loads the nib, whose root constructs another PromoCard, whose init loads the nib… #1, #2, #3, #4 — stack overflow at launch of the first screen containing the card, with hundreds of identical init(coder:) frames as the signature. Root-as-class and self-loading are mutually exclusive.\n\n(2) The connections still originate from the ROOT VIEW object (which is now a plain UIView with no such properties — or worse, they were dropped when the class was cleared). Re-creating the outlets FROM File's Owner is a separate manual step — IB connections belong to a specific source object, and changing which object plays the class role doesn't migrate them. Symptom: clean launch (the plain root has nothing to mis-wire), nil outlets, first force-unwrap crash later — quieter and therefore worse than (1).\n\n(3) Expected, not a bug: the canvas renders the storyboard's own archive, and the storyboard only contains the SHELL — a class-named placeholder view. The XIB's tree arrives at RUNTIME via the dance. If canvas rendering matters, @IBDesignable + running the load in init(frame:) too lets IB execute the dance in the canvas process (documented).\n\n(4) The executed hierarchy: the shell view holds the XIB's root as a full-bounds contentView subview (step 3) — the shell's background is painted, then entirely covered by the content view's own (usually opaque) background. Fix: set the color on the content view, or make it clear and let the shell show through — once the two-view sandwich is visible in your head, it's a one-line decision.",
+      "explanation": "All four incidents come from one fact: the storyboard-placed view and the XIB's tree are DIFFERENT objects glued at load time. The recursion is the glue applied to itself; the nil outlets are connections pointing at the wrong glue end; the blank canvas and hidden background are the seam showing. Reusable views are easy once you can see the sandwich."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what is File's Owner, walk the nib-in-nib dance for a storyboard-placed custom view, and explain the infinite-recursion misconfiguration.",
+      "modelAnswer": "File's Owner is a placeholder in the archive that stands for whatever object is passed as owner at load time — outlets declared on it wire onto that object during the wiring pass, so one XIB's tree can be adopted by any object honoring its outlet contract. A storyboard can only hold a class-named shell view, so the dance bridges: the storyboard's decode constructs the custom view through init(coder:), which loads its own XIB with owner: self — wiring its outlets to the XIB's contents — and installs the XIB's root view as a full-bounds contentView subview. The recursion bug is collapsing the two roles: if the XIB's root view is set to the same custom class that self-loads the nib, decoding the nib constructs the class whose init decodes the nib — an unbounded loop that dies as a stack overflow with identical frames. Root-as-class is only valid for XIBs loaded from outside; self-loading views must use the File's Owner pattern.",
+      "sets": [
+       [
+        {
+         "q": "At `instantiate(withOwner: self)`, outlets declared on File's Owner are wired onto…",
+         "options": [
+          "the XIB's root view, which forwards them to the owner",
+          "a hidden proxy object that the runtime keeps alive for the archive's whole lifetime",
+          "nothing — owner outlets require a storyboard, not a XIB",
+          "the exact object passed as owner — the placeholder is a hole you fill at load"
+         ],
+         "correct": 3,
+         "explain": "Executed: the card's titleLabel arrived populated from a tree its class never declared — KVC (b2-19) targeting the passed owner. The archive ships a contract; any owner honoring it adopts the tree."
+        },
+        {
+         "q": "Why does the nib-in-nib dance exist at all?",
+         "options": [
+          "XIB decoding runs measurably faster when it is triggered from inside init(coder:) during a decode",
+          "storyboards can hold only a class-named shell view — a XIB's contents can't be embedded directly",
+          "UIKit requires reusable views to own their archives exclusively",
+          "File's Owner outlets only resolve during a second-level decode"
+         ],
+         "correct": 1,
+         "explain": "No nib-references for views: the canvas stores a placeholder with a class name, and the class fetches its own tree at decode time — the executed two-level transcript is the bridge in motion."
+        },
+        {
+         "q": "The executed recursion (init #1, #2, #3, #4, …) requires exactly which pair of facts?",
+         "options": [
+          "the XIB lacks a File's Owner placeholder, and the class is @objc",
+          "the storyboard scene and the XIB file both happen to contain the very same custom class name string",
+          "the XIB's root view IS the custom class, and that class self-loads the XIB in init(coder:)",
+          "instantiate(withOwner:) was called with a nil owner argument"
+         ],
+         "correct": 2,
+         "explain": "Decode constructs the class → init loads the nib → the nib's root constructs the class → ∞. Either fact alone is a valid pattern; together they're the launch crash with a screenful of identical frames."
+        }
+       ],
+       [
+        {
+         "q": "After converting a XIB from root-as-class to the File's Owner pattern, all outlets are nil at runtime. The mechanism?",
+         "options": [
+          "connections belong to a source object — they must be re-created FROM File's Owner, not inherited",
+          "the owner object was deallocated before the wiring pass ran",
+          "File's Owner outlets only wire when the XIB is in a storyboard",
+          "nil outlets always mean the compiled nib is stale — built before the class change ever landed in the file"
+         ],
+         "correct": 0,
+         "explain": "The old connections originated from the root view object; changing which object plays the class role migrates nothing. Quieter than the recursion — clean launch, then the first force-unwrap — and therefore shipped more often."
+        },
+        {
+         "q": "The reusable card renders at runtime but shows blank in the storyboard canvas. The accurate reading?",
+         "options": [
+          "the storyboard cache is stale and needs a clean build",
+          "expected — the canvas renders only the shell; the XIB's tree arrives at runtime",
+          "the card's XIB failed to compile into the storyboardc",
+          "canvas rendering requires the XIB and the storyboard to be members of the same module"
+         ],
+         "correct": 1,
+         "explain": "The storyboard's archive contains a class-named placeholder, nothing more. @IBDesignable lets IB's agent execute your load code for the canvas — the documented opt-in, requiring the dance in init(frame:) too."
+        },
+        {
+         "q": "The card's storyboard-set background color never shows at runtime because…",
+         "options": [
+          "the storyboard's appearance attributes simply do not survive the ibtool compilation step at build time",
+          "init(coder:) resets backgroundColor before the wiring pass",
+          "the shell's background is painted, then covered by the full-bounds contentView from the XIB",
+          "backgroundColor on custom classes requires @IBInspectable"
+         ],
+         "correct": 2,
+         "explain": "The executed sandwich: shell view + adopted contentView stacked. The attribute applied fine — it's simply behind an opaque subview. Seeing the two-object structure turns the mystery into a one-line fix."
+        }
+       ]
+      ]
+     },
+     "transfer": "Find one reusable XIB-backed view in the work app and audit its wiring: is the custom class on File's Owner or the root view — and does that match whether it self-loads? Trace its init paths: does init(frame:) also run the dance (programmatic creation), or only init(coder:)? Then check one card for the background-sandwich bug by giving the shell a loud color in the storyboard and noting whether it ever appears.",
+     "verify": "// executed on this Mac 2026-07-19 (hand-written XIBs + storyboard → ibtool\n// → Catalyst):\n// File's Owner pattern: Card2.xib root = plain UIView, owner placeholder\n//   customClass=CompositeCard with outlets contentView/titleLabel →\n//   instantiate(withOwner: self) wired the OWNER: titleLabel 'from card2 xib'\n// full dance from a storyboard-placed CompositeCard shell:\n//   outer decode → init(coder:) → inner XIB load → outlets wired →\n//   contentView installed → storyboard card reads the XIB's label\n// recursion misconfiguration (Recursive.xib root = RecursiveCard, class\n//   self-loads): depth counter climbed #1 #2 #3 #4 '…and so on, forever…' —\n//   unbounded; on device this terminates as a stack overflow (documented)\n// documented: @IBDesignable canvas rendering, table/collection cell\n//   register(UINib:) as the same machinery with a dequeue pool",
+     "goDeeper": "Apple's archived nib guide, the File's Owner section — still the canonical description of the placeholder contract. b10-01 for the decode pipeline both levels run; b2-19 for the KVC wiring that targets the owner. UITableView.register(UINib:forCellReuseIdentifier:) documentation — the same pattern industrialized by b2-11's reuse pool. Next: b10-04 — storyboards at scale, and why Main.storyboard dies in a team."
+    },
+    {
+     "id": "b10-04",
+     "title": "Storyboards at scale: the merge-conflict machine",
+     "concept": {
+      "definition": "A storyboard is one machine-generated XML file, so its team-scale failure mode is structural: two people editing the same file conflict in markup neither wrote — and even NON-overlapping edits collide, because Xcode rewrites document-level metadata on every save. The disciplines that keep a storyboard estate alive: one storyboard per feature, storyboard references as the boundaries between them, and every identifier quarantined behind b10-02's Router.",
+      "code": "// executed — two branches, two edits that never touch the same element:\n//   branch A: resized a scene's view rect\n//   branch B: added a subview to a DIFFERENT element\n// git merge-file → exit 1, conflict markers:\n//\n// <<<<<<< merged.storyboard\n// <document … toolsVersion=\"22155\" … >\n// =======\n// <document … toolsVersion=\"22203\" … >\n// >>>>>>> branchB.storyboard\n//\n// the collision is in MACHINE-WRITTEN metadata: both Xcodes stamped\n// the <document> line on save. Nobody edited it; everybody merges it.",
+      "underlying": "The executed conflict is the whole diagnosis. Neither branch touched the other's elements, yet the merge failed — on `toolsVersion`, a line no human wrote, stamped by both editors as a save side-effect (and real Xcode goes further: reflowing rects after layout passes, reordering attributes, updating plugin versions — every save is a rewrite, every rewrite a conflict surface). Resolving means hand-editing generated markup, and the failure mode of a BAD resolution is vicious: XML that still compiles but carries a dangling `destination` id or a dropped `<connections>` block — which surfaces not at build time but as b10-01's KVC crash or b10-02's identifier crash, at runtime, in whatever flow the broken scene serves. Textual merges of generated artifacts produce semantic corruption with a green build.\n\nThe cure is ownership, encoded in files. One storyboard per FEATURE (checkout, onboarding, order-detail) makes the conflict-generating event 'two people editing one feature simultaneously' — rare by the same org design that already assigns features. Storyboard references are the seams: a `<viewControllerPlaceholder storyboardName=\"Checkout\" referencedIdentifier=\"…\">` lets a segue in one file target a scene in another, resolved at runtime through exactly the plist-lookup machinery b10-01 executed. And splitting costs NOTHING at runtime — the compiled artifact was per-scene nibs all along (executed: the storyboardc directory), so one 40-scene file and eight 5-scene files produce the same loadable pieces; the monolith's cost is purely a team cost, paid in merges.\n\nWhat stays hard even with discipline: identifiers multiply across files (the Router becomes the registry, and b10-02's instantiate-every-route CI test becomes non-negotiable); reviewing storyboard diffs is a real skill — read the SEMANTIC lines (connections, classes, ids, new elements) and learn to ignore rect churn, or configure diff tools to collapse it; and the honest ceiling: teams at sufficient scale stop ADDING storyboard surface (new screens in code or SwiftUI) while running the existing estate well — which is a migration posture, not a failure. The skill this loop teaches is running the estate: boundaries, quarantined strings, and merges treated as the dangerous operation they demonstrably are.",
+      "whyItMatters": "The work app is a storyboard-first team codebase — this loop is its Tuesday. The executed conflict explains every 'I just moved a button and now the PR has 40 XML changes' review, and 'how do you scale storyboards across a team?' is THE interview question for storyboard-shop seniority."
+     },
+     "exercise": {
+      "prompt": "Four scale incidents. (1) Resolve the executed conflict CORRECTLY: state what you keep from each side and why the resolution is safe. (2) A storyboard merge 'succeeded' last sprint; this week QA hits 'Storyboard doesn't contain a view controller with identifier' in one flow — connect the two events. (3) Plan the split of a 40-scene Main.storyboard serving 8 features: name the steps and what each protects. (4) A teammate's one-line change produced a 300-line storyboard diff; propose the review policy.",
+      "code": "// executed reference:\n//   non-overlapping edits → conflict on machine-stamped toolsVersion\n//   compiled storyboard = per-scene nibs + index plist (b10-01) —\n//     splitting is free at runtime\n//   bad hand-merge → compiles fine, crashes at runtime (stringly layer)",
+      "solution": "(1) Keep BOTH semantic edits (A's rect change, B's added subview — they're independent elements) and pick EITHER toolsVersion (it's an editor stamp, not semantics; the next save rewrites it anyway). The resolution is safe because you can enumerate what each hunk MEANS — which is exactly the skill; a resolver who can't read storyboard XML merges blind, and that's how (2) happens.\n\n(2) The merge dropped or duplicated a semantic line — a scene's identifier, a segue's destination — while keeping the file well-formed. ibtool compiled it happily; the plist index just lacks an entry (or a connection dangles). The crash waited for the first navigation into that flow: b10-02's executed identifier crash, three weeks from its cause. Moral: storyboard merges get runtime verification — the instantiate-every-identifier CI test — because the compiler verifies nothing here.\n\n(3) Steps: (a) create one storyboard per feature, MOVING scenes (Xcode refactors references) — each file gains an owner; (b) replace cross-feature segues with storyboard references — the seams; (c) centralize every storyboardIdentifier as constants in the Router — the strings get one home; (d) add the CI test iterating those constants; (e) keep Main.storyboard as only the entry scene. Each step converts a merge surface into an ownership boundary.\n\n(4) Two-part policy: semantic-line review (connections, ids, classes, added/removed elements MUST be read and understood — they're the runtime contract) and churn tolerance (rect/version noise acknowledged, not fought — or auto-collapsed by diff config). Plus the standing rule the executed conflict justifies: storyboard files get short-lived branches and fast merges, because every day unmerged is another save-stamp collision waiting.",
+      "explanation": "The through-line: a storyboard diff has two layers — machine churn and semantic contract — and every scale practice (splitting, references, review policy, CI tests) is a way of shrinking the churn layer and moving the contract layer somewhere the compiler or a test can see it."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: why do storyboards conflict even when editors touch different scenes, why are bad merges so dangerous specifically, and what practices keep a multi-developer storyboard codebase healthy?",
+      "modelAnswer": "Storyboards are single machine-generated XML files, and Xcode rewrites document metadata, rects, and ordering on every save — so two branches conflict on stamped lines like toolsVersion even when their edits never touch the same element, which the executed merge demonstrated. Bad merges are dangerous because the failure is semantic-but-compilable: a dropped connection or dangling identifier builds green and crashes at runtime in the stringly layer, weeks later, in one flow. The practices: one storyboard per feature so ownership boundaries match edit patterns; storyboard references as the cross-feature seams, resolved through the same nib-and-plist machinery; identifiers quarantined into a Router with a CI test that instantiates every route; and diff review that reads semantic lines while tolerating rect churn. Splitting is free at runtime — the compiled form was per-scene nibs all along.",
+      "sets": [
+       [
+        {
+         "q": "The executed conflict occurred although the branches edited different elements. The colliding line was…",
+         "options": [
+          "the scene's rect, reflowed identically by both branches",
+          "the document's toolsVersion — an editor stamp both saves rewrote",
+          "the initialViewController attribute, changed by the merge itself",
+          "a duplicated subview id that git could not disambiguate"
+         ],
+         "correct": 1,
+         "explain": "Nobody edited it; both Xcodes stamped it. Machine-rewritten metadata makes the whole file a conflict surface — the structural reason storyboard team pain is about the FILE, not the scenes."
+        },
+        {
+         "q": "Why is a botched storyboard merge worse than a botched code merge?",
+         "options": [
+          "storyboard XML files cannot ever be re-merged once the conflict markers have been removed",
+          "ibtool errors are harder to read than compiler errors",
+          "it can stay well-formed and compile — surfacing as a runtime stringly crash weeks later",
+          "git treats XML as binary and loses one side's changes entirely"
+         ],
+         "correct": 2,
+         "explain": "The contract lives in ids and connections the compiler never checks (b10-01/02's executed crashes are the surfacing points). A code merge that drops a line usually fails the build; a storyboard merge fails a USER."
+        },
+        {
+         "q": "Splitting one 40-scene storyboard into eight feature files changes runtime cost by…",
+         "options": [
+          "nothing — the compiled form was per-scene nibs plus an index either way",
+          "adding one bundle load per storyboard reference crossed",
+          "measurably slowing cold launch, since eight separate index plists must be parsed",
+          "reducing memory, because fewer scenes decode at launch"
+         ],
+         "correct": 0,
+         "explain": "b10-01's executed directory listing is the proof: scenes were already separate nibs. Scenes decode on demand in both layouts — the monolith's cost is merges, so the split is free where it matters."
+        }
+       ],
+       [
+        {
+         "q": "A storyboard reference (`viewControllerPlaceholder`) resolves its target…",
+         "options": [
+          "at ibtool time, by inlining the referenced scene's nib",
+          "at app launch, when every storyboard index plist in the bundle is eagerly pre-loaded",
+          "never automatically — code must instantiate the target manually",
+          "at runtime, via the target storyboard's index plist — b10-01's lookup, across files"
+         ],
+         "correct": 3,
+         "explain": "The reference stores a storyboard name plus an optional identifier; the segue performs the cross-file lookup with the same machinery b10-02 executed. That late binding is what makes references cheap seams."
+        },
+        {
+         "q": "The CI test that storyboard-at-scale codebases need most:",
+         "options": [
+          "iterate every identifier constant and instantiate it — renames and bad merges fail in CI",
+          "diff every storyboard file against main in CI and fail the build on any XML change at all",
+          "snapshot-test every scene's rendered appearance per device",
+          "validate the XML against Apple's storyboard DTD schema"
+         ],
+         "correct": 0,
+         "explain": "It targets exactly the layer the compiler can't see and merges corrupt: the string contract. One test file, every route, and b10-02's runtime crash becomes a red build instead of a crash report."
+        },
+        {
+         "q": "The honest posture for a large team with a big storyboard estate is usually…",
+         "options": [
+          "freeze all storyboard edits immediately and rewrite the entire application programmatically",
+          "run the estate well — boundaries, quarantined strings — new surface in code or SwiftUI",
+          "one storyboard per developer, merged quarterly by a specialist",
+          "convert every storyboard scene to a XIB to eliminate conflicts"
+         ],
+         "correct": 1,
+         "explain": "Not a defense or a surrender — an operations stance. The disciplines make the existing estate cheap to run; the migration pressure is real and gradual. (Per-developer files and mass-XIB conversion just relocate the merge problem.)"
+        }
+       ]
+      ]
+     },
+     "transfer": "Measure the work app's storyboard topology: how many storyboards, how many scenes in the largest, and does the split follow features or history? Check git log for the most-conflicted storyboard file (git log --follow --oneline | wc -l as a proxy, or ask the team which file they dread). Then verify the two safety nets exist: identifier constants in one place, and a CI test instantiating them. Missing nets after the executed evidence = this loop's action item.",
+     "verify": "// executed on this Mac 2026-07-19:\n// base storyboard + two divergent edits (branch A: rect resize; branch B:\n//   new subview in a different element) → git merge-file → exit 1,\n//   2 conflict markers — colliding on toolsVersion, a machine-stamped line\n//   neither branch's author edited\n// splitting-is-free floor: b10-01's executed storyboardc listing (per-scene\n//   nibs + index plist)\n// bad-merge blast radius floor: b10-01/b10-02's executed runtime crashes\n//   (KVC key, unknown identifier) — the layer merges corrupt\n// documented: Xcode's save-time rewrites (rects/ordering/plugin versions),\n//   storyboard-reference resolution semantics, Xcode's scene-moving refactor",
+     "goDeeper": "Apple's \"Refactor to Storyboard\" documentation — the scene-moving tool the split plan uses. b10-01/b10-02 for the runtime crashes that bad merges manufacture. Your own team's git history — the most-conflicted file IS this loop's case study. WWDC 2015 \"Implementing UI Designs in Interface Builder\" for storyboard references at their introduction. Next: b10-05 — traits and size classes."
+    },
+    {
+     "id": "b10-05",
+     "title": "Traits and size classes: the environment, described",
+     "concept": {
+      "definition": "A trait collection is the environment description UIKit hands down the view hierarchy: horizontal and vertical size classes (compact/regular — the coarse grid), display scale, light/dark style, and the user's content-size category. Adaptive layout means making decisions as FUNCTIONS of traits rather than checks of device models — and Dynamic Type is one trait (content size) driving every text style's real point size, which is why fixed heights and fixed fonts are the accessibility bugs.",
+      "code": "// executed — traits are VALUES: constructible, mergeable, decidable-over:\nlet merged = UITraitCollection(traitsFrom: [\n    UITraitCollection(horizontalSizeClass: .compact),\n    UITraitCollection(userInterfaceStyle: .dark)])\n// merged: compact ✓ · dark ✓\n\nfunc columns(for traits: UITraitCollection) -> Int {\n    traits.horizontalSizeClass == .regular ? 2 : 1   // testable adaptivity\n}\n// executed: compact → 1 · regular → 2 — no simulator required\n\n// Dynamic Type is the content-size trait driving fonts — on iOS, .body:\n//   XS → 14pt · L (default) → 17pt · AX5 → 53pt        (documented)\n// executed Catalyst finding: the Mac idiom PINS scaling — 17pt at every\n// category. Same API, different idiom, different truth: check your idiom.",
+      "underlying": "Size classes are deliberately COARSE — two values per axis — because they encode the only distinction layout usually needs: 'is there room for side-by-side, or not.' An iPhone portrait is compact/regular, landscape-on-big-phones regular width appears, iPads are regular/regular — until multitasking: a Split View pane can put an iPad app in COMPACT width at any moment, which is the executed `columns()` function's whole justification and the death of every `if iPad` check (the device didn't change; the environment did). Traits flow DOWN the hierarchy from the screen through the window to each view, with override points along the way (`setOverrideTraitCollection` on containment — b2-16 — and per-view since iOS 17), so a child asks its OWN traitCollection, never the screen's.\n\nDynamic Type is the trait system carrying an accessibility setting into every label. `preferredFont(forTextStyle:)` resolves a STYLE (body, headline) against the content-size trait — on iOS, body runs 14pt at XS through 53pt at the largest accessibility size (documented) — and custom fonts join via `UIFontMetrics.scaledFont`. The executed run surfaced an honest wrinkle: under Catalyst's Mac idiom the same calls returned 17pt at EVERY category — scaling pinned — a real reminder that trait-driven behavior is idiom-dependent and 'works on my Mac' proves nothing about the phone. The layout half of the contract: scaled fonts are useless inside fixed-height containers, so accessibility-ready screens pair `adjustsFontForContentSizeCategory` with self-sizing rows (b2-07's intrinsic size doing the work) and test at the AX categories where 17pt becomes 53pt.\n\nChange DELIVERY is the last piece: traits update mid-flight (rotation, Split View drags, appearance switches, user text-size changes), arriving via `traitCollectionDidChange` (the legacy hook) or `registerForTraitChanges` (iOS 17's targeted registration — you name the traits you care about, documented). The discipline is cheap invalidation: a trait tick should re-ask decisions (the executed pure function) and invalidate layout — never rebuild hierarchies. And the storyboard connection: Interface Builder's 'vary for traits' encodes per-class constraint and font variants directly into b10-01's XML (`variation` elements with `installed=` per configuration) — the canvas speaking exactly this loop's vocabulary, one more thing a reviewer of storyboard diffs (b10-04) should recognize on sight.",
+      "whyItMatters": "The work app runs on iPhones, iPads, and Split View — size-class correctness decides whether it adapts or embarrasses. Dynamic Type is both an accessibility obligation and a top App Review/user-complaint source when fixed heights clip AX text. And 'device checks versus size classes' is a canonical interview probe for whether someone designs for environments or ships for two rectangles."
+     },
+     "exercise": {
+      "prompt": "Four adaptivity incidents. (1) A two-column iPad screen breaks when the user drags Split View — columns overlap. The code branches on `UIDevice.current.userInterfaceIdiom == .pad`. Diagnose and fix with the executed function's shape. (2) A user at an accessibility text size sees every cell's text clipped to one truncated line; list the THREE code smells that conspire. (3) A teammate wants to unit-test the app's adaptive layout rules and assumes a simulator farm is required — correct them with this loop's executed evidence. (4) Trait changes trigger a full `reloadData()` plus view-hierarchy rebuild on every rotation; state the cost and the right granularity.",
+      "code": "// executed reference:\n//   traits are constructible values; decisions over them are pure functions\n//   columns(compact) == 1, columns(regular) == 2 — tested with no UI at all\n//   Catalyst Mac idiom pinned .body at 17pt across all categories\n// documented: iOS .body = 14…53pt; Split View delivers compact width to iPads",
+      "solution": "(1) The idiom check answers 'what device' when the question is 'what environment': in Split View the iPad app's window becomes COMPACT width while the idiom stays .pad, so the two-column branch runs without the room it assumed. Fix: decide from traitCollection.horizontalSizeClass — the executed columns() — and re-decide on trait change; the drag then flips the answer exactly when the room changes.\n\n(2) The conspiracy: fixed fonts (or preferredFont WITHOUT adjustsFontForContentSizeCategory, so live changes never apply), fixed row heights (44pt hardcoded where AX text needs 100+), and single-line labels (numberOfLines == 1 truncating what wrapping would show). The fix set: text styles + adjustsFont, self-sizing rows via intrinsic content size (b2-07), numberOfLines = 0 where content demands it — then TEST at AX5, where the documented 53pt makes every shortcut visible.\n\n(3) The executed evidence IS the correction: UITraitCollection is constructible with any values, and layout RULES extracted as pure functions (columns(for:)) run under plain XCTest — compact and regular both asserted with no simulator, no UI, no device. Simulators verify rendering; RULES verify in unit tests — b5-04's separation, applied to adaptivity.\n\n(4) Rotation fires trait changes on every view in the hierarchy — a rebuild-everything response does O(hierarchy) work for what's usually O(decisions) change, janks the rotation animation (b2-12), and loses state (scroll positions, selections). Right granularity: re-evaluate the affected decisions, update constraints or invalidate layout, and let b2-06's machinery do the rest; register for the SPECIFIC traits you react to (iOS 17's registerForTraitChanges) so ticks you don't care about cost nothing.",
+      "explanation": "One instinct unifies the four: traits describe the environment, and correct adaptive code is a set of small pure functions from that description to decisions — testable without devices, cheap to re-run on change, and immune to the device-model guessing that Split View made obsolete a decade ago."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: what does a trait collection carry, why are size classes the right granularity for layout decisions, and what does Dynamic Type require from code beyond calling preferredFont?",
+      "modelAnswer": "A trait collection carries the environment: horizontal and vertical size classes, display scale, light/dark style, and the content-size category, flowing down the hierarchy so every view can ask about its own context. Size classes are coarse — compact or regular per axis — because that's the distinction layout actually needs ('is there room for side-by-side'), and it's environment-based where device checks fail: Split View hands an iPad app compact width without the device changing. Dynamic Type is the content-size trait resolving text styles to real sizes — body from 14 to 53 points — so beyond preferredFont, code needs adjustsFontForContentSizeCategory for live changes, self-sizing containers instead of fixed heights, and testing at accessibility sizes. Layout rules extracted as pure functions over trait collections unit-test with no simulator, since traits are constructible values.",
+      "sets": [
+       [
+        {
+         "q": "Size classes offer only compact/regular per axis because…",
+         "options": [
+          "that's the one distinction layout usually needs: room for side-by-side, or not",
+          "finer granularity was deprecated along with device-family APIs",
+          "the trait system predates iPads and was never extended",
+          "any more values would make storyboard trait variations explode combinatorially in the XML"
+         ],
+         "correct": 0,
+         "explain": "Deliberate coarseness: designs adapt at the has-room threshold, not per point. The grid also stays truthful under Split View, where exact widths change continuously but the side-by-side answer flips once."
+        },
+        {
+         "q": "An `if UIDevice.…userInterfaceIdiom == .pad` layout branch fails in Split View because…",
+         "options": [
+          "Split View deliberately reports the idiom as .phone for the smaller of the two panes",
+          "idiom checks are asynchronous and race the pane resize",
+          "multitasking suspends trait propagation until the drag ends",
+          "the environment turned compact while the device stayed a pad — wrong question asked"
+         ],
+         "correct": 3,
+         "explain": "The device never changes; the room does. traitCollection.horizontalSizeClass answers the actual question and updates via trait-change callbacks exactly when the drag crosses the threshold."
+        },
+        {
+         "q": "The executed test asserted columns(compact)==1 and columns(regular)==2 with no simulator. What made that possible?",
+         "options": [
+          "XCTest's built-in trait simulation harness",
+          "trait collections are constructible values, and the rule is a pure function over them",
+          "Catalyst transparently exposes the simulator's full trait environment to CLI processes",
+          "the rule reads cached traits from the last real device run"
+         ],
+         "correct": 1,
+         "explain": "UITraitCollection(horizontalSizeClass:) builds any environment on demand — so extracted decision functions unit-test like any logic (b5-04). Simulators are for rendering; rules never needed one."
+        }
+       ],
+       [
+        {
+         "q": "The executed Catalyst run returned 17pt at EVERY content size category. The right lesson?",
+         "options": [
+          "preferredFont silently ignores its compatibleWith trait collection argument on every platform",
+          "Dynamic Type requires a physical device even for size resolution",
+          "trait-driven behavior is idiom-dependent — the Mac idiom pins scaling that iOS performs",
+          "the content-size trait only affects labels, not font objects"
+         ],
+         "correct": 2,
+         "explain": "Same API, different idiom, different truth — iOS documents body at 14–53pt while the Mac idiom fixes it. An honest executed reminder that environment claims deserve verification per environment."
+        },
+        {
+         "q": "AX-size text clips inside 44pt-high cells even though preferredFont is used. The missing pieces?",
+         "options": [
+          "adjustsFontForContentSizeCategory, self-sizing rows, and multi-line labels",
+          "a larger text style — body cannot scale past 28pt",
+          "registerForTraitChanges on every label in the cell",
+          "a UIFontMetrics wrapper, which preferredFont does not ever apply automatically"
+         ],
+         "correct": 0,
+         "explain": "Scaled fonts inside fixed frames just clip better. The trio — live adjustment, intrinsic-size-driven heights (b2-07), and wrapping — is what lets 53pt text exist; testing AT AX sizes is what proves it."
+        },
+        {
+         "q": "The right response to a trait-change callback is…",
+         "options": [
+          "tear down and fully rebuild the affected view hierarchy to guarantee total consistency",
+          "reloadData on every list so cells re-measure themselves",
+          "re-run the affected decisions and invalidate layout — O(decisions), not O(hierarchy)",
+          "defer all handling to the next viewWillAppear pass"
+         ],
+         "correct": 2,
+         "explain": "Rotation ticks every view; rebuilds jank the animation (b2-12) and destroy state. Cheap invalidation plus b2-06's layout machinery is the contract — and iOS 17's targeted registration keeps irrelevant ticks free."
+        }
+       ]
+      ]
+     },
+     "transfer": "Grep the work app for UIDevice.current.userInterfaceIdiom and UIScreen.main.bounds in layout code — each is a Split View bug wearing a device check. Extract one adaptive decision into a pure function over UITraitCollection and write its two-line unit test (the executed pattern). Then run the app at an AX text size for ten minutes and file what clips — that list is the accessibility backlog this loop prioritizes.",
+     "verify": "// executed on this Mac 2026-07-19 (Mac Catalyst, real UIKit):\n// UITraitCollection(traitsFrom:) merged compact + dark — both traits held\n// columns(for:) pure function: compact → 1, regular → 2 — asserted with\n//   constructed trait collections, no UI, no simulator\n// Dynamic Type finding: preferredFont(.body, compatibleWith:) AND\n//   UIFontMetrics.scaledValue returned 17pt at XS, L, and AX-XXXL alike —\n//   the Mac idiom pins scaling (executed); iOS's 14/17/53pt: documented\n// documented: trait propagation + override points, registerForTraitChanges,\n//   Split View compact-width delivery, IB 'vary for traits' → XML variations",
+     "goDeeper": "WWDC 2016 \"Making Apps Adaptive\" parts 1–2 — still the canonical size-class curriculum. WWDC 2023 \"Unleash the UIKit trait system\" for registerForTraitChanges and custom traits. Apple's Dynamic Type size tables (HIG, Typography) — the documented 14–53pt ladder. b2-07 for the intrinsic-size machinery self-sizing rides. Next: b10-06 — localization under the hood."
+    },
+    {
+     "id": "b10-06",
+     "title": "Localization under the hood: tables, plurals, direction",
+     "concept": {
+      "definition": "A localized app ships parallel `.lproj` folders — one per language, each holding string tables — and `NSLocalizedString` is a runtime lookup: the bundle resolves ONE localization at launch by matching the user's language list against what's available, then every call is a key→string fetch from that language's table. A `.strings` file is literally a plist; plurals live in `.stringsdict` with CLDR categories (one/few/many/other) that differ per language; and text direction is a language property that flips layout through the leading/trailing system.",
+      "code": "// executed — the machinery, end to end:\n// a .strings file IS a plist:\nNSDictionary(contentsOfFile: \"en.lproj/Localizable.strings\")\n// → [\"greeting\": \"Good morning\", …]\n\n// per-language sub-bundles resolve the SAME key differently:\n//   en: Good morning · de: Guten Morgen · ru: Доброе утро\n\n// plurals — CLDR categories, selected per locale (executed):\n//   en stringsdict (one/other):      1 file · 5 files\n//   ru stringsdict (one/few/many):   1 файл · 2 файла · 5 файлов\n//                                    ← three categories English lacks\n\n// direction is a language property (executed):\n//   ar → rightToLeft · en → leftToRight",
+      "underlying": "The lookup machinery, executed piece by piece: a `.strings` file parsed straight into a dictionary (it IS a plist — key/value pairs in text or binary form, which is why `plutil` operates on them and why syntax errors are plist errors); the same key resolving to three different strings through three `.lproj` sub-bundles; and the resolution rule that ties it together — at launch, `Bundle.main` matches the user's ordered language list (`AppleLanguages`) against the bundle's available `.lproj` folders and commits to ONE localization (documented), after which every `NSLocalizedString` is a table fetch from that choice. Two standard bugs fall out of the mechanism: a key missing from the chosen table falls back (ultimately to the key itself — the raw `order.status` on a shipped screen), and a language missing an `.lproj` entirely falls back to the development language silently. Xcode's modern `.xcstrings` catalog is a nicer editing container that COMPILES to these same artifacts (documented) — the runtime story is unchanged.\n\nPlurals are where naive string-building dies, and the executed Russian is the proof: English needs two forms (1 file / 5 files — categories `one`/`other`), Russian needs THREE ways of counting (1 файл / 2 файла / 5 файлов — `one`/`few`/`many`, executed selecting correctly by locale), and other languages need up to six. Every `\"%d file(s)\"` hack and every `count == 1 ? singular : plural` branch is English grammar hardcoded against a world that doesn't share it. The `.stringsdict` machinery inverts control: the TABLE declares the categories per language, the format system picks the category from the number under the right locale's CLDR rules (executed with explicit locales), and code just supplies the count. Length is the same lesson milder: German runs ~30% longer than English, so localized layout means trailing constraints and self-sizing (b10-05), never widths measured against the development language.\n\nDirection: `ar` reports right-to-left (executed), and the layout system is already bilingual about it — leading/trailing constraints (b2-05's equations) resolve to left/right by the resolved language's direction, so a correctly-built LTR screen mirrors for free. What participates: constraint geometry, stack view order, text alignment (natural), directional images (`imageFlippedForRightToLeftLayoutDirection`); what deliberately does NOT flip: numerals, clock hands, media-playback controls (time flows left-to-right in players everywhere — documented). The override switch — `semanticContentAttribute` — forces a view subtree's direction regardless of language, which is a per-view hammer this loop names and b10-07 will need: MA-2319's runtime switching must flip direction mid-process.",
+      "whyItMatters": "The work app ships in multiple languages with runtime switching on top (b10-07) — and this loop is the floor: the raw-key-on-screen bug, the '(s)' plural embarrassment, and the clipped-German layout are the three most-shipped localization defects in the industry. 'How do plurals work across languages?' is also a favorite interview probe because the executed Russian answer instantly separates mechanism-knowers from string-concatenators."
+     },
+     "exercise": {
+      "prompt": "Four localization tickets. (1) A shipped screen shows the literal text 'order.status' — walk the fallback chain that produced it. (2) Refactor `\"You have \" + String(count) + \" file(s)\"` for a release adding Russian; state what the .stringsdict must declare and what the call site becomes. (3) German QA reports every button truncated; the constraints pin label WIDTHS measured from English. Name the rule and the fix. (4) The Arabic build mirrors beautifully — except a hand-built 'back' chevron still points left-in-the-wrong-direction and a video scrubber flipped when it shouldn't. Sort the two into flip/don't-flip and name the tools.",
+      "code": "// executed reference:\n//   lookup = key → chosen-lproj table fetch; missing key → falls back to key\n//   ru plurals: one/few/many selected by CLDR rules under the ru locale\n//   ar → rightToLeft; leading/trailing resolve by language direction\n// documented: ~30% German expansion; players don't flip",
+      "solution": "(1) The chosen localization's table lacked the key → the lookup fell through the value/table chain (development language next) → nothing anywhere defined it → NSLocalizedString returned its own KEY as last resort. The mechanism that makes this common: keys are added in code first and translated later, and nothing at compile time connects the two (same stringly shape as b10-01 — which is what .xcstrings' editor validation and CI key-audits exist to close).\n\n(2) The stringsdict declares `files.count` with a plural rule variable: en carries one/other; ru carries one/few/many (the executed table). The call site becomes ONE line — fetch the format by key, apply the count with locale-aware formatting — and the executed proof is that the SAME call yields '1 file/5 files' and '1 файл/2 файла/5 файлов' with zero grammar in code. The '(s)' string never survives review again: code supplies numbers, tables supply grammar.\n\n(3) The +30% rule: German (and Finnish, and Portuguese) run longer than English, so any width measured against the development language clips its translations. Fix: kill the width pins — leading/trailing constraints plus intrinsic content size (b2-07/b10-05's self-sizing), let buttons grow, and pseudo-localize (Xcode's double-length pseudo-language) in QA so expansion bugs surface without waiting for German QA.\n\n(4) The chevron SHOULD flip (navigation direction is reading direction): use a directional asset or `imageFlippedForRightToLeftLayoutDirection` so the system mirrors it with the language. The scrubber should NOT have flipped (media time is LTR universally, documented): pin its subtree with `semanticContentAttribute = .forceLeftToRight`. The sorting rule: does the element encode READING order (flips) or a physical/temporal convention (doesn't)?",
+      "explanation": "The deep pattern: localization keeps working exactly as long as code refuses to know language facts — no grammar in string building, no widths from one language's metrics, no hardcoded left/right. Every ticket above is a place code knew too much, and every fix moves the knowledge into tables, constraints, or attributes where the system applies it per language."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: how does NSLocalizedString actually resolve a string, why is '%d file(s)' unshippable internationally, and what makes right-to-left support mostly free in a well-built layout?",
+      "modelAnswer": "At launch the bundle matches the user's ordered language list against its .lproj folders and commits to one localization; NSLocalizedString is then a key lookup in that language's table — a .strings file, which is literally a plist — falling back through the development language to the raw key itself, which is why untranslated keys appear on screen verbatim. '%d file(s)' hardcodes English's two-form grammar, but CLDR plural categories differ per language — Russian selects among one, few, and many, as in 1 файл, 2 файла, 5 файлов — so the .stringsdict declares each language's forms and the format system picks the category from the number under that locale's rules; code only supplies the count. RTL is mostly free because leading/trailing constraints, stack ordering, and natural text alignment all resolve against the language's direction — a property the system knows per language — leaving only deliberate exceptions: directional images opt in to flipping, and things like media scrubbers opt out via semanticContentAttribute.",
+      "sets": [
+       [
+        {
+         "q": "The executed NSDictionary(contentsOfFile:) parse of a .strings file worked because…",
+         "options": [
+          "Foundation special-cases .strings paths with a private parser",
+          "the file had been pre-compiled by ibtool into plist form",
+          "a .strings file IS a plist — key/value pairs in plist syntax",
+          "strings files are YAML, which NSDictionary also accepts"
+         ],
+         "correct": 2,
+         "explain": "The 'key' = 'value'; syntax is old-style plist text (shipping builds convert them binary — plutil handles both). That's why syntax errors report as plist errors and why the file is machine-auditable."
+        },
+        {
+         "q": "A user's device is set to [fr, de, en]; the app ships en and de lprojs. Which localization serves, and when is that decided?",
+         "options": [
+          "de — best match against the ordered list, committed once at launch",
+          "fr — the device's language setting always wins over the app's contents",
+          "en — apps always serve their development language first",
+          "per-string: fr keys fall back individually to de, then en"
+         ],
+         "correct": 0,
+         "explain": "Bundle.main walks the user's ORDER against availability and commits once (documented); lookups then hit that one table (with fallback for missing keys, not missing languages). This launch-time commitment is exactly what b10-07 must bypass."
+        },
+        {
+         "q": "The executed Russian output (1 файл · 2 файла · 5 файлов) demonstrates that…",
+         "options": [
+          "Russian pluralizes by gender, which the formatter infers",
+          "stringsdict files are able to embed arbitrary conditional logic inside their format strings",
+          "the formatter transliterates counts into the target script",
+          "plural CATEGORIES are per-language — ru selects among one/few/many where en has two forms"
+         ],
+         "correct": 3,
+         "explain": "CLDR rules under the ru locale routed 1, 2, and 5 to three different declared forms — grammar the table owns and code never sees. The 'file(s)' hack has no seat at this table."
+        }
+       ],
+       [
+        {
+         "q": "A shipped screen displays the literal key 'order.status'. The mechanism?",
+         "options": [
+          "the .strings file was silently corrupted on disk and the entire table was skipped at load time",
+          "the key missed every table in the fallback chain — NSLocalizedString returned the key itself",
+          "the stringsdict declared the key with no plural categories",
+          "the bundle resolved a language whose lproj folder was empty"
+         ],
+         "correct": 1,
+         "explain": "The last-resort fallback IS the key — the stringly failure mode (b10-01's family) that ships because nothing at compile time links keys in code to entries in tables. CI key-audits and .xcstrings validation close the gap."
+        },
+        {
+         "q": "German QA finds buttons truncated everywhere. The standing rule this violates?",
+         "options": [
+          "German requires its own storyboard with wider scenes",
+          "all translations must always be manually abbreviated down to fit the original English string length",
+          "never pin widths measured from one language — expansion (~30% for German) needs self-sizing",
+          "buttons must use attributed strings for non-English text"
+         ],
+         "correct": 2,
+         "explain": "Development-language metrics are not layout facts. Leading/trailing + intrinsic size lets text set the width (b2-07/b10-05) — and pseudo-localization's double-length language surfaces every violation before any translator does."
+        },
+        {
+         "q": "In the RTL build, which pair is correctly sorted?",
+         "options": [
+          "back-chevron flips (reading order) · scrubber doesn't (time is LTR) — force the latter",
+          "back-chevron doesn't flip (it's a static image) · scrubber flips (it's an interactive control)",
+          "both flip — RTL mirrors every view uniformly",
+          "neither flips — only text and constraints participate in RTL"
+         ],
+         "correct": 0,
+         "explain": "The sorting rule: reading-order semantics flip, physical/temporal conventions don't (documented). Directional images opt in via flippedForRightToLeft…; semanticContentAttribute pins the exceptions."
+        }
+       ]
+      ]
+     },
+     "transfer": "Audit the work app's localization floor: grep for string concatenation building user-visible sentences (each is a grammar bug in some language), find every '(s)'-style plural and list what a stringsdict migration needs, run the app in Xcode's double-length pseudo-language for one screen-walk and file the clips, and — if an RTL language ships — check one screen for the flip/don't-flip sorting. This inventory is b10-07's prerequisite: runtime switching amplifies every defect found here.",
+     "verify": "// executed on this Mac 2026-07-19 (hand-built TestLoc.bundle, plain swift):\n// .strings parsed as plist dictionary → 'Good morning'\n// same key via en/de/ru lproj sub-bundles → three languages resolved\n// stringsdict plurals: en '1 file'/'5 files'; ru '1 файл'/'2 файла'/\n//   '5 файлов' — one/few/many selected by CLDR rules under explicit locales\n// Locale character direction: ar → rightToLeft, en → leftToRight\n// documented: launch-time localization commitment (AppleLanguages matching),\n//   missing-key fallback-to-key, .xcstrings compiling to the same artifacts,\n//   ~30% German expansion, players-don't-flip conventions",
+     "goDeeper": "Apple's Localization documentation + WWDC 2021 \"Streamline your localized strings\" (the .xcstrings story). Unicode CLDR's plural-rules chart — the per-language category table the executed Russian obeyed. WWDC 2016 \"Internationalization Best Practices\" — still the best RTL walkthrough. b2-05 for why leading/trailing made mirroring free. Next: b10-07 — switching language at runtime, MA-2319's loop."
+    },
+    {
+     "id": "b10-07",
+     "title": "Switching language at runtime",
+     "concept": {
+      "definition": "The platform's official language change applies at NEXT launch — `Bundle.main` commits to one localization when the process starts — so in-app switching is custom machinery built on b10-06's executed mechanism: hold a CURRENT language sub-bundle, resolve every user-visible string through it, and switching means swapping that bundle, flipping layout direction if needed, and rebuilding the visible UI. The three disciplines: one string funnel (nothing bypasses it), one rebuild choke point (the Router recreating the root), and the choice persisted before the next launch's UI exists.",
+      "code": "// executed — the mechanism, mid-process:\nfunc bundle(for lang: String) -> Bundle {\n    Bundle(path: Bundle.main.path(forResource: lang, ofType: \"lproj\")!)!\n}\nvar current = bundle(for: \"en\")\nfunc L(_ key: String) -> String {          // THE funnel — all strings pass here\n    current.localizedString(forKey: key, value: nil, table: nil)\n}\nprint(L(\"order.status\"))   // Your order is on its way\ncurrent = bundle(for: \"de\")                // ← the switch\nprint(L(\"order.status\"))   // Ihre Bestellung ist unterwegs\n//                             — same process, no restart (executed)\n\n// what the swap does NOT do: change strings already ON screen,\n// re-decode storyboard-set texts, or re-locale your formatters.\n// those three gaps are this loop.",
+      "underlying": "Why the custom machinery exists at all: `Bundle.main` reads `AppleLanguages` and commits its localization ONCE, at process start (b10-06, documented) — setting that default in-app changes the NEXT launch, which is the restart-prompt UX this feature exists to avoid. The bypass is b10-06's executed sub-bundle move: each `.lproj` is loadable as its own bundle whose `localizedString(forKey:)` reads that language's tables directly, and the executed transcript shows the whole trick — same key, same process, English then German, no restart. Everything else in this loop is consequence management, because the swap changes only what flows through the funnel from now ON.\n\nGap one: the FUNNEL must be total. Any string reaching the screen via raw `NSLocalizedString` (Bundle.main — still the old language) instead of `L()` stays stale forever — one discipline, N call sites. The storyboard-first sharpening of this (MA-2319's actual terrain): texts SET IN the storyboard are decoded from the nib's own localized resources via Bundle.main at scene load, bypassing any funnel — so a storyboard-first app switching at runtime must either set all user-visible text in code (viewDidLoad reading through `L()` — the honest, greppable way), or swizzle `Bundle.localizedString` to redirect globally (what the localization-manager pods do — b7-07's invisibility trade at maximum: every string call in the process silently rerouted, including UIKit's own). Formatters are funnel citizens too: `DateFormatter`/`NumberFormatter` pinned to `Locale.current` keep producing English dates after the swap — the executed ru plurals needed explicit locales for exactly this reason; the manager owns a `currentLocale` beside its bundle.\n\nGap two: the REBUILD. Strings already on screen are copies — the swap can't reach them. Three strategies, in descending order of coverage: recreate the root view controller (total refresh — b10-02's Router is the one object that can do it cleanly, and the transition can animate); broadcast a languageDidChange notification and have every live screen re-apply its texts (works, but N screens × discipline, and misses the forgotten one); or refresh-on-next-appearance (cheapest, leaves the current screen stale — usually paired with the switch UI navigating away). RTL joins the rebuild: switching en↔ar must also flip `semanticContentAttribute` on the window/appearance (b10-06's hammer) BEFORE the rebuild so the recreated hierarchy resolves leading/trailing in the new direction. And completion: persist the choice, apply it at the NEXT launch before any UI exists (the manager initializes from persistence first), and ALSO write `AppleLanguages` — system-supplied surfaces you can't re-render live (permission dialogs, system back labels, share sheets) pick up the language at the following launch, which is the honest residue: runtime switching covers YOUR surfaces; the OS's own catch up one launch later.",
+      "whyItMatters": "This is MA-2319 as a loop: the work app's runtime language switch is exactly this machinery, and its bug taxonomy — the stale tab bar, storyboard labels that don't switch, English dates in a German UI — maps one-to-one onto the funnel and rebuild gaps. It's also a genuinely senior interview topic: 'how would you switch language without restart?' has no framework answer, only this design."
+     },
+     "exercise": {
+      "prompt": "Four MA-2319-shaped bugs. (1) After switching, newly pushed screens are German but the tab bar stays English until app restart. (2) Code-set labels switch; storyboard-set labels don't — the storyboard IS localized (its de tables exist and work on fresh launches). (3) Every string switches, but dates render 'July 19' in the German UI. (4) Switching to Arabic translates all text but the layout stays LTR until restart. For each: the gap, and the fix within this loop's architecture. Then (5): sequence the complete switch operation.",
+      "code": "// executed reference:\n//   sub-bundle swap changes funnel output mid-process (en → de, no restart)\n//   the swap does NOT touch: on-screen copies, nib-decoded texts,\n//   formatter locales\n// architecture: funnel L() · Router rebuild · persisted choice\n//   (+ semanticContentAttribute before rebuild for RTL)",
+      "solution": "(1) Rebuild-scope gap: the tab bar was configured once at launch, outside whatever refresh the switch triggers. Titles on screen are copies (executed: the swap changes lookups, not past results). Fix: the root-recreation strategy — the Router rebuilds from the tab controller down, so nothing configured-once survives with old strings.\n\n(2) Funnel bypass, storyboard edition: nib decode reads texts from the storyboard's OWN localized tables via Bundle.main — frozen at launch language — so fresh launches localize perfectly while runtime switches miss them. The choice: set user-visible storyboard texts in code through L() (greppable, explicit — the storyboard keeps layout, code owns words), or swizzle Bundle.localizedString so even nib decodes reroute (total coverage, invisible mechanism — b7-07's trade at full price). MA-2319's central decision.\n\n(3) Formatter citizenship: DateFormatter defaulted to Locale.current — the PROCESS locale, unswapped. The manager owns currentLocale beside its bundle; every formatter takes it (the executed plurals needed explicit locales for the same reason). Locale is part of language, not an independent setting.\n\n(4) Direction is a separate switch: the string swap flipped words, not geometry. Before the rebuild, set the forced semanticContentAttribute (window + appearance) to the new language's direction (b10-06's ar → rightToLeft, executed), THEN recreate — the new hierarchy resolves leading/trailing mirrored.\n\n(5) The sequence: persist choice → swap the manager's bundle + locale → set semantic direction → write AppleLanguages (for system surfaces next launch) → Router recreates root (animated) → post languageDidChange for anything long-lived outside the root. At next launch: manager initializes from persistence BEFORE any UI exists.",
+      "explanation": "Notice every bug is the same sentence: 'something read language state outside the funnel, or kept a copy across the swap.' Runtime switching is less a feature than an audit — of every place language leaks into the app — and the architecture is what makes the audit finite: one funnel, one rebuild point, one persisted source of truth."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: why can't the platform switch language mid-process, what's the architecture that does it anyway, and what are its two coverage gaps in a storyboard-first app?",
+      "modelAnswer": "Bundle.main commits its localization once at process start from AppleLanguages, so the platform's switch applies at next launch — runtime switching bypasses it by loading the chosen language's .lproj as its own bundle and resolving every string through a funnel that reads it, which swaps mid-process with no restart. The architecture is three disciplines: a total string funnel (including formatters taking the manager's locale, not Locale.current), a rebuild choke point — the Router recreating the root so on-screen copies of old strings are replaced — and the choice persisted and applied before UI at every launch, with AppleLanguages also written so system surfaces catch up next launch. The storyboard-first gaps: texts set in nibs decode through Bundle.main and miss the funnel — so either set them in code or swizzle Bundle's string lookup — and RTL needs the semantic content attribute flipped before the rebuild, since the string swap changes words, not geometry.",
+      "sets": [
+       [
+        {
+         "q": "Setting AppleLanguages in UserDefaults changes the app's language…",
+         "options": [
+          "immediately, for all strings not yet rendered",
+          "at the next launch — Bundle.main's localization was committed at process start",
+          "after the current scene is dismissed and re-created",
+          "never — that particular system default is completely read-only for third-party sandboxed apps"
+         ],
+         "correct": 1,
+         "explain": "The launch-time commitment (b10-06) is exactly why in-app switching is custom machinery — and why the manager still WRITES this default: system-supplied surfaces pick the language up one launch later."
+        },
+        {
+         "q": "The executed switch worked mid-process because…",
+         "options": [
+          "each .lproj loads as its own bundle whose string lookups read that language directly",
+          "the second lookup call implicitly invalidated Bundle.main's entire internal string cache",
+          "localizedString(forKey:) accepts a language parameter internally",
+          "Foundation re-resolves the main bundle when defaults change"
+         ],
+         "correct": 0,
+         "explain": "b10-06's sub-bundle mechanism doing feature-level work: the funnel points at a bundle YOU chose, so 'current language' becomes app state instead of process state — swap it and every subsequent lookup follows."
+        },
+        {
+         "q": "After the bundle swap, strings already on screen…",
+         "options": [
+          "update themselves automatically on the very next main runloop tick",
+          "update if the labels used attributed strings",
+          "stay stale — they're copies; only the rebuild replaces them",
+          "flicker as UIKit re-queries the text engine"
+         ],
+         "correct": 2,
+         "explain": "The swap changes future LOOKUPS (executed), not past results — labels hold values, not bindings. That's the entire reason the architecture needs its second half: the rebuild choke point."
+        }
+       ],
+       [
+        {
+         "q": "In a storyboard-first app, nib-set texts survive the switch in the old language because…",
+         "options": [
+          "ibtool permanently bakes the development-language strings into the compiled nib binary",
+          "storyboard text fields aren't KVC-compliant for runtime writes",
+          "scene decode caches strings in the storyboard's index plist",
+          "nib decode reads its tables via Bundle.main — frozen at launch, outside the funnel"
+         ],
+         "correct": 3,
+         "explain": "MA-2319's core tension: the decode path (b10-01) has its own Bundle.main-bound string source. The two fixes — code-set texts through the funnel, or swizzling Bundle's lookup — trade explicitness against coverage."
+        },
+        {
+         "q": "Swizzling Bundle.localizedString for total switch coverage is best characterized as…",
+         "options": [
+          "the platform-sanctioned hook for language managers",
+          "b7-07's invisibility trade — every string call rerouted, nothing at call sites reveals it",
+          "unsafe — swizzling Foundation methods automatically invalidates App Store review approval",
+          "equivalent to the funnel, differing only in style"
+         ],
+         "correct": 1,
+         "explain": "It closes the nib gap by making the ENTIRE process's lookups pass through your hook — maximal coverage, minimal visibility, and every debugging session starts by remembering it exists. Legitimate, and priced."
+        },
+        {
+         "q": "The en→ar switch translates text but stays LTR until restart. The missing step, and its place in the sequence?",
+         "options": [
+          "flip semanticContentAttribute BEFORE the rebuild — the new hierarchy resolves mirrored",
+          "add ar to the AppleLanguages default so that all constraints reload themselves flipped",
+          "call setNeedsLayout on the window after the bundle swap",
+          "rebuild twice — once for strings, once for direction"
+         ],
+         "correct": 0,
+         "explain": "Strings and geometry are separate switches: leading/trailing resolve at layout under the semantic direction (b10-06), so the attribute must be set before the hierarchy that will resolve it is created. One rebuild, correctly ordered."
+        }
+       ]
+      ]
+     },
+     "transfer": "Map the work app's actual MA-2319 implementation onto this loop's architecture: find the funnel (is it total? grep for raw NSLocalizedString and storyboard-set user-visible texts), find the rebuild (root recreation, notification, or refresh-on-appear — and what escapes it), check formatter locale citizenship, and trace the RTL path if applicable. Every mismatch against the executed model is either a known bug you've seen or one waiting — write the list; it's the ticket's real spec.",
+     "verify": "// executed on this Mac 2026-07-19 (hand-built lproj bundles, plain swift):\n// the switch, mid-process: L(\"order.status\") through an en sub-bundle →\n//   'Your order is on its way'; swap current to de → same call →\n//   'Ihre Bestellung ist unterwegs' — same process, no restart\n// locale citizenship floor: ru plurals selected correctly ONLY under an\n//   explicit ru locale (b10-06 executed) — formatters must follow the switch\n// direction floor: ar → rightToLeft (executed)\n// documented: Bundle.main's launch-time commitment; nib decode reading\n//   localized tables via Bundle.main; Bundle.localizedString swizzling;\n//   semanticContentAttribute forcing; AppleLanguages for system surfaces",
+     "goDeeper": "b10-06 — every mechanism this loop composes, executed there. b10-02's Router — the rebuild choke point earning its keep. b7-07 — the invisibility trade the swizzle option prices. Apple's \"Preparing your interface for localization\" for the official (restart-based) posture this loop deliberately engineers past. BLOCK 10 COMPLETE — b11 (Shipping the Machine) remains."
+    }
+   ]
+  },
+  {
+   "id": "b11",
+   "name": "Shipping the Machine",
+   "tagline": "Configs, signing, packages, pipelines — code becomes product",
+   "loops": [
+    {
+     "id": "b11-01",
+     "title": "Targets, schemes, and xcconfig: settings as layers",
+     "concept": {
+      "definition": "A target is the recipe for one product; a build configuration (Debug, Release, or your own) is a named dictionary of build settings; a scheme decides which targets build and which configuration each ACTION uses — run, test, profile, archive. xcconfig files put those settings into versioned text with layered resolution (command line over xcconfig over project over defaults, `$(inherited)` splicing the level below), and environment switching rides two mechanisms: per-config compilation conditions (`#if DEV`) and per-config values substituted into Info.plist.",
+      "code": "// executed — one source, three products:\n// #if DEV … #elseif STG … #elseif PRD … #else #error(\"No environment\")\n// swiftc -D DEV  → MyApp DEV → https://api.dev.example.com\n// swiftc -D STG  → MyApp STG → https://api.stg.example.com\n// swiftc -D PRD  → MyApp     → https://api.example.com\n// no flag        → error: No environment set — pass -D DEV… (COMPILE-time)\n// strings check: env_PRD contains stg URL? NO — dead branches STRIPPED\n\n// executed — an xcconfig overlaid onto real settings resolution:\n// SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) STG\n// API_BASE_URL = https:/$()/api.stg.example.com   ← $() escapes the //\n// xcodebuild -showBuildSettings -xcconfig override.xcconfig →\n//   both settings appear, $(inherited) splicing the level below",
+      "underlying": "The object model first, because every 'works in Xcode, broken in the archive' mystery lives in it. A TARGET produces one thing — the app, each extension, each test bundle — and owns a settings dictionary per CONFIGURATION. A SCHEME is the action table: each of run/test/profile/archive names the configuration it builds with — which is why the app you debug (Debug config: no optimization, DEV conditions, dev signing) and the app you ship (Release via archive) are genuinely different builds, and why per-environment setups add configurations (Debug-STG, Release-PRD…) and one scheme per environment naming them. The resolution executed: settings resolve through layers — command-line flags over xcconfig over project/target settings over SDK defaults — with `$(inherited)` as the explicit splice (executed in the overlay: `$(inherited) STG` appends rather than replaces, the difference between adding a condition and clobbering the list).\n\nCompilation conditions are the executed core: `SWIFT_ACTIVE_COMPILATION_CONDITIONS` per configuration becomes `-D` flags becomes `#if DEV` branches — one source, three binaries with different behavior, and the strings-check proof that matters for security review: the PRD binary does not CONTAIN the staging URL; dead branches are stripped at compile time, not skipped at runtime. The `#error` guard executed the other safety: an environment-less build fails at COMPILE time with your message, converting a misconfigured scheme from a silently-wrong app into a red build. The trade this mechanism makes: per-environment BINARIES — powerful (nothing leaks between environments) and honest about its cost (what QA tested is a different binary from what ships; keep the delta to config, never logic). The alternative mechanism — one binary reading values — is Info.plist substitution: `$(API_BASE_URL)` in the plist resolves from build settings at build time, readable at runtime via the bundle; same layering, different trade (values swap, code paths don't).\n\nxcconfig is where this becomes reviewable engineering: settings as text files, diffable in PRs, `#include`-able into hierarchies (a Base.xcconfig included by per-env files that override the deltas — the layering executed with the overlay flag), assigned per target-and-configuration in the project. Two production details the executed run surfaced: user-defined settings (API_BASE_URL) are first-class — they resolve, substitute into plists, and appear in `-showBuildSettings` (the debugging tool for 'what value actually won'); and xcconfig treats `//` as a comment ANYWHERE, so URLs need the `$()` empty-substitution escape (executed — the kind of trivia that costs an afternoon exactly once). CocoaPods lives here too: it generates its own xcconfigs and expects yours to `#include` them — the b11-03 preview of why 'my xcconfig broke the build' usually means a dropped include.",
+      "whyItMatters": "The work app ships DEV/STG/PRD through exactly this machinery — MA-2319's builds each carry their environment's URL, bundle id, and badge because some xcconfig says so. 'Walk me through your build configurations' is a shipping-maturity interview probe, and `-showBuildSettings` is the answer to half of all 'but where does THAT value come from' build mysteries."
+     },
+     "exercise": {
+      "prompt": "Four build-config incidents. (1) The app behaves correctly when Run from Xcode but the TestFlight build hits the dev API — schemes and configs; where do you look? (2) A new `Debug-STG` configuration builds with NO environment condition set; design the guard so this fails loudly, citing the executed mechanism. (3) Security review asks: 'can you prove the production binary contains no staging endpoints?' — answer with the executed technique. (4) A teammate adds `API_BASE_URL = https://api.example.com` to an xcconfig and the value comes out as `https:` — explain, and fix.",
+      "code": "// executed reference:\n//   -D conditions → different binaries; #else #error fires at compile time\n//   strings env_PRD | grep stg → NO (dead branches stripped)\n//   $(inherited) appends; -showBuildSettings shows what won\n//   xcconfig: // is a comment EVERYWHERE — $() escapes it",
+      "solution": "(1) Run and Archive are different rows of the scheme's action table, often naming different configurations. Check the scheme's Archive action: it likely builds a configuration whose SWIFT_ACTIVE_COMPILATION_CONDITIONS still says DEV (or whose xcconfig assignment differs). `-showBuildSettings -configuration <archive's config>` shows what the archive actually resolves — the executed debugging move.\n\n(2) The executed `#else #error(\"No environment set\")` guard: with it, any configuration that forgets its condition fails at COMPILE time with a named message instead of shipping a silently-wrong build. One line of source converts a settings-matrix gap (every new config × every condition) into a red build — the cheapest CI you'll ever write.\n\n(3) The executed strings-check: compilation conditions are resolved at compile time, so the PRD binary's dead branches are STRIPPED — `strings ProductionApp | grep -c 'api.stg'` returns nothing, provable on the shipped artifact itself. (Contrast the plist-value approach, where one binary carries all values it might read — a legitimate design, but the answer to THIS question changes.)\n\n(4) xcconfig's comment syntax: `//` starts a comment anywhere on the line, so everything after `https:` vanished. The canonical escape, executed: `https:/$()/api.example.com` — `$()` substitutes to empty string, splitting the slashes so the parser never sees `//`. File it with the trivia that costs one afternoon per team, once.",
+      "explanation": "The connective tissue: every incident is 'which layer decided this value, for which configuration, for which action.' The build system is a resolution machine, and -showBuildSettings plus the executed guard patterns turn its mysteries into lookups."
+     },
+     "assess": {
+      "explainPrompt": "Interview-ready, 3–4 sentences: distinguish targets, configurations, and schemes; explain how one codebase ships to three environments; and state what xcconfig files add over editing settings in Xcode.",
+      "modelAnswer": "A target is the recipe for one product; a configuration is a named dictionary of build settings; a scheme maps each action — run, test, archive — to the targets and configuration it builds, which is why the debugged app and the archived app can differ. Multi-environment shipping adds configurations per environment whose settings set compilation conditions (#if DEV/STG/PRD branches compile into different binaries, dead branches stripped — provable with strings on the artifact) and substitute per-environment values into Info.plist, with a #error else-branch making an unset environment fail at compile time. xcconfig files hold those settings as versioned, diffable text with #include hierarchies and $(inherited) splicing — settings become reviewable engineering instead of dialog-box state, resolved in layers where the command line beats the file beats the project, and -showBuildSettings shows which layer won.",
+      "sets": [
+       [
+        {
+         "q": "The app runs correctly from Xcode but the archived build behaves differently. The FIRST place to look?",
+         "options": [
+          "the code-signing identity that the archive step automatically selected for distribution",
+          "the archive machine's derived-data cache staleness",
+          "the scheme's action table — Run and Archive name different configurations",
+          "App Store processing, which re-optimizes the binary"
+         ],
+         "correct": 2,
+         "explain": "Debug-for-Run and Release-for-Archive are the default rows — different optimization, different conditions, sometimes different xcconfigs. Two builds, two behaviors, one scheme deciding which you got."
+        },
+        {
+         "q": "`SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) STG` — the $(inherited) does what?",
+         "options": [
+          "splices the value from the resolution level below, so STG APPENDS instead of clobbering",
+          "marks the setting as explicitly overridable by any of the child xcconfig files that include it",
+          "imports the Debug configuration's value as a fallback",
+          "defers resolution of the setting until archive time"
+         ],
+         "correct": 0,
+         "explain": "Executed in the overlay: without it, this line would REPLACE whatever the project level set. The splice is how layered files add deltas — and forgetting it is the classic 'my flag deleted everyone else's flags'."
+        },
+        {
+         "q": "The executed strings-check (PRD binary lacks the staging URL) demonstrates that compilation conditions…",
+         "options": [
+          "encrypt unused branches inside the shipped binary",
+          "resolve at compile time — untaken branches are stripped, not skipped",
+          "are lazily re-evaluated at every app launch from the embedded Info.plist copy",
+          "only affect logging and assertion behavior"
+         ],
+         "correct": 1,
+         "explain": "The #if is the preprocessor's, not the CPU's: PRD's binary never contained the staging code or its strings. That's the security answer — and the trade: each environment is a genuinely different artifact."
+        }
+       ],
+       [
+        {
+         "q": "A brand-new configuration forgets its environment condition. With the executed guard pattern, the result is…",
+         "options": [
+          "the app launches successfully with all environment branches silently disabled",
+          "runtime selection falls back to the plist's base URL",
+          "the DEV branch wins, as the first #if listed",
+          "a compile-time error with your message — the misconfiguration cannot build"
+         ],
+         "correct": 3,
+         "explain": "Executed verbatim: 'error: No environment set — pass -D DEV…'. The #else #error line turns the config × condition matrix's gaps into red builds — one line, zero silent wrong-environment ships."
+        },
+        {
+         "q": "`API_BASE_URL = https://api.example.com` in an xcconfig resolves to `https:`. Why?",
+         "options": [
+          "URLs require quoting inside xcconfig assignments",
+          "user-defined build settings cannot ever legally contain URL scheme prefixes such as https",
+          "// begins a comment anywhere in xcconfig — the rest of the line vanished; $() escapes it",
+          "the setting collided with a reserved SDK variable"
+         ],
+         "correct": 2,
+         "explain": "Executed workaround: https:/$()/… — the empty substitution splits the slashes. Trivia-shaped, but it guards a real class of silently-truncated values in reviewable config."
+        },
+        {
+         "q": "Choosing compilation conditions vs Info.plist value substitution for environments is choosing…",
+         "options": [
+          "different binaries with stripped branches vs one binary with swapped values",
+          "compile speed vs archive speed for large projects",
+          "whether the scheme or the target ultimately owns the environment decision at build time",
+          "Xcode-managed vs manually-managed signing flows"
+         ],
+         "correct": 0,
+         "explain": "Both executed/shown: -D makes artifacts that physically differ (test what you ship!); plist substitution keeps one artifact reading different data. Mature setups use conditions for behavior, values for endpoints — deliberately."
+        }
+       ]
+      ]
+     },
+     "transfer": "Map the work app's matrix: list its configurations and schemes, and for the scheme you ship from, note which configuration each ACTION uses. Find the xcconfig files (and whether CocoaPods' includes survive at the top of yours), then run xcodebuild -showBuildSettings for the archive configuration and verify SWIFT_ACTIVE_COMPILATION_CONDITIONS and the API base URL are what production expects. Finally, check for the #error guard — if a new config could silently build environment-less, add the executed one-liner.",
+     "verify": "// executed on this Mac 2026-07-19:\n// swiftc -D DEV/STG/PRD on one source → three binaries, three URLs printed\n// no -D flag → compile error verbatim: 'No environment set — pass -D DEV…'\n// strings env_DEV & env_PRD: staging URL ABSENT — dead branches stripped\n// xcodebuild -showBuildSettings -scheme nio-demo -xcconfig override.xcconfig:\n//   user-defined API_BASE_URL materialized; SWIFT_ACTIVE_COMPILATION_CONDITIONS\n//   showed '$(inherited) STG' splicing; the $() escape kept // out of the\n//   comment parser (value survived)\n// documented: scheme action→configuration mapping, Info.plist $(VAR)\n//   substitution, per-(target×config) xcconfig assignment, CocoaPods includes",
+     "goDeeper": "Apple's Xcode Build Settings Reference — the dictionary this loop's layers resolve against. WWDC 2021 \"Explore advanced project configuration in Xcode\". The xcconfig format's best write-ups are community ones — search 'xcconfig guide' and note how much of it this loop executed. b11-02 next: code signing — the settings that decide whether the build is allowed to exist."
     }
    ]
   }
