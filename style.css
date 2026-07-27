@@ -85,4 +85,14 @@
   .center{text-align:center}
   .mt0{margin-top:0}.mt8{margin-top:8px}.mt16{margin-top:16px}.mt24{margin-top:24px}
   .warn{color:var(--red);font-size:13.5px}
+  /* text highlighting — cyan, deliberately not amber (amber already means "weak/attention") */
+  mark.hl{background:rgba(127,180,196,.28);color:inherit;border-bottom:2px solid var(--cyan);
+    padding:0 1px;border-radius:2px;cursor:pointer}
+  mark.hl.has-comment{background:rgba(127,180,196,.45);border-bottom-style:double;border-bottom-width:3px}
+  .hl-float-btn{position:fixed;left:50%;bottom:max(20px,env(safe-area-inset-bottom));
+    transform:translateX(-50%);z-index:50;width:auto;margin:0;padding:12px 24px;
+    background:var(--amber);border:1px solid var(--amber);color:#1A1608;font-weight:600;
+    border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45);
+    font-family:var(--sans);font-size:15px;cursor:pointer}
+  .hl-float-btn:active{filter:brightness(1.15)}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}

@@ -93,6 +93,16 @@
   .center{text-align:center}
   .mt0{margin-top:0}.mt8{margin-top:8px}.mt16{margin-top:16px}.mt24{margin-top:24px}
   .warn{color:var(--red);font-size:13.5px}
+  /* text highlighting — cyan, deliberately not amber (amber already means "weak/attention") */
+  mark.hl{background:rgba(127,180,196,.28);color:inherit;border-bottom:2px solid var(--cyan);
+    padding:0 1px;border-radius:2px;cursor:pointer}
+  mark.hl.has-comment{background:rgba(127,180,196,.45);border-bottom-style:double;border-bottom-width:3px}
+  .hl-float-btn{position:fixed;left:50%;bottom:max(20px,env(safe-area-inset-bottom));
+    transform:translateX(-50%);z-index:50;width:auto;margin:0;padding:12px 24px;
+    background:var(--amber);border:1px solid var(--amber);color:#1A1608;font-weight:600;
+    border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45);
+    font-family:var(--sans);font-size:15px;cursor:pointer}
+  .hl-float-btn:active{filter:brightness(1.15)}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 
 </style>
@@ -13250,7 +13260,212 @@ function codeblock(c){
   return "<pre>"+esc(c).replace(kw,'<span class="k">$1</span>')+"</pre>";
 }
 function hexOf(n){ return "0x"+n.toString(16).toUpperCase().padStart(2,"0"); }
-function screen(html){ app.innerHTML = html; window.scrollTo(0,0); }
+function screen(html){ app.innerHTML = html; applyHighlights(app); window.scrollTo(0,0); }
+
+/* ---------- highlighting & notes (device-local, own keys) ---------- */
+const HL_KEY = "learnloop.highlights.v1";
+const NOTE_KEY = "learnloop.notes.v1";
+function loadHighlights(){
+  try{ const raw = localStorage.getItem(HL_KEY); if(raw){ const a = JSON.parse(raw); if(Array.isArray(a)) return a; } }
+  catch(e){}
+  return [];
+}
+function saveHighlights(a){
+  try{ localStorage.setItem(HL_KEY, JSON.stringify(a.slice(-500))); }catch(e){}
+}
+function loadNotes(){
+  try{ const raw = localStorage.getItem(NOTE_KEY); if(raw){ const n = JSON.parse(raw); if(n && typeof n==="object") return n; } }
+  catch(e){}
+  return {};
+}
+function saveNotes(n){
+  try{ localStorage.setItem(NOTE_KEY, JSON.stringify(n)); }catch(e){}
+}
+function newId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+
+/* wraps highlightable HTML in a zone the highlighter can find later.
+   field is a stable string key ("concept.definition", "assess.modelAnswer", …)
+   shared across every screen that shows that piece of text, so a highlight
+   made in one context (e.g. live assessment) reappears in another (interview drill). */
+function zone(html, loopId, field){
+  return `<div class="hl-zone" data-loop="${esc(loopId)}" data-field="${esc(field)}">${html}</div>`;
+}
+
+/* re-applies stored highlights into freshly-rendered .hl-zone elements under root.
+   Called once per innerHTML write (screen(), and the few places that write a
+   sub-element directly) — never re-scans zones an earlier call already handled,
+   since each call is scoped to only the subtree that was just (re)written. */
+function applyHighlights(root){
+  if(!root) return;
+  const hls = loadHighlights();
+  root.querySelectorAll(".hl-zone").forEach(zoneEl=>{
+    const loopId = zoneEl.dataset.loop, field = zoneEl.dataset.field;
+    hls.filter(h=>h.loopId===loopId && h.field===field).forEach(h=>{
+      if(zoneEl.textContent.slice(h.start, h.end) !== h.quote) return; // stale: content moved/changed, skip silently
+      wrapRange(zoneEl, h.start, h.end, h.id);
+    });
+  });
+}
+/* wraps [start,end) of zoneEl's flattened textContent in <mark data-hid>,
+   splitting text nodes as needed. May produce several <mark> fragments if the
+   range crosses inline tags (a <code> span, a keyword span) — expected and fine;
+   deletion below removes every fragment sharing the same data-hid. */
+function wrapRange(zoneEl, start, end, hid){
+  const walker = document.createTreeWalker(zoneEl, NodeFilter.SHOW_TEXT);
+  const nodes = []; let n;
+  while(n = walker.nextNode()) nodes.push(n);
+  let pos = 0;
+  nodes.forEach(node=>{
+    const len = node.nodeValue.length;
+    const nodeStart = pos, nodeEnd = pos + len;
+    pos = nodeEnd;
+    if(len===0 || nodeEnd <= start || nodeStart >= end) return;
+    const from = Math.max(0, start - nodeStart);
+    const to = Math.min(len, end - nodeStart);
+    let target = node;
+    if(from > 0) target = target.splitText(from);
+    if(to - from < target.nodeValue.length) target.splitText(to - from);
+    const mark = document.createElement("mark");
+    mark.className = "hl";
+    mark.dataset.hid = hid;
+    target.replaceWith(mark);
+    mark.appendChild(target);
+  });
+  zoneEl.normalize();
+}
+function markHasComment(hid){
+  const h = loadHighlights().find(x=>x.id===hid);
+  return !!(h && h.comment);
+}
+function refreshMarkStyles(hid){
+  const has = markHasComment(hid);
+  document.querySelectorAll('mark.hl[data-hid="'+hid+'"]').forEach(m=>m.classList.toggle("has-comment", has));
+}
+function unwrapHighlight(hid){
+  document.querySelectorAll('mark.hl[data-hid="'+hid+'"]').forEach(m=>{
+    const parent = m.parentNode;
+    while(m.firstChild) parent.insertBefore(m.firstChild, m);
+    parent.removeChild(m);
+    parent.normalize();
+  });
+}
+
+/* ----- creating a highlight from a live selection ----- */
+let pendingHl = null; // {loopId, field, start, end, quote} computed as soon as a valid selection exists
+function closestZone(node){
+  const el = node.nodeType === 3 ? node.parentElement : node;
+  return el ? el.closest(".hl-zone") : null;
+}
+/* normalizes a Range boundary (which may land on an element, between children,
+   rather than inside a text node) down to a character offset within zoneEl */
+function offsetInZone(zoneEl, container, off){
+  let node = container;
+  if(node.nodeType !== 3){
+    const child = node.childNodes[off];
+    if(child){
+      const w = document.createTreeWalker(child, NodeFilter.SHOW_TEXT);
+      node = child.nodeType===3 ? child : w.nextNode();
+      off = 0;
+      if(!node) return -1;
+    } else {
+      const w = document.createTreeWalker(zoneEl, NodeFilter.SHOW_TEXT);
+      let last=null, t; while(t=w.nextNode()) last=t;
+      if(!last) return -1;
+      node = last; off = last.nodeValue.length;
+    }
+  }
+  const walker = document.createTreeWalker(zoneEl, NodeFilter.SHOW_TEXT);
+  let pos = 0, n;
+  while(n = walker.nextNode()){
+    if(n === node) return pos + off;
+    pos += n.nodeValue.length;
+  }
+  return -1;
+}
+function updatePendingSelection(){
+  const sel = window.getSelection();
+  if(!sel || sel.isCollapsed || sel.rangeCount===0){ pendingHl = null; showHlBtn(false); return; }
+  const range = sel.getRangeAt(0);
+  const z1 = closestZone(range.startContainer), z2 = closestZone(range.endContainer);
+  if(!z1 || z1 !== z2){ pendingHl = null; showHlBtn(false); return; } // selection must stay within one zone
+  const start = offsetInZone(z1, range.startContainer, range.startOffset);
+  const end = offsetInZone(z1, range.endContainer, range.endOffset);
+  if(start < 0 || end < 0 || end <= start){ pendingHl = null; showHlBtn(false); return; }
+  pendingHl = { loopId: z1.dataset.loop, field: z1.dataset.field, start, end,
+                quote: z1.textContent.slice(start, end) };
+  showHlBtn(true);
+}
+let hlBtn = null;
+function ensureHlBtn(){
+  if(hlBtn) return hlBtn;
+  hlBtn = document.createElement("button");
+  hlBtn.id = "hlFloatBtn";
+  hlBtn.className = "hl-float-btn";
+  hlBtn.textContent = "Highlight";
+  hlBtn.style.display = "none";
+  /* prevent the tap itself from collapsing the selection before click fires —
+     on Android Chrome that ordering isn't guaranteed, so pendingHl is computed
+     ahead of time in updatePendingSelection() rather than read here on tap */
+  hlBtn.addEventListener("touchstart", e=>e.preventDefault(), {passive:false});
+  hlBtn.addEventListener("mousedown", e=>e.preventDefault());
+  hlBtn.addEventListener("click", createPendingHighlight);
+  document.body.appendChild(hlBtn);
+  return hlBtn;
+}
+function showHlBtn(on){ ensureHlBtn().style.display = on ? "block" : "none"; }
+function createPendingHighlight(){
+  if(!pendingHl) return;
+  const h = Object.assign({id:newId(), comment:"", date:todayStr()}, pendingHl);
+  const all = loadHighlights(); all.push(h); saveHighlights(all);
+  const zoneEl = document.querySelector('.hl-zone[data-loop="'+CSS.escape(h.loopId)+'"][data-field="'+CSS.escape(h.field)+'"]');
+  if(zoneEl) wrapRange(zoneEl, h.start, h.end, h.id);
+  window.getSelection()?.removeAllRanges();
+  pendingHl = null; showHlBtn(false);
+}
+document.addEventListener("selectionchange", updatePendingSelection);
+
+/* ----- editing / deleting a highlight ----- */
+document.addEventListener("click", e=>{
+  const mark = e.target.closest && e.target.closest("mark.hl");
+  if(mark) editHighlight(mark.dataset.hid);
+});
+function editHighlight(hid){
+  const all = loadHighlights();
+  const h = all.find(x=>x.id===hid);
+  if(!h) return;
+  const input = prompt("Note for this highlight (leave blank to clear; clear an empty note to remove the highlight):", h.comment||"");
+  if(input===null) return; // cancelled — no change
+  const text = input.trim();
+  if(text===""){
+    if(!h.comment){
+      if(!confirm("Remove this highlight?")) return;
+      saveHighlights(all.filter(x=>x.id!==hid));
+      unwrapHighlight(hid);
+      return;
+    }
+    h.comment = "";
+  } else h.comment = text;
+  saveHighlights(all);
+  refreshMarkStyles(hid);
+}
+
+/* ----- per-loop notes ----- */
+function notesCardHtml(loopId){
+  const n = loadNotes()[loopId];
+  return `<div class="card">
+    <div class="layer-label">Your notes</div>
+    <textarea id="note_${esc(loopId)}" placeholder="Mnemonics, your own phrasing, anything worth remembering…" onblur="saveNoteFor('${esc(loopId)}')">${esc(n?n.text:"")}</textarea>
+  </div>`;
+}
+function saveNoteFor(loopId){
+  const ta = document.getElementById("note_"+loopId);
+  if(!ta) return;
+  const text = ta.value;
+  const notes = loadNotes();
+  if(text.trim()==="") delete notes[loopId];
+  else notes[loopId] = {text, date: todayStr()};
+  saveNotes(notes);
+}
 
 /* ---------- HOME ---------- */
 function home(){
@@ -13313,19 +13528,19 @@ function conceptCardsHtml(loop){
   return `
     <div class="card">
       <div class="layer-label">Definition <span class="layer-note">— say this to an interviewer</span></div>
-      ${fmt(loop.concept.definition)}
+      ${zone(fmt(loop.concept.definition), loop.id, "concept.definition")}
     </div>
     <div class="card">
       <div class="layer-label">Example</div>
-      ${codeblock(loop.concept.code)}
+      ${zone(codeblock(loop.concept.code), loop.id, "concept.code")}
     </div>
     <div class="card">
       <div class="layer-label amb">Under the hood</div>
-      ${fmt(loop.concept.underlying)}
+      ${zone(fmt(loop.concept.underlying), loop.id, "concept.underlying")}
     </div>
     <div class="card">
       <div class="layer-label">Why it matters</div>
-      ${fmt(loop.concept.whyItMatters)}
+      ${zone(fmt(loop.concept.whyItMatters), loop.id, "concept.whyItMatters")}
     </div>`;
 }
 /* optional enrichment fields (Block 1+): shown after passing, and on re-reads */
@@ -13333,13 +13548,13 @@ function extrasHtml(loop){
   let h = "";
   if(loop.transfer) h += `<div class="card">
       <div class="layer-label amb">Transfer <span class="layer-note">— apply it in your real code</span></div>
-      ${fmt(loop.transfer)}</div>`;
+      ${zone(fmt(loop.transfer), loop.id, "transfer")}</div>`;
   if(loop.verify) h += `<div class="card">
       <div class="layer-label">Verify it yourself <span class="layer-note">— run it, don't trust it</span></div>
-      ${codeblock(loop.verify)}</div>`;
+      ${zone(codeblock(loop.verify), loop.id, "verify")}</div>`;
   if(loop.goDeeper) h += `<div class="card">
       <div class="layer-label">Go deeper</div>
-      ${fmt(loop.goDeeper)}</div>`;
+      ${zone(fmt(loop.goDeeper), loop.id, "goDeeper")}</div>`;
   return h;
 }
 function concept(loop, mode){
@@ -13358,6 +13573,7 @@ function concept(loop, mode){
     <h1>${esc(loop.title)}</h1>
     ${conceptCardsHtml(loop)}
     ${mode ? extrasHtml(loop) : ""}
+    ${notesCardHtml(loop.id)}
     ${footer}
   `);
 }
@@ -13378,7 +13594,7 @@ function problem(){
   screen(`
     <div class="eyebrow">${hexOf(idx)} <span class="dim">// problem</span></div>
     <h2>Solve before you reveal</h2>
-    <div class="card">${fmt(l.exercise.prompt)}${codeblock(l.exercise.code)}</div>
+    <div class="card">${zone(fmt(l.exercise.prompt), l.id, "exercise.prompt")}${zone(codeblock(l.exercise.code), l.id, "exercise.code")}</div>
     <div id="sol"></div>
     <button class="primary" id="revealBtn" onclick="reveal()">Reveal solution</button>
     <button class="ghost" onclick="confirmExit()">Exit loop</button>
@@ -13389,9 +13605,10 @@ function reveal(){
   document.getElementById("sol").innerHTML = `
     <div class="card">
       <div class="layer-label amb">Solution</div>
-      ${codeblock(l.exercise.solution)}
-      ${fmt(l.exercise.explanation)}
+      ${zone(codeblock(l.exercise.solution), l.id, "exercise.solution")}
+      ${zone(fmt(l.exercise.explanation), l.id, "exercise.explanation")}
     </div>`;
+  applyHighlights(document.getElementById("sol"));
   const b = document.getElementById("revealBtn");
   b.textContent = "Continue to assessment";
   b.onclick = ()=>mcq();
@@ -13430,7 +13647,7 @@ function explain(){
   screen(`
     <div class="eyebrow">${hexOf(idx)} <span class="dim">// assess · articulate</span></div>
     <h2>Say it in your own words</h2>
-    <div class="card mt8">${fmt(l.assess.explainPrompt)}
+    <div class="card mt8">${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt")}
       <textarea id="ans" placeholder="Write in English, as if answering an interviewer…">${esc(sess.draftAnswer||"")}</textarea>
     </div>
     <div id="cmp"></div>
@@ -13452,7 +13669,7 @@ function compare(){
   document.getElementById("cmp").innerHTML = `
     <div class="card">
       <div class="layer-label amb">Model answer</div>
-      ${fmt(l.assess.modelAnswer)}
+      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer")}
     </div>
     <div class="card">
       <div class="layer-label">Honest self-rating — how close was your answer?</div>
@@ -13461,6 +13678,7 @@ function compare(){
       <div class="sub mt8">0 = couldn't say it · 3 = the idea, roughly · 5 = interview-ready</div>
     </div>
     <button class="primary" onclick="finishLoop()">Finish loop</button>`;
+  applyHighlights(document.getElementById("cmp"));
   document.querySelector("button.primary:not(.rate)")?.scrollIntoView({block:"end"});
 }
 function rate(n){ sess.rating = n;
@@ -13646,7 +13864,7 @@ function ivQ(){
   screen(`
     <div class="eyebrow">interview <span class="dim">// ${iv.i+1}/${iv.queue.length} · ${esc(l.id)} · </span><span class="dim" id="ivt">0s</span></div>
     <h2>${esc(l.title)}</h2>
-    <div class="card">${fmt(l.assess.explainPrompt)}
+    <div class="card">${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt")}
       <textarea id="ivans" placeholder="Answer in English, as if the interviewer is waiting…"></textarea>
     </div>
     <div id="ivcmp"></div>
@@ -13677,7 +13895,7 @@ function ivReveal(){
   document.getElementById("ivcmp").innerHTML = `
     <div class="card">
       <div class="layer-label amb">Model answer</div>
-      ${fmt(l.assess.modelAnswer)}
+      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer")}
     </div>
     <div class="card">
       <div class="layer-label">How close were you?</div>
@@ -13685,6 +13903,7 @@ function ivReveal(){
         `<button class="rate" id="ivr${n}" onclick="ivRate(${n})">${n}</button>`).join("")}</div>
     </div>
     <button class="primary" onclick="ivNext()">${iv.i < iv.queue.length-1 ? "Next question" : "Finish drill"}</button>`;
+  applyHighlights(document.getElementById("ivcmp"));
 }
 function ivRate(n){ iv.rating = n;
   for(let i=0;i<=5;i++) document.getElementById("ivr"+i)?.classList.toggle("sel", i===n);
@@ -13740,20 +13959,21 @@ function openHist(bi, li){ concept(CUR.blocks[bi].loops[li], "history"); }
 
 /* ---------- DATA ---------- */
 function dataScreen(){
+  const hlCount = loadHighlights().length, noteCount = Object.keys(loadNotes()).length;
   screen(`
     <div class="eyebrow">data <span class="dim">// backup &amp; restore</span></div>
     <h1>Your progress</h1>
     <div class="card">
       <div class="layer-label">Export</div>
-      <p class="sub">Progress lives in this browser's storage. Back it up before clearing browser data or switching phones.</p>
+      <p class="sub">Progress, interview answers, ${hlCount} highlight${hlCount===1?"":"s"}, and ${noteCount} note${noteCount===1?"":"s"} all live in this browser's storage. Back them up before clearing browser data or switching phones.</p>
       <button onclick="exportData()">Download backup file</button>
       <button onclick="showExport()">Show as text to copy</button>
       <div id="exp"></div>
     </div>
     <div class="card">
       <div class="layer-label">Import</div>
-      <p class="sub">Paste a backup below to restore it. Replaces current progress.</p>
-      <textarea id="imp" placeholder='{"v":1,...}'></textarea>
+      <p class="sub">Paste a backup below to restore it. Replaces current progress, answers, highlights, and notes.</p>
+      <textarea id="imp" placeholder='{"bv":1,...}'></textarea>
       <button onclick="importData()">Restore from pasted text</button>
     </div>
     <div class="card">
@@ -13781,8 +14001,16 @@ function showAnswers(){
 function clearAnswers(){
   if(confirm("Delete all saved interview answers?")){ saveAnswers([]); dataScreen(); }
 }
+/* bundles everything device-local into one backup object. "bv" (backup-format
+   version) is deliberately NOT named "v" — that field already means the
+   learnloop.v1 STATE schema version (S.v, migrated by migrate()); reusing the
+   name for two independent counters is exactly the ambiguity migrate()'s
+   discipline exists to avoid. */
+function buildBackup(){
+  return { bv: 1, state: S, answers: loadAnswers(), highlights: loadHighlights(), notes: loadNotes() };
+}
 function exportData(){
-  const blob = new Blob([JSON.stringify(S)],{type:"application/json"});
+  const blob = new Blob([JSON.stringify(buildBackup())],{type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "learnloop-backup-"+todayStr()+".json";
@@ -13790,13 +14018,22 @@ function exportData(){
 }
 function showExport(){
   document.getElementById("exp").innerHTML =
-    `<textarea readonly onclick="this.select()">${esc(JSON.stringify(S))}</textarea>`;
+    `<textarea readonly onclick="this.select()">${esc(JSON.stringify(buildBackup()))}</textarea>`;
 }
 function importData(){
   try{
     const s = JSON.parse(document.getElementById("imp").value.trim());
-    if(!s || (s.v!==1 && s.v!==2) || typeof s.log!=="object") throw 0;
-    S = migrate(s); save(); alert("Progress restored."); home();
+    if(s && typeof s.state==="object" && typeof s.state.log==="object"){
+      // new wrapped backup format — restore everything
+      S = migrate(s.state); save();
+      if(Array.isArray(s.answers)) saveAnswers(s.answers);
+      if(Array.isArray(s.highlights)) saveHighlights(s.highlights);
+      if(s.notes && typeof s.notes==="object") saveNotes(s.notes);
+    } else if(s && (s.v===1 || s.v===2) && typeof s.log==="object"){
+      // legacy bare-state format (pre-dates highlights/notes) — restore progress only
+      S = migrate(s); save();
+    } else throw 0;
+    alert("Progress restored."); home();
   }catch(e){ alert("That doesn't look like a valid LearnLoop backup."); }
 }
 function resetAll(){
