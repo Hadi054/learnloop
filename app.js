@@ -798,9 +798,10 @@ function dataScreen(){
     </div>
     <div class="card">
       <div class="layer-label">Import</div>
-      <p class="sub">Paste a backup below to restore it. Replaces current progress, answers, highlights, and notes.</p>
+      <p class="sub">Pick a backup file directly — from Drive, Dropbox, Downloads, wherever it's saved — or paste its contents below. Replaces current progress, answers, highlights, and notes.</p>
+      <input type="file" id="impfile" accept="application/json,.json" onchange="importFromFile(this)">
       <textarea id="imp" placeholder='{"bv":1,...}'></textarea>
-      <button onclick="importData()">Restore from pasted text</button>
+      <button onclick="importData()">Restore</button>
     </div>
     <div class="card">
       <div class="layer-label">Interview answers</div>
@@ -845,6 +846,16 @@ function exportData(){
 function showExport(){
   document.getElementById("exp").innerHTML =
     `<textarea readonly onclick="this.select()">${esc(JSON.stringify(buildBackup()))}</textarea>`;
+}
+/* reads a picked file (works with Drive/Dropbox-backed files via the OS file
+   picker — no API, no auth) into the paste box, so Restore behaves identically
+   either way */
+function importFromFile(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { document.getElementById("imp").value = reader.result; };
+  reader.readAsText(file);
 }
 function importData(){
   try{
