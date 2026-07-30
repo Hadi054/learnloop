@@ -71,10 +71,34 @@
     color:var(--dim);font-size:14.5px}
   .feedback.good{border-color:var(--green)} .feedback.bad{border-color:var(--red)}
   .row{display:flex;gap:10px} .row>button{flex:1}
-  .blockrow{display:flex;gap:7px;margin-top:14px;flex-wrap:wrap}
-  button.blockbtn{width:auto;flex:0 0 auto;min-width:64px;margin-top:0;
-    font-family:var(--mono);font-size:13.5px;letter-spacing:.08em;padding:9px 14px}
-  button.blockbtn.sel{background:var(--amber);border-color:var(--amber);color:#1A1608;font-weight:700}
+  /* curriculum list (home): one container per block, green + ticked when done */
+  .blockcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:12px 14px 13px;margin-top:12px}
+  .blockcard.done{border-color:var(--green);background:rgba(134,191,138,.07)}
+  button.blockhead{display:flex;align-items:center;gap:10px;width:100%;margin:0;
+    padding:0;background:none;border:none;border-radius:0;text-align:left}
+  .bmark{font-family:var(--mono);font-size:12px;color:var(--dim);letter-spacing:.06em;
+    border:1px solid var(--line);border-radius:5px;padding:2px 0;
+    min-width:36px;text-align:center;flex:0 0 auto}
+  .blockcard.done .bmark{color:var(--green);border-color:var(--green);font-size:14px}
+  .bt{flex:1;min-width:0}
+  .bn{display:block;font-family:var(--mono);font-size:14.5px;line-height:1.3}
+  .bs{display:block;color:var(--dim);font-size:12.5px;line-height:1.35;margin-top:1px}
+  .bcount{font-family:var(--mono);font-size:12.5px;color:var(--dim);flex:0 0 auto}
+  .blockcard.done .bcount{color:var(--green)}
+  .chev{font-family:var(--mono);font-size:11px;color:var(--dim);flex:0 0 auto}
+  .cells.mini{margin:10px 0 0;gap:3px}
+  .cells.mini .cell{height:9px;border-radius:2px}
+  .looplist{margin-top:11px;border-top:1px solid var(--line)}
+  button.looprow{display:flex;align-items:center;gap:10px;width:100%;margin:0;
+    padding:10px 4px;background:none;border:none;border-radius:0;
+    border-bottom:1px solid var(--line);text-align:left;font-size:15px}
+  button.looprow:last-child{border-bottom:none}
+  button.looprow.done{background:rgba(134,191,138,.06)}
+  button.looprow .tick{font-family:var(--mono);font-size:12px;color:var(--dim);
+    min-width:24px;flex:0 0 auto}
+  button.looprow.done .tick{color:var(--green);font-size:15px}
+  button.looprow .lt{flex:1;min-width:0;line-height:1.35;color:var(--text)}
   .histitem{display:flex;justify-content:space-between;align-items:center;gap:10px;
     padding:11px 2px;border-bottom:1px solid var(--line);font-size:15px}
   .histitem:last-child{border-bottom:none}
@@ -13223,12 +13247,11 @@ function applyStreak(){
   S.lastDay = t;
 }
 /* the ACTIVE block = first with unfinished loops (auto-advance); last if all done.
-   doneIds/nextLoop/reviews are scoped to it, so progression restarts per block. */
+   It only decides which block the home list opens by default, plus nextLoop(). */
 function activeBlock(){
   return CUR.blocks.find(b => b.loops.some(l => !S.log[l.id])) || CUR.blocks[CUR.blocks.length-1];
 }
 function allDone(){ return CUR.blocks.every(b => b.loops.every(l => S.log[l.id])); }
-function doneIds(){ return activeBlock().loops.filter(l=>S.log[l.id]).map(l=>l.id); }
 function nextLoop(){ return activeBlock().loops.find(l => !S.log[l.id]) || null; }
 /* spaced repetition (v2): concepts come due on log[id].due; a review serves up
    to 2 due concepts from ANY block. Manual review = the 2 weakest overall. */
@@ -13468,49 +13491,61 @@ function saveNoteFor(loopId){
   saveNotes(notes);
 }
 
-/* ---------- HOME ---------- */
+/* ---------- HOME (the curriculum list) ----------
+   The block/loop list IS the home screen: no "next loop" driver, the learner
+   picks. A passed loop gets a tick and a green row; a block whose every loop is
+   passed gets a tick and a green container. One block expands at a time — by
+   default the active one (first with unfinished loops). */
+let openBi = null;              // expanded block index; null = follow activeBlock(), -1 = none
+function toggleBlock(i){ openBi = (openBi===i ? -1 : i); home(); }
 function home(){
-  const blk = activeBlock();
-  const bi = CUR.blocks.indexOf(blk);
-  const L = blk.loops;
-  const done = doneIds().length;
-  const cells = L.map(l=>{
-    const rec = S.log[l.id];
-    if(!rec) return '<div class="cell"></div>';
-    return '<div class="cell done'+(rec.score<4?" weak":"")+'"></div>';
-  }).join("");
+  const total = CUR.blocks.reduce((n,b)=>n+b.loops.length, 0);
+  const totalDone = CUR.blocks.reduce((n,b)=>n+b.loops.filter(l=>S.log[l.id]).length, 0);
+  const shown = openBi===null ? CUR.blocks.indexOf(activeBlock()) : openBi;
   const due = dueConcepts().length;
-  const finished = allDone();
-  let btn;
-  if(due >= 1){
-    btn = '<button class="primary" onclick="startReview(false)">Start review — '+due+' concept'+(due===1?"":"s")+' due</button>';
-    if(!finished) btn += '<button class="ghost" onclick="startLoop()">Skip to new loop instead</button>';
-    btn += '<div class="sub mt8">Spaced repetition: passed concepts return after 1, 3, 7, then 21 days. Reviews first keeps them short.</div>';
-  }
-  else if(finished) btn = '<button class="primary" onclick="startReview(true)">Review weakest concepts</button>'+
-    '<div class="feedback good">All '+CUR.blocks.length+' blocks complete and nothing due — every cell filled. Revisit any loop from Browse, or drill from Interview. Export your progress from Data.</div>';
-  else { const nl = nextLoop();
-    btn = '<button class="primary" onclick="startLoop()">Start loop '+(done+1)+' — '+esc(nl.title)+'</button>'; }
+  const blocks = CUR.blocks.map((b,bi)=>{
+    const done = b.loops.filter(l=>S.log[l.id]).length;
+    const complete = done === b.loops.length;
+    const open = bi === shown;
+    const cells = b.loops.map(l=>{
+      const rec = S.log[l.id];
+      if(!rec) return '<div class="cell"></div>';
+      return '<div class="cell done'+(rec.score<4?" weak":"")+'"></div>';
+    }).join("");
+    const rows = !open ? "" : b.loops.map((l,i)=>{
+      const r = S.log[l.id];
+      return `<button class="looprow${r?" done":""}" onclick="openLoop(${bi},${i})">
+        <span class="tick">${r?"✓":hexOf(i)}</span>
+        <span class="lt">${esc(l.title)}</span>
+        ${r?`<span class="badge ${r.score>=4?"s":"w"}">${r.score.toFixed(1)}</span>`
+           :'<span class="badge">—</span>'}
+      </button>`;
+    }).join("");
+    return `<div class="blockcard${complete?" done":""}">
+      <button class="blockhead" onclick="toggleBlock(${bi})" aria-expanded="${open}">
+        <span class="bmark">${complete?"✓":esc(b.id.toUpperCase())}</span>
+        <span class="bt"><span class="bn">${esc(b.name)}</span><span class="bs">${esc(b.tagline)}</span></span>
+        <span class="bcount">${done}/${b.loops.length}</span>
+        <span class="chev">${open?"▴":"▾"}</span>
+      </button>
+      <div class="cells mini">${cells}</div>
+      ${open?`<div class="looplist">${rows}</div>`:""}
+    </div>`;
+  }).join("");
   screen(`
-    <div class="eyebrow">learnloop <span class="dim">// block ${bi}</span></div>
-    <h1>${esc(blk.name)}</h1>
-    <div class="sub">${esc(blk.tagline)}</div>
-    ${bi>0 && !finished ? '<div class="sub" style="color:var(--green)">Block '+(bi-1)+' complete — memory installed.</div>' : ''}
+    <div class="eyebrow">learnloop <span class="dim">// curriculum</span></div>
+    <h1>The whole machine</h1>
+    <div class="sub">${totalDone}/${total} concepts installed across ${CUR.blocks.length} blocks. Tap a block to open it, a loop to read it.</div>
     <div class="stats">
       <div class="stat"><div class="n">${S.streak}</div><div class="l">day streak</div></div>
       <div class="stat"><div class="n">${S.loops}</div><div class="l">loops run</div></div>
-      <div class="stat"><div class="n">${done}<span style="color:var(--dim);font-size:16px">/${L.length}</span></div><div class="l">concepts</div></div>
+      <div class="stat"><div class="n">${totalDone}<span style="color:var(--dim);font-size:16px">/${total}</span></div><div class="l">concepts</div></div>
     </div>
-    <div class="card">
-      <div class="cellcap"><span>0x00</span><span>memory installed</span><span>${hexOf(L.length)}</span></div>
-      <div class="cells">${cells}</div>
-    </div>
-    ${btn}
-    <div class="row">
-      <button onclick="browse()">Browse</button>
+    ${due>=1 ? '<button class="primary" onclick="startReview(false)">Start review — '+due+' concept'+(due===1?"":"s")+' due</button>'
+             : (allDone() ? '<button class="primary" onclick="startReview(true)">Review weakest concepts</button>' : '')}
+    ${blocks}
+    <div class="row mt16">
       <button onclick="interview()">Interview</button>
-    </div>
-    <div class="row">
       <button onclick="history_()">History</button>
       <button onclick="dataScreen()">Data</button>
     </div>
@@ -13566,7 +13601,7 @@ function concept(loop, mode){
     note = " · preview";
     footer = (S.log[loop.id] ? ""
       : '<button class="primary" onclick="startLoop(browsed)">Start this loop</button>')
-      + '<button onclick="browse()">Back to browse</button>';
+      + '<button onclick="home()">Back to the list</button>';
   }
   else footer = '<button class="primary" onclick="problem()">Try the problem</button><button class="ghost" onclick="confirmExit()">Exit loop</button>';
   screen(`
@@ -13783,35 +13818,10 @@ function revNext(){
   `);
 }
 
-/* ---------- BROWSE (block & loop picker) ---------- */
-let browseBi = 0;
-let browsed = null; /* loop currently opened from browse, so concept()'s footer can start it */
-function browse(bi){
-  if(bi!==undefined) browseBi = bi;
-  if(browseBi >= CUR.blocks.length) browseBi = 0;
-  const b = CUR.blocks[browseBi];
-  const tabs = CUR.blocks.map((bl,i)=>
-    `<button class="blockbtn${i===browseBi?" sel":""}" onclick="browse(${i})">${esc(bl.id.toUpperCase())}</button>`).join("");
-  const done = b.loops.filter(l=>S.log[l.id]).length;
-  const rows = b.loops.map((l,i)=>{
-    const r = S.log[l.id];
-    return `<div class="histitem">
-      <span style="font-family:var(--mono);color:var(--dim);font-size:12px">${hexOf(i)}</span>
-      <span style="flex:1"><button class="linkbtn" style="margin:0" onclick="openLoop(${browseBi},${i})">${esc(l.title)}</button></span>
-      ${r?`<span class="badge ${r.score>=4?"s":"w"}">${r.score.toFixed(1)}</span>`:'<span class="badge">—</span>'}
-    </div>`;
-  }).join("");
-  screen(`
-    <div class="eyebrow">browse <span class="dim">// pick a block, pick a loop</span></div>
-    <h1>${esc(b.name)}</h1>
-    <div class="sub">${esc(b.tagline)}</div>
-    <div class="blockrow">${tabs}</div>
-    <div class="card">${rows}</div>
-    <div class="sub mt8">${done}/${b.loops.length} installed. Tap a loop to read it; loops you haven't passed can be started from there. Out of order is allowed — but later loops build on earlier ones.</div>
-    <button class="primary" onclick="home()">Home</button>
-  `);
-}
+/* ---------- OPENING A LOOP FROM THE LIST ---------- */
+let browsed = null; /* loop opened from the list, so concept()'s footer can start it */
 function openLoop(bi, li){
+  openBi = bi;                  /* keep that block expanded when we come back */
   browsed = CUR.blocks[bi].loops[li];
   concept(browsed, "browse");
 }

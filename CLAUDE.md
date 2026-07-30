@@ -220,12 +220,21 @@ Content authoring rules (quality bar — hold every generated loop to these):
   INTERVALS; `due` = "YYYY-MM-DD" of next scheduled review.
 - Multi-block (added 2026-07-17): the ACTIVE block is derived, not stored — first
   block in CUR.blocks with unfinished loops; auto-advances when a block completes.
-  Home and next-loop are scoped to it; History shows all blocks grouped; Browse can
-  start any loop in any block.
+  It picks which block the home list opens by default, and feeds `nextLoop()`;
+  History shows all blocks grouped.
+- HOME = THE CURRICULUM LIST (learner's decision 2026-07-30, replaced the
+  next-loop/Browse split): home renders every block as a `.blockcard` container
+  with the block's mini memory bar; one block is expanded at a time (`openBi`,
+  default = active block, -1 = all collapsed; `toggleBlock(i)`). A passed loop row
+  gets `✓` + `.looprow.done` (green tint); a block with every loop passed gets `✓`
+  in place of its id + `.blockcard.done` (green border and tint). Tapping any loop
+  opens it in concept "browse" mode — read-only if passed, "Start this loop" if
+  not — and returning keeps that block expanded. The old Browse screen is gone
+  (home absorbed it); nav is Interview / History / Data plus the review button.
 - Spaced repetition (v:2, added 2026-07-17): passing a loop schedules it due
   tomorrow (`log[id].due`, ladder stage `ivl` into INTERVALS = [1,3,7,21] days).
-  Home offers "Start review — N due" whenever ≥1 concept is due, from ANY block,
-  with a "Skip to new loop" escape; due reviews outrank the all-done state.
+  Home offers "Start review — N due" above the list whenever ≥1 concept is due,
+  from ANY block; the all-done state instead offers "Review weakest concepts".
   A review serves up to 2 due concepts (soonest-due, then lowest score), 3
   questions each from the set toggled since last time (`1 - set`). Result ≥2/3
   correct climbs the ladder (ivl+1, capped); worse resets to tomorrow. New score
@@ -274,9 +283,8 @@ Content authoring rules (quality bar — hold every generated loop to these):
   responder chain, hit-testing, cell dequeue). Claims that need a live app
   (render server, app lifecycle) are marked documented in their verify fields.
 - When adding loops: follow the schema and authoring rules above, keep ids sequential
-  within the block (b1-01…), append into the block's `loops` array. The Browse screen
-  already lists every block in CUR.blocks and can start any loop; home/next-loop/
-  review mechanics still serve only `CUR.blocks[0]` (full multi-block home = TODO #1).
+  within the block (b1-01…), append into the block's `loops` array. The home list
+  picks up new blocks/loops automatically — no app.js change needed.
   Node.js is NOT installed on this Mac — build dist with a faithful replica of
   build.js's replacements, and syntax-check JS via `osascript -l JavaScript`.
 - Preserve the visual language: eyebrow labels like `0x07 // CONCEPT`, memory-cell
@@ -285,10 +293,11 @@ Content authoring rules (quality bar — hold every generated loop to these):
 ## TODO (rough priority)
 
 1. ~~Multi-block support~~ DONE 2026-07-17 (auto-advance active block, per-block
-   memory bar/reviews, grouped History, Browse picker). Optional loop fields
+   memory bar/reviews, grouped History, Browse picker — Browse superseded by the
+   curriculum-list home 2026-07-30). Optional loop fields
    (transfer/verify/goDeeper) render via extrasHtml() on the passed-result screen
-   and on re-reads (History/Browse); hidden during the live loop's concept phase
-   (pacing) and on failed results. Loops without the fields render nothing.
+   and on re-reads (History, list previews); hidden during the live loop's concept
+   phase (pacing) and on failed results. Loops without the fields render nothing.
 2. ~~Block 1 content~~ DONE 2026-07-17 (15 loops, all with transfer/verify/goDeeper,
    every machine claim verified by running Swift locally).
 3. ~~Interview mode~~ DONE 2026-07-17. Drill shuffles explainPrompts of all passed
