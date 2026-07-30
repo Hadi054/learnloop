@@ -356,11 +356,16 @@ function home(){
 /* ---------- LOOP FLOW ---------- */
 let sess = null;
 let peekReturn = null;
+/* A re-run of an already-passed loop serves the OTHER question set, so the same
+   three MCQs never come back twice in a row. */
 function startLoop(loop){
   loop = loop || nextLoop(); if(!loop) return home();
-  sess = {loop, qi:0, correct:0, rating:null, draftAnswer:"", comparedShown:false};
+  const rec = S.log[loop.id];
+  const set = rec ? 1 - (rec.set || 0) : 0;
+  sess = {loop, set, qi:0, correct:0, rating:null, draftAnswer:"", comparedShown:false};
   concept(loop);
 }
+function sessQ(){ const s = sess.loop.assess.sets; return (s[sess.set] || s[0])[sess.qi]; }
 function conceptCardsHtml(loop){
   return `
     <div class="card">
@@ -394,22 +399,22 @@ function extrasHtml(loop){
       ${zone(fmt(loop.goDeeper), loop.id, "goDeeper")}</div>`;
   return h;
 }
+/* Tapping a loop in the list lands HERE — one screen, evaluation button at the
+   bottom. No preview step. Extras stay hidden until the loop has been passed
+   (pacing); a passed loop opening again is a re-run on the other question set. */
 function concept(loop, mode){
   const p = loopPos(loop);
-  let footer, note = "";
-  if(mode==="history") footer = '<button onclick="history_()">Back to history</button>';
-  else if(mode==="browse"){
-    note = " · preview";
-    footer = (S.log[loop.id] ? ""
-      : '<button class="primary" onclick="startLoop(browsed)">Start this loop</button>')
-      + '<button onclick="home()">Back to the list</button>';
-  }
-  else footer = '<button class="primary" onclick="problem()">Try the problem</button><button class="ghost" onclick="confirmExit()">Exit loop</button>';
+  const passed = !!S.log[loop.id];
+  const note = mode==="history" ? "" : (passed ? " · re-run · set "+(sess && sess.set===1?"B":"A") : "");
+  const footer = mode==="history"
+    ? '<button onclick="history_()">Back to history</button>'
+    : '<button class="primary" onclick="problem()">Try the problem</button>'
+      + '<button class="ghost" onclick="home()">Back to the list</button>';
   screen(`
     <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} · concept ${p.i+1}/${p.n}${note}</span></div>
     <h1>${esc(loop.title)}</h1>
     ${conceptCardsHtml(loop)}
-    ${mode ? extrasHtml(loop) : ""}
+    ${passed ? extrasHtml(loop) : ""}
     ${notesCardHtml(loop.id)}
     ${footer}
   `);
@@ -452,7 +457,7 @@ function reveal(){
 }
 function mcq(){
   const l = sess.loop, idx = loopPos(l).i;
-  const q = l.assess.sets[0][sess.qi];
+  const q = sessQ();
   screen(`
     <div class="eyebrow">${hexOf(idx)} <span class="dim">// assess · question ${sess.qi+1}/3</span></div>
     <h2>${esc(q.q).replace(/`([^`]+)`/g,"<code>$1</code>")}</h2>
@@ -464,7 +469,7 @@ function mcq(){
   `);
 }
 function answer(i){
-  const q = sess.loop.assess.sets[0][sess.qi];
+  const q = sessQ();
   const btns = document.querySelectorAll("#opts .opt");
   btns.forEach((b,j)=>{ b.disabled = true;
     if(j===q.correct) b.classList.add("correct");
@@ -525,10 +530,20 @@ function finishLoop(){
   if(sess.rating===null){ alert("Rate your explanation first (0–5)."); return; }
   const score = Math.round((sess.correct + sess.rating*0.4)*10)/10;
   const passed = score >= PASS;
+  const prev = S.log[sess.loop.id];
   if(passed){
     const t = todayStr();
-    S.log[sess.loop.id] = {score, date: t, set: 0,
-      hist: [{score, date: t, set: 0}], ivl: 0, due: addDays(t, INTERVALS[0])};
+    if(prev){
+      /* re-run: append to history and move the ladder like a review does —
+         never wipe hist or reset a mature interval on a strong repeat */
+      prev.hist = (prev.hist || []).concat({score, date: t, set: sess.set}).slice(-20);
+      prev.score = score; prev.date = t; prev.set = sess.set;
+      prev.ivl = sess.correct >= 2 ? Math.min((prev.ivl || 0) + 1, INTERVALS.length - 1) : 0;
+      prev.due = addDays(t, INTERVALS[prev.ivl]);
+    } else {
+      S.log[sess.loop.id] = {score, date: t, set: sess.set,
+        hist: [{score, date: t, set: sess.set}], ivl: 0, due: addDays(t, INTERVALS[0])};
+    }
     S.loops++; applyStreak(); save();
   }
   const idx = loopPos(sess.loop).i;
@@ -538,14 +553,17 @@ function finishLoop(){
     <div class="center sub">${sess.correct}/3 questions · self-rating ${sess.rating}/5</div>
     <div class="card">${passed
       ? fmt("**Installed.** \u201C"+sess.loop.title+"\u201D is saved with score "+score.toFixed(1)+". Low scores get revisited automatically in review loops.").replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")
-      : fmt("**Not yet.** Below "+PASS+".0 the concept isn\u2019t saved \u2014 re-read it and run the loop again. That\u2019s the system working, not a failure.").replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")}
+      : fmt(prev
+          ? "**Below "+PASS+".0 on the re-run.** Your earlier pass ("+prev.score.toFixed(1)+") still stands \u2014 nothing was overwritten. Re-read it and run it again."
+          : "**Not yet.** Below "+PASS+".0 the concept isn\u2019t saved \u2014 re-read it and run the loop again. That\u2019s the system working, not a failure.").replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")}
     </div>
     ${passed ? extrasHtml(sess.loop) : ""}
     ${passed ? "" : '<button onclick="retry()">Re-read this concept</button>'}
-    <button class="primary" onclick="home()">Home</button>
+    <button class="primary" onclick="home()">Back to the list</button>
   `);
 }
-function retry(){ const l = sess.loop; sess = {loop:l, qi:0, correct:0, rating:null, draftAnswer:"", comparedShown:false}; concept(l); }
+function retry(){ const l = sess.loop, set = sess.set || 0;
+  sess = {loop:l, set, qi:0, correct:0, rating:null, draftAnswer:"", comparedShown:false}; concept(l); }
 function confirmExit(){ if(confirm("Exit this loop? Progress in it won't be saved.")) home(); }
 
 /* ---------- REVIEW LOOP ---------- */
@@ -620,11 +638,9 @@ function revNext(){
 }
 
 /* ---------- OPENING A LOOP FROM THE LIST ---------- */
-let browsed = null; /* loop opened from the list, so concept()'s footer can start it */
 function openLoop(bi, li){
   openBi = bi;                  /* keep that block expanded when we come back */
-  browsed = CUR.blocks[bi].loops[li];
-  concept(browsed, "browse");
+  startLoop(CUR.blocks[bi].loops[li]);
 }
 
 /* ---------- INTERVIEW MODE ----------
