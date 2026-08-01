@@ -15,17 +15,17 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
-  /* ONE type scale, two knobs. Everything below sizes in em, so the whole app
-     scales from body's font-size: ~17px on a phone, growing to 20px on a wide
-     screen. #app's max-width is in em too, so the column grows WITH the type —
-     line length stays ~70 characters, which is the readable range. Text edge to
-     edge would make the dense "under the hood" paragraphs harder to read, not
-     easier; to go wider anyway, raise the 40em. To make the phone bigger, raise
-     the 17px floor. */
+  /* ONE type scale, one column width. Everything below sizes in em, so the whole
+     app scales from body's font-size: ~17px on a phone, growing to 20px on a wide
+     screen. The column itself is 90% of the viewport at every size (learner's
+     call 2026-08-02) — proportional, not capped in em — with the safe-area insets
+     subtracted so a notch in landscape never clips it. To make the phone type
+     bigger, raise the 17px floor; the wide-screen ceiling is the 20px. */
   body{background:var(--bg);color:var(--text);font-family:var(--sans);
     font-size:clamp(17px, 0.75vw + 14.2px, 20px);line-height:1.62;min-height:100vh;
-    padding:max(14px,env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));}
-  #app{max-width:min(94vw, 40em);margin:0 auto}
+    padding:max(14px,env(safe-area-inset-top)) 0 calc(28px + env(safe-area-inset-bottom));}
+  #app{width:min(90vw, calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right)));
+    margin:0 auto}
   .eyebrow{font-family:var(--mono);font-size:.68em;letter-spacing:.14em;color:var(--amber);
     text-transform:uppercase;margin-bottom:6px}
   .eyebrow .dim{color:var(--dim)}

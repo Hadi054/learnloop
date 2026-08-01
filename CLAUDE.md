@@ -244,12 +244,16 @@ Content authoring rules (quality bar — hold every generated loop to these):
 - Streak: +1 if last completed day was yesterday, reset to 1 if older, unchanged if
   today. Reviews count as loops.
 - Type scale (2026-08-01): ONE knob drives everything — `body{font-size:clamp(17px,
-  0.75vw + 14.2px, 20px)}` and `#app{max-width:min(94vw, 40em)}`; every other
-  font-size in style.css is in `em`, so the column grows WITH the type (measured:
-  390px viewport → 17.1px / 358px column, no h-overflow; 1440px → 20px / 800px
-  column, ~72 chars a line). Deliberately NOT full-bleed: line length is the
-  binding constraint for the dense `underlying` paragraphs. To go wider, raise the
-  40em; to enlarge the phone, raise the 17px floor. Don't reintroduce px font-sizes.
+  0.75vw + 14.2px, 20px)}`; every other font-size in style.css is in `em`, so the
+  whole app scales with it (390px viewport → 17.1px; 1440px → 20px). To enlarge the
+  phone raise the 17px floor, for wide screens the 20px ceiling. No px font-sizes.
+- Column width (learner's call 2026-08-02, replaced the em-capped column): the app
+  is a fixed PERCENTAGE of the viewport at every size — `#app{width:min(90vw,
+  calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right)))}`, body's
+  side padding 0 (the 5vw gutters come from the 90%), safe-area insets kept so a
+  landscape notch can't clip it. Trade-off accepted knowingly: on a wide desktop
+  the `underlying` paragraphs run well past the ~70-char readable range. If that
+  bites, the fix is a bigger type ceiling, not a narrower column.
 - Read aloud (added 2026-08-01): a speaker button on every PROSE card — definition,
   under the hood, why it matters, transfer, go deeper, exercise prompt, solution
   explanation, explain prompt, model answer (loop + interview). Code blocks
