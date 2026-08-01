@@ -15,38 +15,45 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
+  /* ONE type scale, two knobs. Everything below sizes in em, so the whole app
+     scales from body's font-size: ~17px on a phone, growing to 20px on a wide
+     screen. #app's max-width is in em too, so the column grows WITH the type —
+     line length stays ~70 characters, which is the readable range. Text edge to
+     edge would make the dense "under the hood" paragraphs harder to read, not
+     easier; to go wider anyway, raise the 40em. To make the phone bigger, raise
+     the 17px floor. */
   body{background:var(--bg);color:var(--text);font-family:var(--sans);
-    font-size:16.5px;line-height:1.62;min-height:100vh;
+    font-size:clamp(17px, 0.75vw + 14.2px, 20px);line-height:1.62;min-height:100vh;
     padding:max(14px,env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));}
-  #app{max-width:560px;margin:0 auto}
-  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;color:var(--amber);
+  #app{max-width:min(94vw, 40em);margin:0 auto}
+  .eyebrow{font-family:var(--mono);font-size:.68em;letter-spacing:.14em;color:var(--amber);
     text-transform:uppercase;margin-bottom:6px}
   .eyebrow .dim{color:var(--dim)}
-  h1{font-family:var(--mono);font-size:24px;line-height:1.25;font-weight:600;letter-spacing:-.01em}
-  h2{font-size:20px;line-height:1.3;margin-bottom:4px}
-  .sub{color:var(--dim);font-size:14.5px}
+  h1{font-family:var(--mono);font-size:1.44em;line-height:1.25;font-weight:600;letter-spacing:-.01em}
+  h2{font-size:1.19em;line-height:1.3;margin-bottom:4px}
+  .sub{color:var(--dim);font-size:.86em}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
-    padding:16px 16px;margin-top:14px}
-  .layer-label{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--cyan);
+    padding:1em 1.05em;margin-top:.85em}
+  .layer-label{font-family:var(--mono);font-size:.66em;letter-spacing:.14em;color:var(--cyan);
     text-transform:uppercase;margin-bottom:6px}
   .layer-label.amb{color:var(--amber)}
-  .layer-note{color:var(--dim);font-size:12.5px;font-family:var(--mono);letter-spacing:.02em}
+  .layer-note{color:var(--dim);font-size:1.14em;font-family:var(--mono);letter-spacing:.02em}
   p{margin-bottom:10px} p:last-child{margin-bottom:0}
   code{font-family:var(--mono);font-size:.88em;background:var(--panel2);
     border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--cyan);white-space:nowrap}
-  pre{font-family:var(--mono);font-size:13px;line-height:1.55;background:#10131A;
+  pre{font-family:var(--mono);font-size:.79em;line-height:1.55;background:#10131A;
     border:1px solid var(--line);border-radius:8px;padding:13px 14px;overflow-x:auto;
     color:#C7D0DB;margin:10px 0}
   pre .k{color:var(--amber)}
-  button{font-family:var(--sans);font-size:16px;cursor:pointer;border-radius:9px;
+  button{font-family:var(--sans);font-size:.97em;cursor:pointer;border-radius:9px;
     border:1px solid var(--line);background:var(--panel2);color:var(--text);
     padding:13px 16px;width:100%;margin-top:12px;text-align:center;transition:filter .12s}
   button:active{filter:brightness(1.25)}
   button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
   button.primary{background:var(--amber);border-color:var(--amber);color:#1A1608;font-weight:600}
   button.ghost{background:transparent;color:var(--dim)}
-  button.opt{text-align:left;font-size:15px;line-height:1.45;margin-top:9px;white-space:pre-wrap}
-  button.opt .mono{font-family:var(--mono);font-size:13.5px}
+  button.opt{text-align:left;font-size:.91em;line-height:1.45;margin-top:9px;white-space:pre-wrap}
+  button.opt .mono{font-family:var(--mono);font-size:.9em}
   button.opt.correct{border-color:var(--green);background:rgba(134,191,138,.10);color:var(--text)}
   button.opt.wrong{border-color:var(--red);background:rgba(208,117,117,.10)}
   button.opt.faded{opacity:.45}
@@ -56,19 +63,19 @@
   .raterow{display:flex;gap:7px}
   /* memory-cell progress bar — the signature */
   .cells{display:flex;gap:4px;margin:10px 0 4px}
-  .cell{flex:1;height:14px;border:1px solid var(--line);border-radius:3px;background:var(--panel2);position:relative}
+  .cell{flex:1;height:.85em;border:1px solid var(--line);border-radius:3px;background:var(--panel2);position:relative}
   .cell.done{background:var(--amber);border-color:var(--amber)}
   .cell.done.weak{background:var(--amber-dim);border-color:var(--amber-dim)}
   .cellcap{display:flex;justify-content:space-between;font-family:var(--mono);
-    font-size:10.5px;color:var(--dim);letter-spacing:.06em}
+    font-size:.63em;color:var(--dim);letter-spacing:.06em}
   .stats{display:flex;gap:10px;margin-top:14px}
   .stat{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;
     padding:12px 8px;text-align:center}
-  .stat .n{font-family:var(--mono);font-size:26px;font-weight:600;color:var(--amber)}
-  .stat .l{font-size:11.5px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase;
+  .stat .n{font-family:var(--mono);font-size:1.56em;font-weight:600;color:var(--amber)}
+  .stat .l{font-size:.68em;color:var(--dim);letter-spacing:.06em;text-transform:uppercase;
     font-family:var(--mono);margin-top:2px}
   .feedback{border-left:2px solid var(--line);padding:8px 12px;margin-top:10px;
-    color:var(--dim);font-size:14.5px}
+    color:var(--dim);font-size:.86em}
   .feedback.good{border-color:var(--green)} .feedback.bad{border-color:var(--red)}
   .row{display:flex;gap:10px} .row>button{flex:1}
   /* curriculum list (home): one container per block, green + ticked when done */
@@ -77,46 +84,55 @@
   .blockcard.done{border-color:var(--green);background:rgba(134,191,138,.07)}
   button.blockhead{display:flex;align-items:center;gap:10px;width:100%;margin:0;
     padding:0;background:none;border:none;border-radius:0;text-align:left}
-  .bmark{font-family:var(--mono);font-size:12px;color:var(--dim);letter-spacing:.06em;
+  .bmark{font-family:var(--mono);font-size:.72em;color:var(--dim);letter-spacing:.06em;
     border:1px solid var(--line);border-radius:5px;padding:2px 0;
-    min-width:36px;text-align:center;flex:0 0 auto}
-  .blockcard.done .bmark{color:var(--green);border-color:var(--green);font-size:14px}
+    min-width:2.9em;text-align:center;flex:0 0 auto}
+  .blockcard.done .bmark{color:var(--green);border-color:var(--green);font-size:.84em}
   .bt{flex:1;min-width:0}
-  .bn{display:block;font-family:var(--mono);font-size:14.5px;line-height:1.3}
-  .bs{display:block;color:var(--dim);font-size:12.5px;line-height:1.35;margin-top:1px}
-  .bcount{font-family:var(--mono);font-size:12.5px;color:var(--dim);flex:0 0 auto}
+  .bn{display:block;font-family:var(--mono);font-size:.87em;line-height:1.3}
+  .bs{display:block;color:var(--dim);font-size:.75em;line-height:1.35;margin-top:1px}
+  .bcount{font-family:var(--mono);font-size:.75em;color:var(--dim);flex:0 0 auto}
   .blockcard.done .bcount{color:var(--green)}
-  .chev{font-family:var(--mono);font-size:11px;color:var(--dim);flex:0 0 auto}
+  .chev{font-family:var(--mono);font-size:.66em;color:var(--dim);flex:0 0 auto}
   .cells.mini{margin:10px 0 0;gap:3px}
-  .cells.mini .cell{height:9px;border-radius:2px}
+  .cells.mini .cell{height:.55em;border-radius:2px}
   .looplist{margin-top:11px;border-top:1px solid var(--line)}
   button.looprow{display:flex;align-items:center;gap:10px;width:100%;margin:0;
     padding:10px 4px;background:none;border:none;border-radius:0;
-    border-bottom:1px solid var(--line);text-align:left;font-size:15px}
+    border-bottom:1px solid var(--line);text-align:left;font-size:.91em}
   button.looprow:last-child{border-bottom:none}
   button.looprow.done{background:rgba(134,191,138,.06)}
-  button.looprow .tick{font-family:var(--mono);font-size:12px;color:var(--dim);
-    min-width:24px;flex:0 0 auto}
-  button.looprow.done .tick{color:var(--green);font-size:15px}
+  button.looprow .tick{font-family:var(--mono);font-size:.8em;color:var(--dim);
+    min-width:2em;flex:0 0 auto}
+  button.looprow.done .tick{color:var(--green);font-size:1em}
   button.looprow .lt{flex:1;min-width:0;line-height:1.35;color:var(--text)}
   .histitem{display:flex;justify-content:space-between;align-items:center;gap:10px;
-    padding:11px 2px;border-bottom:1px solid var(--line);font-size:15px}
+    padding:11px 2px;border-bottom:1px solid var(--line);font-size:.91em}
   .histitem:last-child{border-bottom:none}
-  .badge{font-family:var(--mono);font-size:12.5px;padding:2px 8px;border-radius:5px;
+  .badge{font-family:var(--mono);font-size:.83em;padding:2px 8px;border-radius:5px;
     border:1px solid var(--line);color:var(--dim);white-space:nowrap}
   .badge.s{color:var(--green);border-color:var(--green)}
   .badge.w{color:var(--amber);border-color:var(--amber)}
   .linkbtn{background:none;border:none;color:var(--cyan);width:auto;padding:4px 0;
-    font-size:14px;text-decoration:underline;margin-top:6px}
-  textarea{width:100%;min-height:110px;background:#10131A;color:var(--text);
-    border:1px solid var(--line);border-radius:8px;padding:12px;font-size:16px;
+    font-size:.84em;text-decoration:underline;margin-top:6px}
+  textarea{width:100%;min-height:7em;background:#10131A;color:var(--text);
+    border:1px solid var(--line);border-radius:8px;padding:12px;font-size:.96em;
     font-family:var(--sans);line-height:1.5;margin-top:10px;resize:vertical}
   textarea:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
-  .score-big{font-family:var(--mono);font-size:44px;font-weight:700;text-align:center;margin:8px 0 0}
+  .score-big{font-family:var(--mono);font-size:2.6em;font-weight:700;text-align:center;margin:8px 0 0}
   .score-big.pass{color:var(--green)} .score-big.fail{color:var(--red)}
   .center{text-align:center}
   .mt0{margin-top:0}.mt8{margin-top:8px}.mt16{margin-top:16px}.mt24{margin-top:24px}
-  .warn{color:var(--red);font-size:13.5px}
+  .warn{color:var(--red);font-size:.8em}
+  /* read aloud — speaker sits on the label line, amber only while speaking */
+  .labelrow{display:flex;align-items:flex-start;gap:10px}
+  .labelrow>.layer-label{flex:1;min-width:0}
+  .saybar{display:flex;justify-content:flex-end}
+  button.spk{width:auto;flex:0 0 auto;margin:0;padding:5px 10px;line-height:0;
+    background:transparent;border:1px solid var(--line);border-radius:6px;color:var(--dim)}
+  button.spk svg{display:block;width:.92em;height:.92em;fill:currentColor}
+  button.spk.on{color:var(--amber);border-color:var(--amber)}
+  .sub svg{width:.9em;height:.9em;fill:currentColor;vertical-align:-1px}
   /* text highlighting — cyan, deliberately not amber (amber already means "weak/attention") */
   mark.hl{background:rgba(127,180,196,.28);color:inherit;border-bottom:2px solid var(--cyan);
     padding:0 1px;border-radius:2px;cursor:pointer}
@@ -125,9 +141,9 @@
     transform:translateX(-50%);z-index:50;width:auto;margin:0;padding:12px 24px;
     background:var(--amber);border:1px solid var(--amber);color:#1A1608;font-weight:600;
     border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45);
-    font-family:var(--sans);font-size:15px;cursor:pointer}
+    font-family:var(--sans);font-size:.9em;cursor:pointer}
   .hl-float-btn:active{filter:brightness(1.15)}
-  input[type=file]{width:100%;margin-top:10px;color:var(--dim);font-size:13.5px}
+  input[type=file]{width:100%;margin-top:10px;color:var(--dim);font-size:.8em}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 
 </style>
@@ -13284,7 +13300,96 @@ function codeblock(c){
   return "<pre>"+esc(c).replace(kw,'<span class="k">$1</span>')+"</pre>";
 }
 function hexOf(n){ return "0x"+n.toString(16).toUpperCase().padStart(2,"0"); }
-function screen(html){ app.innerHTML = html; applyHighlights(app); window.scrollTo(0,0); }
+function screen(html){ stopSpeak(); app.innerHTML = html; applyHighlights(app); window.scrollTo(0,0); }
+
+/* ---------- read aloud (Web Speech API) ----------
+   speechSynthesis is a browser API driving the DEVICE's TTS engine — no network,
+   no dependency, so it holds the offline rule. Prose cards get a speaker button;
+   code blocks deliberately don't (Swift read aloud is noise). The model answers
+   and definitions are also English listening practice, which is half the point. */
+const TTS = (typeof window !== "undefined" && window.speechSynthesis) ? window.speechSynthesis : null;
+const TTS_KEY = "learnloop.tts.v1";
+const SPK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8.4 1.7 4.5 4.9H1.8v6.2h2.7l3.9 3.2z"/>'
+  + '<path d="M10.7 5.2a3.6 3.6 0 0 1 0 5.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'
+  + '<path d="M12.9 3a6.5 6.5 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+const STOP_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5"/></svg>';
+if(TTS){ try{ TTS.getVoices(); }catch(e){} }   // warms the async voice list
+
+function ttsRate(){
+  try{ const r = parseFloat(localStorage.getItem(TTS_KEY)); if(r >= 0.5 && r <= 2) return r; }catch(e){}
+  return 1;
+}
+function setTtsRate(r){
+  stopSpeak();
+  try{ localStorage.setItem(TTS_KEY, String(r)); }catch(e){}
+  dataScreen();
+}
+/* the phone's default voice may not be English (the text is) — ask for one explicitly */
+function ttsVoice(){
+  try{
+    const vs = TTS.getVoices() || [];
+    return vs.find(v=>/^en[-_]US/i.test(v.lang)) || vs.find(v=>/^en/i.test(v.lang)) || null;
+  }catch(e){ return null; }
+}
+function ttsClean(t){
+  return t.replace(/[→›]/g," to ").replace(/[·•]/g,", ").replace(/…/g,"...")
+          .replace(/[`"“”]/g,"").replace(/\s+/g," ").trim();
+}
+/* Chrome truncates long utterances, so speak sentence-sized pieces in sequence */
+function ttsChunks(text){
+  const parts = text.match(/[^.!?]+[.!?]*\s*/g) || [];
+  const out = []; let cur = "";
+  parts.forEach(p=>{
+    if(cur && (cur+p).length > 180){ out.push(cur.trim()); cur = p; }
+    else cur += p;
+  });
+  if(cur.trim()) out.push(cur.trim());
+  return out;
+}
+let spkBtnEl = null, spkChunks = [], spkIdx = 0;
+function spkBtn(){
+  return TTS ? '<button class="spk" type="button" aria-label="Read aloud" onclick="toggleSpeak(this)">'+SPK_ICON+'</button>' : "";
+}
+/* label line + speaker on the right; for cards with no label, saybar() alone */
+function labelRow(labelHtml){
+  return TTS ? `<div class="labelrow">${labelHtml}${spkBtn()}</div>` : labelHtml;
+}
+function saybar(){ return TTS ? `<div class="saybar">${spkBtn()}</div>` : ""; }
+function stopSpeak(){
+  spkBtnEl = null; spkChunks = []; spkIdx = 0;
+  const on = document.querySelectorAll ? document.querySelectorAll("button.spk.on") : [];
+  Array.prototype.forEach.call(on, b=>{ b.classList.remove("on"); b.innerHTML = SPK_ICON; });
+  try{ if(TTS) TTS.cancel(); }catch(e){}
+}
+function speakNext(){
+  if(!spkBtnEl || spkIdx >= spkChunks.length){ stopSpeak(); return; }
+  const u = new SpeechSynthesisUtterance(spkChunks[spkIdx++]);
+  u.lang = "en-US"; u.rate = ttsRate();
+  const v = ttsVoice(); if(v) u.voice = v;
+  u.onend = speakNext;
+  u.onerror = stopSpeak;
+  TTS.speak(u);
+}
+/* second tap on the same button stops; tapping another switches to it */
+function toggleSpeak(btn){
+  if(!TTS) return;
+  const same = spkBtnEl === btn;
+  stopSpeak();
+  if(same) return;
+  const card = btn.closest(".card") || btn.parentElement;
+  const el = card ? card.querySelector(".hl-zone.say") : null;
+  const text = el ? ttsClean(el.innerText || el.textContent || "") : "";
+  if(!text) return;
+  spkChunks = ttsChunks(text); spkIdx = 0;
+  if(!spkChunks.length) return;
+  spkBtnEl = btn; btn.classList.add("on"); btn.innerHTML = STOP_ICON;
+  speakNext();
+}
+/* leaving the tab shouldn't leave a voice talking in the background */
+if(TTS && typeof document.addEventListener === "function"){
+  document.addEventListener("visibilitychange", function(){ if(document.hidden) stopSpeak(); });
+  window.addEventListener("pagehide", stopSpeak);
+}
 
 /* ---------- highlighting & notes (device-local, own keys) ---------- */
 const HL_KEY = "learnloop.highlights.v1";
@@ -13310,9 +13415,10 @@ function newId(){ return Date.now().toString(36)+Math.random().toString(36).slic
 /* wraps highlightable HTML in a zone the highlighter can find later.
    field is a stable string key ("concept.definition", "assess.modelAnswer", …)
    shared across every screen that shows that piece of text, so a highlight
-   made in one context (e.g. live assessment) reappears in another (interview drill). */
-function zone(html, loopId, field){
-  return `<div class="hl-zone" data-loop="${esc(loopId)}" data-field="${esc(field)}">${html}</div>`;
+   made in one context (e.g. live assessment) reappears in another (interview drill).
+   `say` marks the zone the card's speaker button reads (prose, never code). */
+function zone(html, loopId, field, say){
+  return `<div class="hl-zone${say?" say":""}" data-loop="${esc(loopId)}" data-field="${esc(field)}">${html}</div>`;
 }
 
 /* re-applies stored highlights into freshly-rendered .hl-zone elements under root.
@@ -13568,34 +13674,34 @@ function sessQ(){ const s = sess.loop.assess.sets; return (s[sess.set] || s[0])[
 function conceptCardsHtml(loop){
   return `
     <div class="card">
-      <div class="layer-label">Definition <span class="layer-note">— say this to an interviewer</span></div>
-      ${zone(fmt(loop.concept.definition), loop.id, "concept.definition")}
+      ${labelRow('<div class="layer-label">Definition <span class="layer-note">— say this to an interviewer</span></div>')}
+      ${zone(fmt(loop.concept.definition), loop.id, "concept.definition", true)}
     </div>
     <div class="card">
       <div class="layer-label">Example</div>
       ${zone(codeblock(loop.concept.code), loop.id, "concept.code")}
     </div>
     <div class="card">
-      <div class="layer-label amb">Under the hood</div>
-      ${zone(fmt(loop.concept.underlying), loop.id, "concept.underlying")}
+      ${labelRow('<div class="layer-label amb">Under the hood</div>')}
+      ${zone(fmt(loop.concept.underlying), loop.id, "concept.underlying", true)}
     </div>
     <div class="card">
-      <div class="layer-label">Why it matters</div>
-      ${zone(fmt(loop.concept.whyItMatters), loop.id, "concept.whyItMatters")}
+      ${labelRow('<div class="layer-label">Why it matters</div>')}
+      ${zone(fmt(loop.concept.whyItMatters), loop.id, "concept.whyItMatters", true)}
     </div>`;
 }
 /* optional enrichment fields (Block 1+): shown after passing, and on re-reads */
 function extrasHtml(loop){
   let h = "";
   if(loop.transfer) h += `<div class="card">
-      <div class="layer-label amb">Transfer <span class="layer-note">— apply it in your real code</span></div>
-      ${zone(fmt(loop.transfer), loop.id, "transfer")}</div>`;
+      ${labelRow('<div class="layer-label amb">Transfer <span class="layer-note">— apply it in your real code</span></div>')}
+      ${zone(fmt(loop.transfer), loop.id, "transfer", true)}</div>`;
   if(loop.verify) h += `<div class="card">
       <div class="layer-label">Verify it yourself <span class="layer-note">— run it, don't trust it</span></div>
       ${zone(codeblock(loop.verify), loop.id, "verify")}</div>`;
   if(loop.goDeeper) h += `<div class="card">
-      <div class="layer-label">Go deeper</div>
-      ${zone(fmt(loop.goDeeper), loop.id, "goDeeper")}</div>`;
+      ${labelRow('<div class="layer-label">Go deeper</div>')}
+      ${zone(fmt(loop.goDeeper), loop.id, "goDeeper", true)}</div>`;
   return h;
 }
 /* Tapping a loop in the list lands HERE — one screen, evaluation button at the
@@ -13635,7 +13741,7 @@ function problem(){
   screen(`
     <div class="eyebrow">${hexOf(idx)} <span class="dim">// problem</span></div>
     <h2>Solve before you reveal</h2>
-    <div class="card">${zone(fmt(l.exercise.prompt), l.id, "exercise.prompt")}${zone(codeblock(l.exercise.code), l.id, "exercise.code")}</div>
+    <div class="card">${saybar()}${zone(fmt(l.exercise.prompt), l.id, "exercise.prompt", true)}${zone(codeblock(l.exercise.code), l.id, "exercise.code")}</div>
     <div id="sol"></div>
     <button class="primary" id="revealBtn" onclick="reveal()">Reveal solution</button>
     <button class="ghost" onclick="confirmExit()">Exit loop</button>
@@ -13645,9 +13751,9 @@ function reveal(){
   const l = sess.loop;
   document.getElementById("sol").innerHTML = `
     <div class="card">
-      <div class="layer-label amb">Solution</div>
+      ${labelRow('<div class="layer-label amb">Solution</div>')}
       ${zone(codeblock(l.exercise.solution), l.id, "exercise.solution")}
-      ${zone(fmt(l.exercise.explanation), l.id, "exercise.explanation")}
+      ${zone(fmt(l.exercise.explanation), l.id, "exercise.explanation", true)}
     </div>`;
   applyHighlights(document.getElementById("sol"));
   const b = document.getElementById("revealBtn");
@@ -13688,7 +13794,7 @@ function explain(){
   screen(`
     <div class="eyebrow">${hexOf(idx)} <span class="dim">// assess · articulate</span></div>
     <h2>Say it in your own words</h2>
-    <div class="card mt8">${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt")}
+    <div class="card mt8">${saybar()}${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt", true)}
       <textarea id="ans" placeholder="Write in English, as if answering an interviewer…">${esc(sess.draftAnswer||"")}</textarea>
     </div>
     <div id="cmp"></div>
@@ -13709,8 +13815,8 @@ function compare(){
   sess.comparedShown = true;
   document.getElementById("cmp").innerHTML = `
     <div class="card">
-      <div class="layer-label amb">Model answer</div>
-      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer")}
+      ${labelRow('<div class="layer-label amb">Model answer</div>')}
+      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer", true)}
     </div>
     <div class="card">
       <div class="layer-label">Honest self-rating — how close was your answer?</div>
@@ -13891,7 +13997,7 @@ function ivQ(){
   screen(`
     <div class="eyebrow">interview <span class="dim">// ${iv.i+1}/${iv.queue.length} · ${esc(l.id)} · </span><span class="dim" id="ivt">0s</span></div>
     <h2>${esc(l.title)}</h2>
-    <div class="card">${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt")}
+    <div class="card">${saybar()}${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt", true)}
       <textarea id="ivans" placeholder="Answer in English, as if the interviewer is waiting…"></textarea>
     </div>
     <div id="ivcmp"></div>
@@ -13921,8 +14027,8 @@ function ivReveal(){
   document.getElementById("ivreveal")?.remove();
   document.getElementById("ivcmp").innerHTML = `
     <div class="card">
-      <div class="layer-label amb">Model answer</div>
-      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer")}
+      ${labelRow('<div class="layer-label amb">Model answer</div>')}
+      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer", true)}
     </div>
     <div class="card">
       <div class="layer-label">How close were you?</div>
@@ -14011,6 +14117,12 @@ function dataScreen(){
       <div id="ansout"></div>
       <button class="ghost" onclick="clearAnswers()">Delete saved answers</button>
     </div>
+    ${TTS ? `<div class="card">
+      <div class="layer-label">Read aloud</div>
+      <p class="sub">Speaking speed for the ${SPK_ICON} buttons on definitions, model answers, and explanations. Uses your phone's own voice — nothing leaves the device.</p>
+      <div class="raterow mt8">${[0.75,0.9,1,1.15,1.3].map(r=>
+        `<button class="rate${ttsRate()===r?" sel":""}" onclick="setTtsRate(${r})">${r}&times;</button>`).join("")}</div>
+    </div>` : ""}
     <div class="card">
       <div class="layer-label" style="color:var(--red)">Danger</div>
       <button onclick="resetAll()">Reset all progress</button>

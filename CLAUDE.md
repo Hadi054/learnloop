@@ -243,6 +243,25 @@ Content authoring rules (quality bar — hold every generated loop to these):
   but never increments S.loops/streak.
 - Streak: +1 if last completed day was yesterday, reset to 1 if older, unchanged if
   today. Reviews count as loops.
+- Type scale (2026-08-01): ONE knob drives everything — `body{font-size:clamp(17px,
+  0.75vw + 14.2px, 20px)}` and `#app{max-width:min(94vw, 40em)}`; every other
+  font-size in style.css is in `em`, so the column grows WITH the type (measured:
+  390px viewport → 17.1px / 358px column, no h-overflow; 1440px → 20px / 800px
+  column, ~72 chars a line). Deliberately NOT full-bleed: line length is the
+  binding constraint for the dense `underlying` paragraphs. To go wider, raise the
+  40em; to enlarge the phone, raise the 17px floor. Don't reintroduce px font-sizes.
+- Read aloud (added 2026-08-01): a speaker button on every PROSE card — definition,
+  under the hood, why it matters, transfer, go deeper, exercise prompt, solution
+  explanation, explain prompt, model answer (loop + interview). Code blocks
+  deliberately get none. Uses `window.speechSynthesis` (a browser API driving the
+  phone's own TTS engine — no network, no dependency); `zone(html,id,field,true)`
+  marks the readable zone and `toggleSpeak()` reads `.hl-zone.say` inside the card.
+  Text is cleaned (arrows/backticks) and split into ≤180-char sentence chunks
+  because Chrome truncates long utterances. `u.lang="en-US"` + an en voice, so a
+  non-English default voice doesn't read English text. Second tap stops; `screen()`
+  and tab-hide stop it. Speed lives in its own key `learnloop.tts.v1` (0.75×–1.3×,
+  Data screen), outside S — no migration. If the API is missing, every button
+  simply isn't rendered.
 - Storage: localStorage key `learnloop.v1` (key name unchanged on purpose), shape
   `{ v:2, streak, lastDay:"YYYY-MM-DD", loops, log }`. `migrate()` upgrades v:1
   blobs on load AND on import: each log entry gains hist=[current], ivl (2 if

@@ -85,7 +85,96 @@ function codeblock(c){
   return "<pre>"+esc(c).replace(kw,'<span class="k">$1</span>')+"</pre>";
 }
 function hexOf(n){ return "0x"+n.toString(16).toUpperCase().padStart(2,"0"); }
-function screen(html){ app.innerHTML = html; applyHighlights(app); window.scrollTo(0,0); }
+function screen(html){ stopSpeak(); app.innerHTML = html; applyHighlights(app); window.scrollTo(0,0); }
+
+/* ---------- read aloud (Web Speech API) ----------
+   speechSynthesis is a browser API driving the DEVICE's TTS engine — no network,
+   no dependency, so it holds the offline rule. Prose cards get a speaker button;
+   code blocks deliberately don't (Swift read aloud is noise). The model answers
+   and definitions are also English listening practice, which is half the point. */
+const TTS = (typeof window !== "undefined" && window.speechSynthesis) ? window.speechSynthesis : null;
+const TTS_KEY = "learnloop.tts.v1";
+const SPK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8.4 1.7 4.5 4.9H1.8v6.2h2.7l3.9 3.2z"/>'
+  + '<path d="M10.7 5.2a3.6 3.6 0 0 1 0 5.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'
+  + '<path d="M12.9 3a6.5 6.5 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+const STOP_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5"/></svg>';
+if(TTS){ try{ TTS.getVoices(); }catch(e){} }   // warms the async voice list
+
+function ttsRate(){
+  try{ const r = parseFloat(localStorage.getItem(TTS_KEY)); if(r >= 0.5 && r <= 2) return r; }catch(e){}
+  return 1;
+}
+function setTtsRate(r){
+  stopSpeak();
+  try{ localStorage.setItem(TTS_KEY, String(r)); }catch(e){}
+  dataScreen();
+}
+/* the phone's default voice may not be English (the text is) — ask for one explicitly */
+function ttsVoice(){
+  try{
+    const vs = TTS.getVoices() || [];
+    return vs.find(v=>/^en[-_]US/i.test(v.lang)) || vs.find(v=>/^en/i.test(v.lang)) || null;
+  }catch(e){ return null; }
+}
+function ttsClean(t){
+  return t.replace(/[→›]/g," to ").replace(/[·•]/g,", ").replace(/…/g,"...")
+          .replace(/[`"“”]/g,"").replace(/\s+/g," ").trim();
+}
+/* Chrome truncates long utterances, so speak sentence-sized pieces in sequence */
+function ttsChunks(text){
+  const parts = text.match(/[^.!?]+[.!?]*\s*/g) || [];
+  const out = []; let cur = "";
+  parts.forEach(p=>{
+    if(cur && (cur+p).length > 180){ out.push(cur.trim()); cur = p; }
+    else cur += p;
+  });
+  if(cur.trim()) out.push(cur.trim());
+  return out;
+}
+let spkBtnEl = null, spkChunks = [], spkIdx = 0;
+function spkBtn(){
+  return TTS ? '<button class="spk" type="button" aria-label="Read aloud" onclick="toggleSpeak(this)">'+SPK_ICON+'</button>' : "";
+}
+/* label line + speaker on the right; for cards with no label, saybar() alone */
+function labelRow(labelHtml){
+  return TTS ? `<div class="labelrow">${labelHtml}${spkBtn()}</div>` : labelHtml;
+}
+function saybar(){ return TTS ? `<div class="saybar">${spkBtn()}</div>` : ""; }
+function stopSpeak(){
+  spkBtnEl = null; spkChunks = []; spkIdx = 0;
+  const on = document.querySelectorAll ? document.querySelectorAll("button.spk.on") : [];
+  Array.prototype.forEach.call(on, b=>{ b.classList.remove("on"); b.innerHTML = SPK_ICON; });
+  try{ if(TTS) TTS.cancel(); }catch(e){}
+}
+function speakNext(){
+  if(!spkBtnEl || spkIdx >= spkChunks.length){ stopSpeak(); return; }
+  const u = new SpeechSynthesisUtterance(spkChunks[spkIdx++]);
+  u.lang = "en-US"; u.rate = ttsRate();
+  const v = ttsVoice(); if(v) u.voice = v;
+  u.onend = speakNext;
+  u.onerror = stopSpeak;
+  TTS.speak(u);
+}
+/* second tap on the same button stops; tapping another switches to it */
+function toggleSpeak(btn){
+  if(!TTS) return;
+  const same = spkBtnEl === btn;
+  stopSpeak();
+  if(same) return;
+  const card = btn.closest(".card") || btn.parentElement;
+  const el = card ? card.querySelector(".hl-zone.say") : null;
+  const text = el ? ttsClean(el.innerText || el.textContent || "") : "";
+  if(!text) return;
+  spkChunks = ttsChunks(text); spkIdx = 0;
+  if(!spkChunks.length) return;
+  spkBtnEl = btn; btn.classList.add("on"); btn.innerHTML = STOP_ICON;
+  speakNext();
+}
+/* leaving the tab shouldn't leave a voice talking in the background */
+if(TTS && typeof document.addEventListener === "function"){
+  document.addEventListener("visibilitychange", function(){ if(document.hidden) stopSpeak(); });
+  window.addEventListener("pagehide", stopSpeak);
+}
 
 /* ---------- highlighting & notes (device-local, own keys) ---------- */
 const HL_KEY = "learnloop.highlights.v1";
@@ -111,9 +200,10 @@ function newId(){ return Date.now().toString(36)+Math.random().toString(36).slic
 /* wraps highlightable HTML in a zone the highlighter can find later.
    field is a stable string key ("concept.definition", "assess.modelAnswer", …)
    shared across every screen that shows that piece of text, so a highlight
-   made in one context (e.g. live assessment) reappears in another (interview drill). */
-function zone(html, loopId, field){
-  return `<div class="hl-zone" data-loop="${esc(loopId)}" data-field="${esc(field)}">${html}</div>`;
+   made in one context (e.g. live assessment) reappears in another (interview drill).
+   `say` marks the zone the card's speaker button reads (prose, never code). */
+function zone(html, loopId, field, say){
+  return `<div class="hl-zone${say?" say":""}" data-loop="${esc(loopId)}" data-field="${esc(field)}">${html}</div>`;
 }
 
 /* re-applies stored highlights into freshly-rendered .hl-zone elements under root.
@@ -369,34 +459,34 @@ function sessQ(){ const s = sess.loop.assess.sets; return (s[sess.set] || s[0])[
 function conceptCardsHtml(loop){
   return `
     <div class="card">
-      <div class="layer-label">Definition <span class="layer-note">— say this to an interviewer</span></div>
-      ${zone(fmt(loop.concept.definition), loop.id, "concept.definition")}
+      ${labelRow('<div class="layer-label">Definition <span class="layer-note">— say this to an interviewer</span></div>')}
+      ${zone(fmt(loop.concept.definition), loop.id, "concept.definition", true)}
     </div>
     <div class="card">
       <div class="layer-label">Example</div>
       ${zone(codeblock(loop.concept.code), loop.id, "concept.code")}
     </div>
     <div class="card">
-      <div class="layer-label amb">Under the hood</div>
-      ${zone(fmt(loop.concept.underlying), loop.id, "concept.underlying")}
+      ${labelRow('<div class="layer-label amb">Under the hood</div>')}
+      ${zone(fmt(loop.concept.underlying), loop.id, "concept.underlying", true)}
     </div>
     <div class="card">
-      <div class="layer-label">Why it matters</div>
-      ${zone(fmt(loop.concept.whyItMatters), loop.id, "concept.whyItMatters")}
+      ${labelRow('<div class="layer-label">Why it matters</div>')}
+      ${zone(fmt(loop.concept.whyItMatters), loop.id, "concept.whyItMatters", true)}
     </div>`;
 }
 /* optional enrichment fields (Block 1+): shown after passing, and on re-reads */
 function extrasHtml(loop){
   let h = "";
   if(loop.transfer) h += `<div class="card">
-      <div class="layer-label amb">Transfer <span class="layer-note">— apply it in your real code</span></div>
-      ${zone(fmt(loop.transfer), loop.id, "transfer")}</div>`;
+      ${labelRow('<div class="layer-label amb">Transfer <span class="layer-note">— apply it in your real code</span></div>')}
+      ${zone(fmt(loop.transfer), loop.id, "transfer", true)}</div>`;
   if(loop.verify) h += `<div class="card">
       <div class="layer-label">Verify it yourself <span class="layer-note">— run it, don't trust it</span></div>
       ${zone(codeblock(loop.verify), loop.id, "verify")}</div>`;
   if(loop.goDeeper) h += `<div class="card">
-      <div class="layer-label">Go deeper</div>
-      ${zone(fmt(loop.goDeeper), loop.id, "goDeeper")}</div>`;
+      ${labelRow('<div class="layer-label">Go deeper</div>')}
+      ${zone(fmt(loop.goDeeper), loop.id, "goDeeper", true)}</div>`;
   return h;
 }
 /* Tapping a loop in the list lands HERE — one screen, evaluation button at the
@@ -436,7 +526,7 @@ function problem(){
   screen(`
     <div class="eyebrow">${hexOf(idx)} <span class="dim">// problem</span></div>
     <h2>Solve before you reveal</h2>
-    <div class="card">${zone(fmt(l.exercise.prompt), l.id, "exercise.prompt")}${zone(codeblock(l.exercise.code), l.id, "exercise.code")}</div>
+    <div class="card">${saybar()}${zone(fmt(l.exercise.prompt), l.id, "exercise.prompt", true)}${zone(codeblock(l.exercise.code), l.id, "exercise.code")}</div>
     <div id="sol"></div>
     <button class="primary" id="revealBtn" onclick="reveal()">Reveal solution</button>
     <button class="ghost" onclick="confirmExit()">Exit loop</button>
@@ -446,9 +536,9 @@ function reveal(){
   const l = sess.loop;
   document.getElementById("sol").innerHTML = `
     <div class="card">
-      <div class="layer-label amb">Solution</div>
+      ${labelRow('<div class="layer-label amb">Solution</div>')}
       ${zone(codeblock(l.exercise.solution), l.id, "exercise.solution")}
-      ${zone(fmt(l.exercise.explanation), l.id, "exercise.explanation")}
+      ${zone(fmt(l.exercise.explanation), l.id, "exercise.explanation", true)}
     </div>`;
   applyHighlights(document.getElementById("sol"));
   const b = document.getElementById("revealBtn");
@@ -489,7 +579,7 @@ function explain(){
   screen(`
     <div class="eyebrow">${hexOf(idx)} <span class="dim">// assess · articulate</span></div>
     <h2>Say it in your own words</h2>
-    <div class="card mt8">${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt")}
+    <div class="card mt8">${saybar()}${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt", true)}
       <textarea id="ans" placeholder="Write in English, as if answering an interviewer…">${esc(sess.draftAnswer||"")}</textarea>
     </div>
     <div id="cmp"></div>
@@ -510,8 +600,8 @@ function compare(){
   sess.comparedShown = true;
   document.getElementById("cmp").innerHTML = `
     <div class="card">
-      <div class="layer-label amb">Model answer</div>
-      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer")}
+      ${labelRow('<div class="layer-label amb">Model answer</div>')}
+      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer", true)}
     </div>
     <div class="card">
       <div class="layer-label">Honest self-rating — how close was your answer?</div>
@@ -692,7 +782,7 @@ function ivQ(){
   screen(`
     <div class="eyebrow">interview <span class="dim">// ${iv.i+1}/${iv.queue.length} · ${esc(l.id)} · </span><span class="dim" id="ivt">0s</span></div>
     <h2>${esc(l.title)}</h2>
-    <div class="card">${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt")}
+    <div class="card">${saybar()}${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt", true)}
       <textarea id="ivans" placeholder="Answer in English, as if the interviewer is waiting…"></textarea>
     </div>
     <div id="ivcmp"></div>
@@ -722,8 +812,8 @@ function ivReveal(){
   document.getElementById("ivreveal")?.remove();
   document.getElementById("ivcmp").innerHTML = `
     <div class="card">
-      <div class="layer-label amb">Model answer</div>
-      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer")}
+      ${labelRow('<div class="layer-label amb">Model answer</div>')}
+      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer", true)}
     </div>
     <div class="card">
       <div class="layer-label">How close were you?</div>
@@ -812,6 +902,12 @@ function dataScreen(){
       <div id="ansout"></div>
       <button class="ghost" onclick="clearAnswers()">Delete saved answers</button>
     </div>
+    ${TTS ? `<div class="card">
+      <div class="layer-label">Read aloud</div>
+      <p class="sub">Speaking speed for the ${SPK_ICON} buttons on definitions, model answers, and explanations. Uses your phone's own voice — nothing leaves the device.</p>
+      <div class="raterow mt8">${[0.75,0.9,1,1.15,1.3].map(r=>
+        `<button class="rate${ttsRate()===r?" sel":""}" onclick="setTtsRate(${r})">${r}&times;</button>`).join("")}</div>
+    </div>` : ""}
     <div class="card">
       <div class="layer-label" style="color:var(--red)">Danger</div>
       <button onclick="resetAll()">Reset all progress</button>
