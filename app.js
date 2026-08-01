@@ -436,7 +436,10 @@ function home(){
              : (allDone() ? '<button class="primary" onclick="startReview(true)">Review weakest concepts</button>' : '')}
     ${blocks}
     <div class="row mt16">
+      <button onclick="surface()">Surface</button>
       <button onclick="interview()">Interview</button>
+    </div>
+    <div class="row">
       <button onclick="history_()">History</button>
       <button onclick="dataScreen()">Data</button>
     </div>
@@ -973,6 +976,242 @@ function importData(){
 }
 function resetAll(){
   if(confirm("Erase streak, loops, and all concept scores?")){ S = blank(); save(); home(); }
+}
+
+/* ================= SURFACE TRACK =================
+   SUR is defined in surface.js. Deliberately a SEPARATE flow from the loop flow
+   above rather than a generalisation of it: the machine track holds real progress,
+   the unit shape here differs (design panel, spec, builds), and a shared abstraction
+   would have to be unpicked again the moment builds land. Rendering helpers ARE
+   shared — screen/zone/fmt/codeblock/labelRow/notesCardHtml all work unchanged.
+   Storage is its own key, so migrate() and S never move. */
+const SKEY = "learnloop.surface.v1";
+let SU = loadSurface();
+function blankSurface(){ return {v:1, lessons:{}, builds:{}}; }
+function loadSurface(){
+  try{ const raw = localStorage.getItem(SKEY);
+    if(raw){ const s = JSON.parse(raw); if(s && s.v === 1) return s; } }
+  catch(e){}
+  return blankSurface();
+}
+function saveSurface(){
+  try{ localStorage.setItem(SKEY, JSON.stringify(SU)); }
+  catch(e){ if(!storageWarned){ storageWarned = true;
+    alert("Saving is unavailable here (this can happen in a preview). Download the file and open it in Chrome, then progress will persist."); } }
+}
+function surLessons(){ return SUR.units.filter(u=>u.kind === "lesson"); }
+function surDone(u){ return !!SU.lessons[u.id]; }
+
+function surface(){
+  const us = SUR.units;
+  const done = us.filter(surDone).length;
+  const cells = us.map(u=>{
+    const e = SU.lessons[u.id];
+    return `<div class="cell${e ? " done" + (e.score < 4 ? " weak" : "") : ""}"></div>`;
+  }).join("");
+  const rows = us.map((u,i)=>`
+    <button class="looprow${surDone(u) ? " done" : ""}" onclick="openUnit('${u.id}')">
+      <span class="tick">${surDone(u) ? "&check;" : hexOf(i)}</span>
+      <span class="lt">${esc(u.title)}</span>
+      <span class="chev">${u.kind === "build" ? "BUILD" : ""}</span>
+    </button>`).join("");
+  screen(`
+    <div class="eyebrow">learnloop <span class="dim">// surface</span></div>
+    <h1>${esc(SUR.name)}</h1>
+    <div class="sub">${esc(SUR.tagline)}</div>
+    <div class="card">
+      <div class="layer-label">Progress</div>
+      <div class="cells">${cells}</div>
+      <div class="cellcap"><span>${done}/${us.length} installed</span><span>surface</span></div>
+    </div>
+    <div class="looplist">${rows}</div>
+    <button class="ghost mt16" onclick="home()">Back to the machine</button>
+  `);
+}
+
+/* the design panel — inline SVG so it needs no network, scales to any width, and
+   picks up the app's own CSS variables instead of shipping a second palette */
+function designHtml(u){
+  if(!u.design) return "";
+  return `<div class="card">
+      <div class="layer-label">The design <span class="layer-note">&mdash; what you are building</span></div>
+      <div class="design">${u.design.svg}</div>
+      ${u.design.caption ? `<div class="sub mt8">${esc(u.design.caption)}</div>` : ""}
+    </div>`;
+}
+function specHtml(u){
+  if(!u.spec) return "";
+  return `<div class="card">
+      ${labelRow('<div class="layer-label amb">The spec <span class="layer-note">&mdash; rules with numbers in them</span></div>')}
+      ${zone(fmt(u.spec), u.id, "spec", true)}
+    </div>`;
+}
+function surExtras(u){
+  let h = "";
+  if(u.transfer) h += `<div class="card">
+      ${labelRow('<div class="layer-label amb">Transfer <span class="layer-note">&mdash; apply it in your real code</span></div>')}
+      ${zone(fmt(u.transfer), u.id, "transfer", true)}</div>`;
+  if(u.verify) h += `<div class="card">
+      <div class="layer-label">Verify it yourself <span class="layer-note">&mdash; run it, don't trust it</span></div>
+      ${zone(codeblock(u.verify), u.id, "verify")}</div>`;
+  if(u.goDeeper) h += `<div class="card">
+      ${labelRow('<div class="layer-label">Go deeper</div>')}
+      ${zone(fmt(u.goDeeper), u.id, "goDeeper", true)}</div>`;
+  return h;
+}
+
+let usess = null;
+function openUnit(id){
+  const u = SUR.units.find(x=>x.id === id); if(!u) return surface();
+  const rec = SU.lessons[u.id];
+  usess = {u, set: rec ? 1 - (rec.set || 0) : 0, qi:0, correct:0, rating:null,
+           draftAnswer:"", comparedShown:false};
+  unitScreen(u);
+}
+function unitScreen(u){
+  const i = SUR.units.indexOf(u), passed = surDone(u);
+  screen(`
+    <div class="eyebrow">${hexOf(i)} <span class="dim">// ${esc(u.id)} &middot; lesson ${i+1}/${SUR.units.length}${passed ? " &middot; re-run &middot; set " + (usess && usess.set === 1 ? "B" : "A") : ""}</span></div>
+    <h1>${esc(u.title)}</h1>
+    ${designHtml(u)}
+    ${specHtml(u)}
+    <div class="card">
+      ${labelRow('<div class="layer-label">Definition <span class="layer-note">&mdash; say this to an interviewer</span></div>')}
+      ${zone(fmt(u.concept.definition), u.id, "concept.definition", true)}
+    </div>
+    <div class="card">
+      <div class="layer-label">Example</div>
+      ${zone(codeblock(u.concept.code), u.id, "concept.code")}
+    </div>
+    <div class="card">
+      ${labelRow('<div class="layer-label amb">Under the hood</div>')}
+      ${zone(fmt(u.concept.underlying), u.id, "concept.underlying", true)}
+    </div>
+    <div class="card">
+      ${labelRow('<div class="layer-label">Why it matters</div>')}
+      ${zone(fmt(u.concept.whyItMatters), u.id, "concept.whyItMatters", true)}
+    </div>
+    ${passed ? surExtras(u) : ""}
+    ${notesCardHtml(u.id)}
+    <button class="primary" onclick="surProblem()">Try the problem</button>
+    <button class="ghost" onclick="surface()">Back to the list</button>
+  `);
+}
+function surProblem(){
+  const u = usess.u;
+  screen(`
+    <div class="eyebrow">${hexOf(SUR.units.indexOf(u))} <span class="dim">// problem</span></div>
+    <h2>Solve before you reveal</h2>
+    <div class="card">${saybar()}${zone(fmt(u.exercise.prompt), u.id, "exercise.prompt", true)}${zone(codeblock(u.exercise.code), u.id, "exercise.code")}</div>
+    <div id="sol"></div>
+    <button class="primary" id="revealBtn" onclick="surReveal()">Reveal solution</button>
+    <button class="ghost" onclick="surface()">Exit lesson</button>
+  `);
+}
+function surReveal(){
+  const u = usess.u;
+  document.getElementById("sol").innerHTML = `
+    <div class="card">
+      ${labelRow('<div class="layer-label amb">Solution</div>')}
+      ${zone(codeblock(u.exercise.solution), u.id, "exercise.solution")}
+      ${zone(fmt(u.exercise.explanation), u.id, "exercise.explanation", true)}
+    </div>`;
+  applyHighlights(document.getElementById("sol"));
+  const b = document.getElementById("revealBtn");
+  b.textContent = "Continue to assessment";
+  b.onclick = ()=>surMcq();
+}
+function usessQ(){ const s = usess.u.assess.sets; return (s[usess.set] || s[0])[usess.qi]; }
+function surMcq(){
+  const q = usessQ();
+  screen(`
+    <div class="eyebrow">${hexOf(SUR.units.indexOf(usess.u))} <span class="dim">// assess &middot; question ${usess.qi+1}/3</span></div>
+    <h2>${esc(q.q).replace(/`([^`]+)`/g,"<code>$1</code>")}</h2>
+    <div id="opts">${q.options.map((o,i)=>
+      `<button class="opt" onclick="surAnswer(${i})"><span class="mono">${esc(o)}</span></button>`).join("")}
+    </div>
+    <div id="fb"></div>
+  `);
+}
+function surAnswer(i){
+  const q = usessQ();
+  document.querySelectorAll("#opts .opt").forEach((b,j)=>{ b.disabled = true;
+    if(j === q.correct) b.classList.add("correct");
+    else if(j === i) b.classList.add("wrong");
+    else b.classList.add("faded");
+  });
+  const right = i === q.correct;
+  if(right) usess.correct++;
+  document.getElementById("fb").innerHTML =
+    `<div class="feedback ${right?"good":"bad"}">${right?"Correct.":"Not quite."} ${fmt(q.explain)}</div>
+     <button class="primary" onclick="${usess.qi<2?"surNextQ()":"surExplain()"}">${usess.qi<2?"Next question":"Last step: explain it"}</button>`;
+}
+function surNextQ(){ usess.qi++; surMcq(); }
+function surExplain(){
+  const u = usess.u;
+  screen(`
+    <div class="eyebrow">${hexOf(SUR.units.indexOf(u))} <span class="dim">// assess &middot; articulate</span></div>
+    <h2>Say it in your own words</h2>
+    <div class="card mt8">${saybar()}${zone(fmt(u.assess.explainPrompt), u.id, "assess.explainPrompt", true)}
+      <textarea id="ans" placeholder="Write in English, as if answering an interviewer&hellip;">${esc(usess.draftAnswer||"")}</textarea>
+    </div>
+    <div id="cmp"></div>
+    <button class="primary" onclick="surCompare()">Compare with model answer</button>
+  `);
+  if(usess.comparedShown){ surCompare(); if(usess.rating!==null) surRate(usess.rating); }
+}
+function surCompare(){
+  const u = usess.u;
+  usess.comparedShown = true;
+  document.getElementById("cmp").innerHTML = `
+    <div class="card">
+      ${labelRow('<div class="layer-label amb">Model answer</div>')}
+      ${zone(fmt(u.assess.modelAnswer), u.id, "assess.modelAnswer", true)}
+    </div>
+    <div class="card">
+      <div class="layer-label">Honest self-rating &mdash; how close was your answer?</div>
+      <div class="raterow">${[0,1,2,3,4,5].map(n=>
+        `<button class="rate" id="ur${n}" onclick="surRate(${n})">${n}</button>`).join("")}</div>
+      <div class="sub mt8">0 = couldn't say it &middot; 3 = the idea, roughly &middot; 5 = interview-ready</div>
+    </div>
+    <button class="primary" onclick="surFinish()">Finish lesson</button>`;
+  applyHighlights(document.getElementById("cmp"));
+}
+function surRate(n){ usess.rating = n;
+  for(let i=0;i<=5;i++) document.getElementById("ur"+i).classList.toggle("sel", i===n);
+}
+/* same scoring contract as a loop (mcq + rating*0.4, pass at 3.0) and the same
+   1/3/7/21 ladder — but written into SU.lessons, and it never touches S.streak or
+   S.loops, so the machine track's numbers stay a measure of the machine track. */
+function surFinish(){
+  if(usess.rating === null){ alert("Rate your explanation first (0-5)."); return; }
+  const u = usess.u;
+  const score = Math.round((usess.correct + usess.rating*0.4)*10)/10;
+  const passed = score >= PASS;
+  if(passed){
+    const t = todayStr(), prev = SU.lessons[u.id];
+    if(prev){
+      prev.hist = (prev.hist || []).concat({score, date:t, set:usess.set}).slice(-20);
+      prev.score = score; prev.date = t; prev.set = usess.set;
+      prev.ivl = usess.correct >= 2 ? Math.min((prev.ivl || 0) + 1, INTERVALS.length - 1) : 0;
+      prev.due = addDays(t, INTERVALS[prev.ivl]);
+    } else {
+      SU.lessons[u.id] = {score, date:t, set:usess.set,
+        hist:[{score, date:t, set:usess.set}], ivl:0, due:addDays(t, INTERVALS[0])};
+    }
+    saveSurface();
+  }
+  screen(`
+    <div class="eyebrow">${hexOf(SUR.units.indexOf(u))} <span class="dim">// result</span></div>
+    <div class="score-big ${passed?"pass":"fail"}">${score.toFixed(1)}<span style="font-size:20px;color:var(--dim)"> / 5</span></div>
+    <div class="center sub">${usess.correct}/3 questions &middot; self-rating ${usess.rating}/5</div>
+    <div class="card mt16">
+      <div class="layer-label${passed?"":" amb"}">${passed ? "Installed" : "Not yet &mdash; run it again"}</div>
+      <div>${passed ? "Due for review tomorrow." : "Below 3.0. Re-read the design and the spec, then take another pass."}</div>
+    </div>
+    ${passed ? surExtras(u) : ""}
+    <button class="primary" onclick="surface()">Back to the surface list</button>
+  `);
 }
 
 home();

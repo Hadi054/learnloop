@@ -6,6 +6,7 @@ const fs = require("fs");
 const index = fs.readFileSync("index.html", "utf8");
 const css = fs.readFileSync("style.css", "utf8");
 const cur = fs.readFileSync("curriculum.js", "utf8");
+const sur = fs.readFileSync("surface.js", "utf8");
 const app = fs.readFileSync("app.js", "utf8");
 
 // Guard against premature </script> termination when inlining.
@@ -16,6 +17,7 @@ const safe = (s) => s.replace(/<\/script/gi, "<\\/script");
 let out = index
   .replace('<link rel="stylesheet" href="style.css">', "<style>\n" + css + "\n</style>")
   .replace('<script src="curriculum.js"></script>', "<script>\n" + safe(cur) + "\n</script>")
+  .replace('<script src="surface.js"></script>', "<script>\n" + safe(sur) + "\n</script>")
   .replace('<script src="app.js"></script>', "<script>\n" + safe(app) + "\n</script>");
 
 fs.mkdirSync("dist", { recursive: true });

@@ -135,5 +135,11 @@
     border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45);
     font-family:var(--sans);font-size:.9em;cursor:pointer}
   .hl-float-btn:active{filter:brightness(1.15)}
+  /* surface track — the design panel. Inline SVG, so it inherits the palette above
+     and needs no network; width:100% keeps it inside the column on a phone, and the
+     34em cap stops a diagram ballooning when the column is wide. */
+  .design{background:#10131A;border:1px solid var(--line);border-radius:8px;
+    padding:14px 12px;margin-top:10px;overflow-x:auto}
+  .design svg{display:block;width:100%;height:auto;max-width:34em;margin:0 auto}
   input[type=file]{width:100%;margin-top:10px;color:var(--dim);font-size:.8em}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
