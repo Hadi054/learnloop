@@ -231,6 +231,14 @@ Content authoring rules (quality bar — hold every generated loop to these):
   opens it in concept "browse" mode — read-only if passed, "Start this loop" if
   not — and returning keeps that block expanded. The old Browse screen is gone
   (home absorbed it); nav is Interview / History / Data plus the review button.
+- Home tabs (2026-08-02): home is TWO tracks under one heading — Machine (the CUR
+  curriculum) and Surface (the SUR track). `home()` renders the shared shell
+  (eyebrow, h1, `.tabs`, nav) and asks `machineHome()` / `surfaceHome()` for
+  `{label, title, body}`; neither calls `screen()` itself. `tab` is module state,
+  in memory only (a fresh load starts on Machine); `surface()` is now just
+  `goTab("surface")`, so every existing "back to the surface list" call site keeps
+  working. Adding a third track = a third body function plus one entry in
+  `tabsHtml()`.
 - Spaced repetition (v:2, added 2026-07-17): passing a loop schedules it due
   tomorrow (`log[id].due`, ladder stage `ivl` into INTERVALS = [1,3,7,21] days).
   Home offers "Start review — N due" above the list whenever ≥1 concept is due,

@@ -70,6 +70,15 @@
     color:var(--dim);font-size:.86em}
   .feedback.good{border-color:var(--green)} .feedback.bad{border-color:var(--red)}
   .row{display:flex;gap:10px} .row>button{flex:1}
+  /* home tabs — the two tracks (machine / surface). An underline bar, not pills:
+     it reads as the same eyebrow language as the heading above it, and the
+     selected tab is amber like every other "here" marker in the app. */
+  .tabs{display:flex;gap:4px;margin:12px 0 2px;border-bottom:1px solid var(--line)}
+  button.tab{flex:1;width:auto;margin:0;padding:9px 4px;background:none;border:none;
+    border-radius:0;border-bottom:2px solid transparent;color:var(--dim);
+    font-family:var(--mono);font-size:.78em;letter-spacing:.12em;text-transform:uppercase}
+  button.tab.sel{color:var(--amber);border-bottom-color:var(--amber)}
+  button.tab:active{filter:none;color:var(--text)}
   /* curriculum list (home): one container per block, green + ticked when done */
   .blockcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;
     padding:12px 14px 13px;margin-top:12px}

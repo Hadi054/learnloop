@@ -386,10 +386,38 @@ function saveNoteFor(loopId){
    The block/loop list IS the home screen: no "next loop" driver, the learner
    picks. A passed loop gets a tick and a green row; a block whose every loop is
    passed gets a tick and a green container. One block expands at a time — by
-   default the active one (first with unfinished loops). */
+   default the active one (first with unfinished loops).
+
+   Home has two TABS under the heading: the machine (this curriculum) and the
+   surface track. They are two lists of the same shape, not two screens, so the
+   tab only swaps the body — heading, nav and scroll position are shared. `tab`
+   is deliberately in memory only: coming back to the app starts on the machine,
+   but finishing a surface lesson returns to the surface tab, because
+   surface() sets it. */
 let openBi = null;              // expanded block index; null = follow activeBlock(), -1 = none
+let tab = "machine";            // "machine" | "surface"
 function toggleBlock(i){ openBi = (openBi===i ? -1 : i); home(); }
+function goTab(t){ tab = t; home(); }
+function tabsHtml(){
+  const t = (id,label)=>`<button class="tab${tab===id?" sel":""}" role="tab"
+      aria-selected="${tab===id}" onclick="goTab('${id}')">${label}</button>`;
+  return `<div class="tabs" role="tablist">${t("machine","Machine")}${t("surface","Surface")}</div>`;
+}
 function home(){
+  const h = tab === "surface" ? surfaceHome() : machineHome();
+  screen(`
+    <div class="eyebrow">learnloop <span class="dim">// ${h.label}</span></div>
+    <h1>${h.title}</h1>
+    ${tabsHtml()}
+    ${h.body}
+    <div class="row mt16">
+      <button onclick="interview()">Interview</button>
+      <button onclick="history_()">History</button>
+      <button onclick="dataScreen()">Data</button>
+    </div>
+  `);
+}
+function machineHome(){
   const total = CUR.blocks.reduce((n,b)=>n+b.loops.length, 0);
   const totalDone = CUR.blocks.reduce((n,b)=>n+b.loops.filter(l=>S.log[l.id]).length, 0);
   const shown = openBi===null ? CUR.blocks.indexOf(activeBlock()) : openBi;
@@ -423,9 +451,7 @@ function home(){
       ${open?`<div class="looplist">${rows}</div>`:""}
     </div>`;
   }).join("");
-  screen(`
-    <div class="eyebrow">learnloop <span class="dim">// curriculum</span></div>
-    <h1>The whole machine</h1>
+  return { label: "curriculum", title: "The whole machine", body: `
     <div class="sub">${totalDone}/${total} concepts installed across ${CUR.blocks.length} blocks. Tap a block to open it, a loop to read it.</div>
     <div class="stats">
       <div class="stat"><div class="n">${S.streak}</div><div class="l">day streak</div></div>
@@ -435,15 +461,7 @@ function home(){
     ${due>=1 ? '<button class="primary" onclick="startReview(false)">Start review — '+due+' concept'+(due===1?"":"s")+' due</button>'
              : (allDone() ? '<button class="primary" onclick="startReview(true)">Review weakest concepts</button>' : '')}
     ${blocks}
-    <div class="row mt16">
-      <button onclick="surface()">Surface</button>
-      <button onclick="interview()">Interview</button>
-    </div>
-    <div class="row">
-      <button onclick="history_()">History</button>
-      <button onclick="dataScreen()">Data</button>
-    </div>
-  `);
+  `};
 }
 
 /* ---------- LOOP FLOW ---------- */
@@ -1002,7 +1020,8 @@ function saveSurface(){
 function surLessons(){ return SUR.units.filter(u=>u.kind === "lesson"); }
 function surDone(u){ return !!SU.lessons[u.id]; }
 
-function surface(){
+function surface(){ goTab("surface"); }
+function surfaceHome(){
   const us = SUR.units;
   const done = us.filter(surDone).length;
   const cells = us.map(u=>{
@@ -1015,9 +1034,7 @@ function surface(){
       <span class="lt">${esc(u.title)}</span>
       <span class="chev">${u.kind === "build" ? "BUILD" : ""}</span>
     </button>`).join("");
-  screen(`
-    <div class="eyebrow">learnloop <span class="dim">// surface</span></div>
-    <h1>${esc(SUR.name)}</h1>
+  return { label: "surface", title: esc(SUR.name), body: `
     <div class="sub">${esc(SUR.tagline)}</div>
     <div class="card">
       <div class="layer-label">Progress</div>
@@ -1025,8 +1042,7 @@ function surface(){
       <div class="cellcap"><span>${done}/${us.length} installed</span><span>surface</span></div>
     </div>
     <div class="looplist">${rows}</div>
-    <button class="ghost mt16" onclick="home()">Back to the machine</button>
-  `);
+  `};
 }
 
 /* the design panel — inline SVG so it needs no network, scales to any width, and
