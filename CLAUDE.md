@@ -95,7 +95,7 @@ assume): three building-block loops for machinery no existing loop installs —
   Same id shift: keyboard management moves to b2-20.
 Rejected as folds: SQL fundamentals (b8-04 carries it), linker (b11-03 owns it),
 TLS basics (b7-09 self-contained), delegation refresher (b2-10 owns it).
-Combine: learner confirmed 2026-07-18 your app doesn't use it — stays out.
+Combine: learner confirmed 2026-07-18 they don't use it — stays out.
 Authoring order now: b0-16 → b4-11 TCP → b7-03..11 → b2-19 KVC → b8 → b9 →
 b10 → b11 → b2-20 keyboard, b3-13 actor-singleton, b4-12 coexist.
 
@@ -333,7 +333,16 @@ Content authoring rules (quality bar — hold every generated loop to these):
   2026-08-02: "i will read one by one, tell you to change"). Do NOT bulk-rewrite
   loops for readability; `gate.py` failures on old content are a worklist for
   them, not a mandate.
-
+- **NO WORK-IDENTIFYING DETAIL (rule set 2026-08-03, after a scrub pass).** The
+  repo is public on GitHub, so content documents CONCEPTS only. Never write: a
+  ticket key or any tracker id; the employer's product domain, feature list, or
+  vendor choices stated as fact about a specific app; a real bundle id, host,
+  endpoint or internal name. Say "your app", "a production APIClient",
+  "storyboard-first codebases" — the second person and the generic case carry
+  the same teaching weight. `transfer` tasks still point at the learner's real
+  project; they just don't describe it. Tool names used as examples (Charles,
+  Alamofire, IQKeyboardManager, Firebase, Stripe) are fine — asserting that a
+  particular app uses them is not.
 
 ## The Surface track (added 2026-08-02)
 
@@ -433,7 +442,7 @@ without connecting it to the choice that caused it.
 
 ### Deliberately out of scope
 
-Widgets, App Clips and launch screens — surfaces the learner's your app doesn't
+Widgets, App Clips and launch screens — surfaces the learner's app doesn't
 ship. WidgetKit is SwiftUI-only and this is a UIKit track.
 
 ## App mechanics (do not change without a deliberate decision)

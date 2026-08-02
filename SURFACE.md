@@ -126,7 +126,7 @@ Where the box-tree skill lives — the thing that started this track.
 
 # s3 — Interface Builder writes XML (9)
 
-Requested by the learner, 2026-08-02: your app is storyboard-first. Taught in
+Requested by the learner, 2026-08-02: the learner's codebase is storyboard-first. Taught in
 three columns — **what you click → what it writes → what loads**. A XIB is XML, so
 every inspector checkbox is a readable attribute. Verifiable here: b10-01 already
 hand-wrote a XIB, ran `ibtool`, and loaded the compiled nib.
@@ -258,7 +258,7 @@ almost all their time on.
 |---|---|---|
 | 01 | **Five states, not one** `[EXEC]` — empty, loading, partial, error, ideal, driven by one enum | One screen, five states, one enum, a debug picker |
 | 02 | **The empty state is a designed screen** `[DOC]` — first-run, filtered-to-nothing and cleared-all are three empties | Three distinct empties for one list, three different calls to action |
-| 03 | **Errors people can act on** `[DOC][EXEC]` — network/permission/validation/server → inline, banner, or full screen | Map five real errors from your your app; implement each |
+| 03 | **Errors people can act on** `[DOC][EXEC]` — network/permission/validation/server → inline, banner, or full screen | Map five real errors from your own app; implement each |
 | 04 | **Navigation models** `[EXEC][DOC]` — stack, tab, modal, and what each costs in deep linking | One feature as a push *and* as a modal; write which you'd ship |
 | 05 | **Modality and detents** `[EXEC]` — `UISheetPresentationController`; a non-dismissable modal is hostile | Sheet with two detents plus confirm-on-dismiss when dirty |
 | 06 | **Forms: focus, validation, keyboard** `[EXEC]` — validate on blur; the keyboard is a layout event (b2-20) | 4-field form: next-field chain, blur validation, correct insets |
@@ -274,7 +274,7 @@ almost all their time on.
 # s10 — Adaptive and accessible (8)
 
 Dissolved in the earlier map; restored as a block, because this is where junior
-work visibly fails and where your app runs (iPhone, iPad, Split View).
+work visibly fails and where the app runs (iPhone, iPad, Split View).
 
 | # | Loop | Build |
 |---|---|---|
@@ -305,7 +305,7 @@ work visibly fails and where your app runs (iPhone, iPad, Split View).
 | 06 | **Critique without taste-fighting** `[DOC]` — "violates the system" vs "I don't like it" | Critique an early screen against s0–s10's criteria only; cite a rule per point |
 | 07 | **Platform conventions and why iOS looks like this** `[DOC]` — HIG lineage through to iOS 26 Liquid Glass | Take one screen and argue, in writing, why it is or isn't native-feeling |
 
-> **⬛ CAPSTONE s11 — Designed, then built** (4+ h). One feature from your app.
+> **⬛ CAPSTONE s11 — Designed, then built** (4+ h). One feature from your own app.
 > **Design it first** — spec, tokens, states, motion, accessibility — then build
 > from your own spec using your own library. No design invented while coding.
 > *Done when:* the spec predates the first line of UI code, every component came
@@ -346,5 +346,5 @@ it consolidates everything built before it.
 
 - `s1-06` is the written `s-01` and needs renumbering. Free now, not later.
 - Widgets, App Clips and the launch screen are deliberately **out** — they're
-  surfaces the learner's your app doesn't ship. Add later if that changes.
+  surfaces the learner's app doesn't ship. Add later if that changes.
 - WidgetKit is SwiftUI-only, so it stays out of a UIKit track on purpose.

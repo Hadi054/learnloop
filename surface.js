@@ -266,7 +266,7 @@ const SUR = {
     },
 
     "build": {
-      "brief": "Write a `StatefulButton` — a `UIButton` subclass or a factory function, your call — that fills every row of the state table on purpose instead of leaving the fallback to do it.\n\nStart by opening your your app and finding one button that can be disabled. Almost certainly nobody ever set its `.disabled` row, so it is currently showing enabled wording while refusing to act. That is the bug you are building the fix for.",
+      "brief": "Write a `StatefulButton` — a `UIButton` subclass or a factory function, your call — that fills every row of the state table on purpose instead of leaving the fallback to do it.\n\nStart by opening your own app and finding one button that can be disabled. Almost certainly nobody ever set its `.disabled` row, so it is currently showing enabled wording while refusing to act. That is the bug you are building the fix for.",
       "done": [
         "The disabled row says something different from the normal row, because you wrote both",
         "A loading mode that disables the control and swaps the title — loading is not a `UIControl.State`, so it is yours to model",
