@@ -1480,6 +1480,101 @@ const CUR = {
      "transfer": "Find one OptionSet in the work codebase or your own UIKit usage (`UIView.AnimationOptions`, autoresizing masks, `NSRegularExpression.Options`…) and write out which bit each case you use owns — `String(rawValue, radix: 2)` makes it visible. Then re-derive b7-01's key bytes `08` and `12` by hand from `(field << 3) | type`.",
      "verify": "let key = (5 << 3) | 2\nprint(key, String(key, radix: 2))   // 42 101010\nprint(key >> 3, key & 0b111)        // 5 2\nprint(0xFF & 300)                   // 44 — low byte of 1 0010 1100\nlet b: UInt8 = 0b1010_1100          // 0xAC — b7-01's varint byte for 300\nprint(b & 0x7F)                     // 44 — continuation flag stripped\nwithUnsafeBytes(of: UInt32(0x1122_3344)) { print($0.map { String($0, radix: 16) }) }\n// [\"44\", \"33\", \"22\", \"11\"] — little-endian, executed on this Mac (ARM)\nstruct Fit: OptionSet { let rawValue: Int\n    static let width  = Fit(rawValue: 1 << 0)\n    static let height = Fit(rawValue: 1 << 1) }\nprint(([.width, .height] as Fit).rawValue)  // 3 — two bits ORed together",
      "goDeeper": "The Swift Programming Language, \"Advanced Operators\" chapter — shifts, masks, overflow operators, and the OptionSet story. \"Hacker's Delight\" ch. 2 for the classic bit tricks. Then re-read b7-01 and b7-02: the varint math should now read like plain arithmetic."
+    },
+    {
+     "id": "b0-17",
+     "title": "The address is a lie",
+     "concept": {
+      "definition": "Every address your program touches is a virtual address — a private name that the CPU's memory management unit translates to a physical RAM location on each access. Each process gets its own translation table, so two programs can hold the identical address and read entirely different bytes. The address space is a map handed to a process, not the RAM underneath it.",
+      "code": "// Two copies of the same game, running AT THE SAME TIME.\n// Both DEMAND the exact same address from the kernel — and both get it.\n\nlet addr = UnsafeMutableRawPointer(bitPattern: 0x4000_0000_0000)!\nlet page = mmap(addr, 16384, PROT_READ | PROT_WRITE,\n                MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0)\n\nstrcpy(page, \"player A: 3 lives\")   // in process A\nstrcpy(page, \"player B: 7 lives\")   // in process B\n\n// executed, both processes alive together:\n// [A] pid 3281  got 0x400000000000  →  \"player A: 3 lives\"\n// [B] pid 3282  got 0x400000000000  →  \"player B: 7 lives\"\n//\n// One number. Two realities. Nobody overwrote anybody.",
+      "underlying": "`score` in loop 0x00 compiled down to \"an address\" — but that address is not a location in the RAM chip. It is an index into a per-process map. Memory is chopped into pages (16 KB on this machine, readable with `sysconf(_SC_PAGESIZE)`), and the kernel keeps a page table per process saying \"virtual page 4 lives in physical page 91.\" On every single load and store, a hardware unit called the MMU walks that table and rewrites the address before the RAM chip ever sees it. A cache of recent translations, the TLB, keeps this from costing a lookup per access.\n\nThis is why the compiler cannot know your final addresses. It fixes only the OFFSET inside the image; the kernel picks a random base at launch (ASLR) and slides the whole image there. Run the same binary four times and watch a global: `0x1007D4180`, `0x102ACC180`, `0x10058C180`, `0x10255C180` — the low `180` never moves, because the compiler chose it, and everything above it is the kernel's dice roll.\n\nSo a pointer is meaningful only inside the process and the launch that produced it. Across either boundary it is just a number.",
+      "whyItMatters": "It explains why a crash log's addresses are useless until you symbolicate them against the image's load address, and why persisting or sharing a raw pointer is always a bug. Interviewers ask it as \"can two processes have the same pointer?\" — the answer is yes, always, and it is not a conflict."
+     },
+     "exercise": {
+      "prompt": "This game binary is launched four times. The addresses below are real, captured from those runs. Predict which digits are stable and say who decides each part — then answer: could the game store `playerPtr` in its save file and reuse it next launch?",
+      "code": "import Foundation\nclass Player { var lives = 3 }\nvar highScore = 0                 // a global, in the data segment\n\nwithUnsafePointer(to: &highScore) { p in\n    let g = UInt(bitPattern: p)\n    let m = unsafeBitCast(Player.self as AnyObject, to: UInt.self)\n    print(String(format: \"global 0x%012lX  metadata 0x%012lX\", g, m))\n}\n\n// run 1:  global 0x0001007D4180   metadata 0x0001007D40F8\n// run 2:  global 0x000102ACC180   metadata 0x000102ACC0F8\n// run 3:  global 0x00010058C180   metadata 0x00010058C0F8\n// run 4:  global 0x00010255C180   metadata 0x00010255C0F8",
+      "solution": "Stable: the low three digits, `180`. Everything above them changes every launch.\n\n- The COMPILER fixed `180` — it is the offset of `highScore` inside the data segment, decided when the image was built.\n- The KERNEL chose the rest — a random slide (ASLR) applied to the whole image at load time.\n\nNo. Saving `playerPtr` and reloading it next launch gives you a number that names nothing: the new process has a different map and a different slide. Dereferencing it either crashes or, far worse, silently hits unrelated memory.",
+      "explanation": "Notice the whole image slides as a unit — the metadata sat exactly `0x88` below the global in all four runs. ASLR randomises where the map is pinned, never the layout inside it, which is why symbolication needs only one load address to resolve every frame in a crash report."
+     },
+     "assess": {
+      "explainPrompt": "In your own words (2-3 sentences): what is a virtual address, and why can two running games hold the same address without conflicting? Mention the per-process map and what does the translating.",
+      "modelAnswer": "A virtual address is a private name inside one process's address space, not a location in the RAM chip. Each process has its own page table, and the MMU translates the address in hardware on every access, so the same number in two processes routes to two different physical pages. That is why identical pointers in two games never collide, and why a pointer means nothing outside the process and launch that made it.",
+      "sets": [
+       [
+        {
+         "q": "Two processes running the same game both hold the pointer `0x400000000000`. What does that tell you about the bytes there?",
+         "options": [
+          "Both processes see the same bytes, since one address means one place in RAM",
+          "The second process crashes, because that address is already claimed",
+          "Each sees its own bytes — the address is a name each maps separately",
+          "The kernel picks one process and quietly relocates the other's page"
+         ],
+         "correct": 2,
+         "explain": "Identical virtual addresses are the normal case, not a collision. Each process's page table sends that same number to a different physical page."
+        },
+        {
+         "q": "A global sits at `0x1007D4180` on one launch and `0x102ACC180` on the next. Which part did the compiler decide?",
+         "options": [
+          "The low bits — the offset inside the image; the kernel picks the base",
+          "The whole address, which the kernel then verifies as free at load time",
+          "Neither — addresses get assigned lazily on the first write to the page",
+          "The high bits, which encode which segment the symbol was placed in"
+         ],
+         "correct": 0,
+         "explain": "The compiler can only fix positions relative to the image's start. ASLR slides that start somewhere new each launch, so the offset survives and the base does not."
+        },
+        {
+         "q": "What actually performs the virtual-to-physical translation?",
+         "options": [
+          "The Swift runtime, each time it dereferences a pointer",
+          "dyld, which resolves addresses once per segment at launch",
+          "The allocator, which returns already-translated addresses",
+          "The MMU, in hardware, on every single memory access"
+         ],
+         "correct": 3,
+         "explain": "Translation is a hardware step on the path to RAM, far below any runtime or library. The TLB caches recent translations so it does not cost a table walk every time."
+        }
+       ],
+       [
+        {
+         "q": "A teammate's save system writes `UInt(bitPattern: playerPtr)` into the save file and reads it back next launch. Your review says…",
+         "options": [
+          "It works, provided the save file stays on the same physical device",
+          "It breaks — that number names nothing in the next process's map",
+          "It works only if the game allocates its objects in the same order",
+          "It breaks only once the device is low on memory and starts remapping"
+         ],
+         "correct": 1,
+         "explain": "A pointer is an index into one process's map, and that map is rebuilt with a new random slide every launch. Persist the player's data, never the address it happened to occupy."
+        },
+        {
+         "q": "Why does symbolicating a crash log require the binary's load address?",
+         "options": [
+          "Because dSYMs store addresses only as file offsets, never as symbols",
+          "Because the crash reporter compresses addresses to keep the log small",
+          "Because ASLR slid the image, so logged addresses differ from the dSYM's",
+          "Because the linker strips all symbol names from a release build binary"
+         ],
+         "correct": 2,
+         "explain": "The dSYM knows offsets; the crash log holds slid runtime addresses. Subtracting the load address converts one into the other, which is exactly what `atos` does when you symbolicate."
+        },
+        {
+         "q": "A plain Swift process on a 16 GB Mac reports 415 GB of virtual size. Why is this not a bug?",
+         "options": [
+          "Virtual size counts reserved names, not RAM; only touched pages cost",
+          "The figure includes swap space on the SSD the process may later use",
+          "It counts every page the process has read since launch, cumulatively",
+          "macOS reports the whole system's mappings rather than this process's"
+         ],
+         "correct": 0,
+         "explain": "Address space is an accounting fiction until something writes to it — reserving is nearly free. The number that decides whether you stay alive is resident footprint, not address space."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open any crash report you have (yours or one from work) and find the 'Binary Images' section at the bottom. The first column is the load address that launch happened to get. Pick one frame from the backtrace, subtract that load address from the frame's address, and you have the offset the compiler chose — the number that is actually stable across every launch. If you have no crash log handy, run the same debug build twice and print the address of any global; watch the low digits hold still.",
+     "verify": "// executed on this Mac 2026-08-02 (plain swift, two concurrent processes):\n// [A] pid 3281  requested 0x400000000000  got 0x400000000000  pagesize 16384\n// [A] wrote  : process A (pid 3281) wrote this\n// [B] pid 3282  requested 0x400000000000  got 0x400000000000  pagesize 16384\n// [B] wrote  : process B (pid 3282) wrote this\n// [A] re-read: process A (pid 3281) wrote this   ← unchanged while B was alive\n//\n// Reproduce it:\n//   let a = UnsafeMutableRawPointer(bitPattern: 0x4000_0000_0000)!\n//   let p = mmap(a, 16384, PROT_READ|PROT_WRITE,\n//                MAP_PRIVATE|MAP_ANON|MAP_FIXED, -1, 0)\n//   // write a per-process string, Thread.sleep(2), read it back\n//   // launch two copies at once:  ./vm A & ./vm B & wait\n//\n// ASLR, same binary, four runs (executed):\n//   global 0x0001007D4180 / 0x000102ACC180 / 0x00010058C180 / 0x00010255C180\n//   metadata sat exactly 0x88 below the global in ALL FOUR runs — slides whole.",
+     "goDeeper": "Apple's 'Analyzing a Crash Report' — the Binary Images section and why load addresses are printed at all. WWDC 2018 'iOS Memory Deep Dive' for the page-level view. 'Computer Systems: A Programmer's Perspective', chapter 9 (Virtual Memory) — the clearest treatment of page tables and the TLB in print."
     }
    ]
   },

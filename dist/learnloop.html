@@ -158,6 +158,18 @@
   .design{background:#10131A;border:1px solid var(--line);border-radius:8px;
     padding:14px 12px;margin-top:10px;overflow-x:auto}
   .design svg{display:block;width:100%;height:auto;max-width:34em;margin:0 auto}
+  /* the build card — amber while owed, green once built */
+  .card.build{border-color:var(--amber-dim)}
+  .card.build.done{border-color:var(--green);background:rgba(134,191,138,.06)}
+  ul.checks{margin:6px 0 0 1.15em;padding:0}
+  ul.checks li{margin-bottom:5px;line-height:1.5}
+  ul.checks li:last-child{margin-bottom:0}
+  .bbadge{font-family:var(--mono);font-size:.62em;letter-spacing:.1em;flex:0 0 auto;
+    border:1px solid var(--amber);color:var(--amber);border-radius:4px;padding:2px 5px}
+  .bbadge.on{border-color:var(--green);color:var(--green)}
+  /* a block that is mapped but not yet authored — visible road ahead, not tappable */
+  .blockcard.pending{opacity:.5}
+  .blockcard.pending .blockhead{cursor:default}
   input[type=file]{width:100%;margin-top:10px;color:var(--dim);font-size:.8em}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 
@@ -1648,6 +1660,101 @@ const CUR = {
      "transfer": "Find one OptionSet in the work codebase or your own UIKit usage (`UIView.AnimationOptions`, autoresizing masks, `NSRegularExpression.Options`…) and write out which bit each case you use owns — `String(rawValue, radix: 2)` makes it visible. Then re-derive b7-01's key bytes `08` and `12` by hand from `(field << 3) | type`.",
      "verify": "let key = (5 << 3) | 2\nprint(key, String(key, radix: 2))   // 42 101010\nprint(key >> 3, key & 0b111)        // 5 2\nprint(0xFF & 300)                   // 44 — low byte of 1 0010 1100\nlet b: UInt8 = 0b1010_1100          // 0xAC — b7-01's varint byte for 300\nprint(b & 0x7F)                     // 44 — continuation flag stripped\nwithUnsafeBytes(of: UInt32(0x1122_3344)) { print($0.map { String($0, radix: 16) }) }\n// [\"44\", \"33\", \"22\", \"11\"] — little-endian, executed on this Mac (ARM)\nstruct Fit: OptionSet { let rawValue: Int\n    static let width  = Fit(rawValue: 1 << 0)\n    static let height = Fit(rawValue: 1 << 1) }\nprint(([.width, .height] as Fit).rawValue)  // 3 — two bits ORed together",
      "goDeeper": "The Swift Programming Language, \"Advanced Operators\" chapter — shifts, masks, overflow operators, and the OptionSet story. \"Hacker's Delight\" ch. 2 for the classic bit tricks. Then re-read b7-01 and b7-02: the varint math should now read like plain arithmetic."
+    },
+    {
+     "id": "b0-17",
+     "title": "The address is a lie",
+     "concept": {
+      "definition": "Every address your program touches is a virtual address — a private name that the CPU's memory management unit translates to a physical RAM location on each access. Each process gets its own translation table, so two programs can hold the identical address and read entirely different bytes. The address space is a map handed to a process, not the RAM underneath it.",
+      "code": "// Two copies of the same game, running AT THE SAME TIME.\n// Both DEMAND the exact same address from the kernel — and both get it.\n\nlet addr = UnsafeMutableRawPointer(bitPattern: 0x4000_0000_0000)!\nlet page = mmap(addr, 16384, PROT_READ | PROT_WRITE,\n                MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0)\n\nstrcpy(page, \"player A: 3 lives\")   // in process A\nstrcpy(page, \"player B: 7 lives\")   // in process B\n\n// executed, both processes alive together:\n// [A] pid 3281  got 0x400000000000  →  \"player A: 3 lives\"\n// [B] pid 3282  got 0x400000000000  →  \"player B: 7 lives\"\n//\n// One number. Two realities. Nobody overwrote anybody.",
+      "underlying": "`score` in loop 0x00 compiled down to \"an address\" — but that address is not a location in the RAM chip. It is an index into a per-process map. Memory is chopped into pages (16 KB on this machine, readable with `sysconf(_SC_PAGESIZE)`), and the kernel keeps a page table per process saying \"virtual page 4 lives in physical page 91.\" On every single load and store, a hardware unit called the MMU walks that table and rewrites the address before the RAM chip ever sees it. A cache of recent translations, the TLB, keeps this from costing a lookup per access.\n\nThis is why the compiler cannot know your final addresses. It fixes only the OFFSET inside the image; the kernel picks a random base at launch (ASLR) and slides the whole image there. Run the same binary four times and watch a global: `0x1007D4180`, `0x102ACC180`, `0x10058C180`, `0x10255C180` — the low `180` never moves, because the compiler chose it, and everything above it is the kernel's dice roll.\n\nSo a pointer is meaningful only inside the process and the launch that produced it. Across either boundary it is just a number.",
+      "whyItMatters": "It explains why a crash log's addresses are useless until you symbolicate them against the image's load address, and why persisting or sharing a raw pointer is always a bug. Interviewers ask it as \"can two processes have the same pointer?\" — the answer is yes, always, and it is not a conflict."
+     },
+     "exercise": {
+      "prompt": "This game binary is launched four times. The addresses below are real, captured from those runs. Predict which digits are stable and say who decides each part — then answer: could the game store `playerPtr` in its save file and reuse it next launch?",
+      "code": "import Foundation\nclass Player { var lives = 3 }\nvar highScore = 0                 // a global, in the data segment\n\nwithUnsafePointer(to: &highScore) { p in\n    let g = UInt(bitPattern: p)\n    let m = unsafeBitCast(Player.self as AnyObject, to: UInt.self)\n    print(String(format: \"global 0x%012lX  metadata 0x%012lX\", g, m))\n}\n\n// run 1:  global 0x0001007D4180   metadata 0x0001007D40F8\n// run 2:  global 0x000102ACC180   metadata 0x000102ACC0F8\n// run 3:  global 0x00010058C180   metadata 0x00010058C0F8\n// run 4:  global 0x00010255C180   metadata 0x00010255C0F8",
+      "solution": "Stable: the low three digits, `180`. Everything above them changes every launch.\n\n- The COMPILER fixed `180` — it is the offset of `highScore` inside the data segment, decided when the image was built.\n- The KERNEL chose the rest — a random slide (ASLR) applied to the whole image at load time.\n\nNo. Saving `playerPtr` and reloading it next launch gives you a number that names nothing: the new process has a different map and a different slide. Dereferencing it either crashes or, far worse, silently hits unrelated memory.",
+      "explanation": "Notice the whole image slides as a unit — the metadata sat exactly `0x88` below the global in all four runs. ASLR randomises where the map is pinned, never the layout inside it, which is why symbolication needs only one load address to resolve every frame in a crash report."
+     },
+     "assess": {
+      "explainPrompt": "In your own words (2-3 sentences): what is a virtual address, and why can two running games hold the same address without conflicting? Mention the per-process map and what does the translating.",
+      "modelAnswer": "A virtual address is a private name inside one process's address space, not a location in the RAM chip. Each process has its own page table, and the MMU translates the address in hardware on every access, so the same number in two processes routes to two different physical pages. That is why identical pointers in two games never collide, and why a pointer means nothing outside the process and launch that made it.",
+      "sets": [
+       [
+        {
+         "q": "Two processes running the same game both hold the pointer `0x400000000000`. What does that tell you about the bytes there?",
+         "options": [
+          "Both processes see the same bytes, since one address means one place in RAM",
+          "The second process crashes, because that address is already claimed",
+          "Each sees its own bytes — the address is a name each maps separately",
+          "The kernel picks one process and quietly relocates the other's page"
+         ],
+         "correct": 2,
+         "explain": "Identical virtual addresses are the normal case, not a collision. Each process's page table sends that same number to a different physical page."
+        },
+        {
+         "q": "A global sits at `0x1007D4180` on one launch and `0x102ACC180` on the next. Which part did the compiler decide?",
+         "options": [
+          "The low bits — the offset inside the image; the kernel picks the base",
+          "The whole address, which the kernel then verifies as free at load time",
+          "Neither — addresses get assigned lazily on the first write to the page",
+          "The high bits, which encode which segment the symbol was placed in"
+         ],
+         "correct": 0,
+         "explain": "The compiler can only fix positions relative to the image's start. ASLR slides that start somewhere new each launch, so the offset survives and the base does not."
+        },
+        {
+         "q": "What actually performs the virtual-to-physical translation?",
+         "options": [
+          "The Swift runtime, each time it dereferences a pointer",
+          "dyld, which resolves addresses once per segment at launch",
+          "The allocator, which returns already-translated addresses",
+          "The MMU, in hardware, on every single memory access"
+         ],
+         "correct": 3,
+         "explain": "Translation is a hardware step on the path to RAM, far below any runtime or library. The TLB caches recent translations so it does not cost a table walk every time."
+        }
+       ],
+       [
+        {
+         "q": "A teammate's save system writes `UInt(bitPattern: playerPtr)` into the save file and reads it back next launch. Your review says…",
+         "options": [
+          "It works, provided the save file stays on the same physical device",
+          "It breaks — that number names nothing in the next process's map",
+          "It works only if the game allocates its objects in the same order",
+          "It breaks only once the device is low on memory and starts remapping"
+         ],
+         "correct": 1,
+         "explain": "A pointer is an index into one process's map, and that map is rebuilt with a new random slide every launch. Persist the player's data, never the address it happened to occupy."
+        },
+        {
+         "q": "Why does symbolicating a crash log require the binary's load address?",
+         "options": [
+          "Because dSYMs store addresses only as file offsets, never as symbols",
+          "Because the crash reporter compresses addresses to keep the log small",
+          "Because ASLR slid the image, so logged addresses differ from the dSYM's",
+          "Because the linker strips all symbol names from a release build binary"
+         ],
+         "correct": 2,
+         "explain": "The dSYM knows offsets; the crash log holds slid runtime addresses. Subtracting the load address converts one into the other, which is exactly what `atos` does when you symbolicate."
+        },
+        {
+         "q": "A plain Swift process on a 16 GB Mac reports 415 GB of virtual size. Why is this not a bug?",
+         "options": [
+          "Virtual size counts reserved names, not RAM; only touched pages cost",
+          "The figure includes swap space on the SSD the process may later use",
+          "It counts every page the process has read since launch, cumulatively",
+          "macOS reports the whole system's mappings rather than this process's"
+         ],
+         "correct": 0,
+         "explain": "Address space is an accounting fiction until something writes to it — reserving is nearly free. The number that decides whether you stay alive is resident footprint, not address space."
+        }
+       ]
+      ]
+     },
+     "transfer": "Open any crash report you have (yours or one from work) and find the 'Binary Images' section at the bottom. The first column is the load address that launch happened to get. Pick one frame from the backtrace, subtract that load address from the frame's address, and you have the offset the compiler chose — the number that is actually stable across every launch. If you have no crash log handy, run the same debug build twice and print the address of any global; watch the low digits hold still.",
+     "verify": "// executed on this Mac 2026-08-02 (plain swift, two concurrent processes):\n// [A] pid 3281  requested 0x400000000000  got 0x400000000000  pagesize 16384\n// [A] wrote  : process A (pid 3281) wrote this\n// [B] pid 3282  requested 0x400000000000  got 0x400000000000  pagesize 16384\n// [B] wrote  : process B (pid 3282) wrote this\n// [A] re-read: process A (pid 3281) wrote this   ← unchanged while B was alive\n//\n// Reproduce it:\n//   let a = UnsafeMutableRawPointer(bitPattern: 0x4000_0000_0000)!\n//   let p = mmap(a, 16384, PROT_READ|PROT_WRITE,\n//                MAP_PRIVATE|MAP_ANON|MAP_FIXED, -1, 0)\n//   // write a per-process string, Thread.sleep(2), read it back\n//   // launch two copies at once:  ./vm A & ./vm B & wait\n//\n// ASLR, same binary, four runs (executed):\n//   global 0x0001007D4180 / 0x000102ACC180 / 0x00010058C180 / 0x00010255C180\n//   metadata sat exactly 0x88 below the global in ALL FOUR runs — slides whole.",
+     "goDeeper": "Apple's 'Analyzing a Crash Report' — the Binary Images section and why load addresses are printed at all. WWDC 2018 'iOS Memory Deep Dive' for the page-level view. 'Computer Systems: A Programmer's Perspective', chapter 9 (Virtual Memory) — the clearest treatment of page tables and the TLB in print."
     }
    ]
   },
@@ -13235,13 +13342,157 @@ const CUR = {
    target you implement with zero AI, tracked done/not-done, outside the ladder).
    Same authoring rules as curriculum.js: one concept per unit, no length tells,
    every machine claim executed before it was written. */
+/* Blocks mirror CUR.blocks so the Surface home can render the same hierarchy.
+   `planned` is the loop count from SURFACE.md — blocks are declared UP FRONT with
+   their planned size so the memory bar shows progress against the real roadmap
+   and the whole road is visible from day one. A block whose `units` is still
+   empty renders dimmed and does not expand. Never mark a block complete on
+   units.length; complete means done === planned. */
 const SUR = {
   name: "The whole surface",
   tagline: "Designing the screen, and building what you designed",
-  units: [
+  blocks: [
+  {
+    id: "s0", name: "The screen has units", planned: 8,
+    tagline: "pt vs px, hairlines, safe areas, contrast as arithmetic",
+    units: [
 
   {
-    "id": "s-01",
+    "id": "s0-01",
+    "kind": "lesson",
+    "title": "The point is not the pixel",
+
+    "design": {
+      "caption": "The same one point, on three screens. The point is what the design specifies; the pixel is what the hardware happens to have.",
+      "svg": "<svg viewBox='0 0 360 250' xmlns='http://www.w3.org/2000/svg' role='img' aria-label='One point rendered at 1x, 2x and 3x'><g font-family='ui-monospace,monospace' font-size='9'><text x='4' y='12' fill='var(--dim)'>ONE POINT, THREE SCREENS</text><text x='55' y='32' fill='var(--dim)' text-anchor='middle'>@1x</text><text x='175' y='32' fill='var(--dim)' text-anchor='middle'>@2x</text><text x='295' y='32' fill='var(--dim)' text-anchor='middle'>@3x</text><g fill='var(--panel2)' stroke='var(--line)'><rect x='25' y='38' width='10' height='28'/><rect x='35' y='38' width='10' height='28'/><rect x='45' y='38' width='10' height='28'/><rect x='55' y='38' width='10' height='28'/><rect x='65' y='38' width='10' height='28'/><rect x='75' y='38' width='10' height='28'/><rect x='145' y='38' width='10' height='28'/><rect x='155' y='38' width='10' height='28'/><rect x='165' y='38' width='10' height='28'/><rect x='175' y='38' width='10' height='28'/><rect x='185' y='38' width='10' height='28'/><rect x='195' y='38' width='10' height='28'/><rect x='265' y='38' width='10' height='28'/><rect x='275' y='38' width='10' height='28'/><rect x='285' y='38' width='10' height='28'/><rect x='295' y='38' width='10' height='28'/><rect x='305' y='38' width='10' height='28'/><rect x='315' y='38' width='10' height='28'/></g><rect x='25' y='38' width='10' height='28' fill='var(--amber)'/><rect x='145' y='38' width='20' height='28' fill='var(--amber)'/><rect x='265' y='38' width='30' height='28' fill='var(--amber)'/><text x='55' y='80' fill='var(--amber)' text-anchor='middle'>1 pt = 1 px</text><text x='175' y='80' fill='var(--amber)' text-anchor='middle'>1 pt = 2 px</text><text x='295' y='80' fill='var(--amber)' text-anchor='middle'>1 pt = 3 px</text><line x1='4' y1='96' x2='356' y2='96' stroke='var(--line)'/><text x='4' y='114' fill='var(--dim)'>and ONE PIXEL, back in points:</text><text x='55' y='134' fill='var(--text)' text-anchor='middle'>1.0 pt</text><text x='175' y='134' fill='var(--cyan)' text-anchor='middle'>0.5 pt</text><text x='295' y='134' fill='var(--red)' text-anchor='middle'>0.333... pt</text><text x='175' y='150' fill='var(--cyan)' text-anchor='middle'>only @2x divides cleanly</text><line x1='4' y1='166' x2='356' y2='166' stroke='var(--line)'/><text x='4' y='184' fill='var(--dim)'>44 pt, the touch minimum:</text><text x='55' y='204' fill='var(--text)' text-anchor='middle'>44 px</text><text x='175' y='204' fill='var(--text)' text-anchor='middle'>88 px</text><text x='295' y='204' fill='var(--text)' text-anchor='middle'>132 px</text><text x='4' y='232' fill='var(--amber)'>the point stays the same size. the pixel does not.</text><text x='4' y='245' fill='var(--dim)'>measured on this Mac, not guessed</text></g></svg>"
+    },
+
+    "spec": "Specify every measurement in points. A design that says \"2 pixels\" is under-specified — it means a different physical size on every device.\n\nHairlines are `1.0 / displayScale`, never a literal. `0.5` is right only at @2x; at @3x one pixel is a third of a point and a hardcoded `0.5` is one and a half pixels, which is a blur.\n\nRead the scale from the view's `traitCollection.displayScale`, not from the screen. A view can be rendered into a context whose scale differs from the display's.\n\nKeep frames on the pixel grid. Half-point values are safe at @2x and blurry at @3x, so \"it looks fine on my phone\" proves nothing about anyone else's.",
+
+    "concept": {
+      "definition": "A point is a unit of apparent size: 44 pt looks the same on every iPhone regardless of how dense the screen is. A pixel is one physical dot of hardware, and how many of them fit inside a point is the screen's scale factor. UIKit's whole geometry API speaks points, and the conversion to pixels happens once, at the very bottom, when the layer is rasterised.",
+
+      "code": "// executed on this Mac (Catalyst, @2x display):\nUIScreen.main.bounds        // (0, 0, 960, 600)   <- POINTS\nUIScreen.main.nativeBounds  // (0, 0, 1920, 1200) <- PIXELS\nUIScreen.main.scale         // 2.0\n\nbounds.width * scale == nativeBounds.width   // true\n\n// the scale a VIEW should trust:\nview.traitCollection.displayScale            // 2.0\n\n// one physical pixel, expressed in points:\n1.0 / 1.0  // 1.0     @1x\n1.0 / 2.0  // 0.5      @2x\n1.0 / 3.0  // 0.3333.. @3x  <- never a clean fraction",
+
+      "underlying": "There are two coordinate systems and UIKit only ever shows you one. Every frame, constraint, font size and inset you write is in points, and the screen keeps a parallel description of itself in pixels — `bounds` against `nativeBounds`. The bridge between them is a single number, `scale`, and the relationship is exact: `bounds.width * scale` equals `nativeBounds.width` to the last decimal.\n\nThe conversion happens late. Auto Layout solves in points, your frames are stored in points, and only when a layer is rasterised does the render server multiply by the scale to decide which physical dots to light. That lateness is what makes a point a stable design unit: you specify apparent size once and every density gets a correct rendering for free.\n\nIt also means a point can land between pixels. At @2x a half point is exactly one pixel, so `10.5` is perfectly sharp. At @3x the same `10.5` becomes 31.5 pixels — half a dot, which the renderer resolves by blending across two, and blending is what \"blurry\" means. The number that was pixel-perfect on your phone is a soft edge on the phone in someone else's pocket.",
+
+      "whyItMatters": "Every \"why is this slightly fuzzy\" bug and every wrong-thickness separator traces back to confusing the two units. And it decides what a design spec may even say: a spec written in pixels is under-specified, because the same pixel count is a different physical size on each device — which is exactly why the HIG states its touch minimum as 44 pt and never as a pixel count."
+    },
+
+    "exercise": {
+      "prompt": "A card is positioned at `x = 10.5` and it looks perfectly crisp on the reviewer's iPhone. QA files a bug saying the left edge is fuzzy on theirs.\n\nNeither device is faulty. Predict each line, then say who is right.",
+
+      "code": "func pixels(_ points: CGFloat, _ scale: CGFloat) -> CGFloat {\n    points * scale\n}\n\nprint(1, pixels(10.5, 2.0))\nprint(2, pixels(10.5, 3.0))\nprint(3, pixels(1.0, 3.0))\nprint(4, 1.0 / 3.0)\n\n// which of lines 1 and 2 lands on a whole pixel?",
+
+      "solution": "1 21.0    // @2x — a whole pixel. crisp.\n2 31.5    // @3x — half a pixel. blurry.\n3 3.0     // one point is three whole pixels at @3x\n4 0.3333333333333333\n\nBoth of them are right. The reviewer has an @2x phone, QA has an @3x phone,\nand 10.5 is pixel-aligned on one and not the other.",
+
+      "explanation": "The half point is the trap: it feels like a safe, round number precisely because it is the value that works at @2x, which is where the 0.5 hairline convention comes from.\n\nThe extra inch is line 4. Because one pixel at @3x is a third of a point and thirds are not representable in binary floating point, you cannot fix this by typing a nicer literal. The only reliable move is to round through the scale — `(value * scale).rounded() / scale` — and let the arithmetic land you on the grid."
+    },
+
+    "assess": {
+      "explainPrompt": "Interview-ready, 3-4 sentences: what is the difference between a point and a pixel, what connects them, and why does a design specification have to be written in points rather than pixels?",
+
+      "modelAnswer": "A point is a unit of apparent size that stays visually constant across devices, while a pixel is one physical dot whose size depends on the screen's density. The screen's scale factor connects them exactly: the bounds in points multiplied by the scale gives the native bounds in pixels. UIKit's entire geometry API is in points and converts only at rasterisation, which is what lets one layout render correctly at @1x, @2x and @3x. A spec written in pixels is therefore under-specified, because the same pixel count is a different physical size on every device.",
+
+      "sets": [
+        [
+          {
+            "q": "On an @3x screen, how many points is one physical pixel?",
+            "options": [
+              "1.0 — a pixel and a point are the same unit",
+              "0.5 — the half-pixel value every Retina screen uses",
+              "3.0 — one pixel spans three points at that scale",
+              "One third of a point, which never divides cleanly"
+            ],
+            "correct": 3,
+            "explain": "One pixel is `1.0 / scale` points, so a third at @3x. Thirds aren't representable in binary floating point, which is why you round through the scale instead of typing a literal."
+          },
+          {
+            "q": "`UIScreen.bounds` and `UIScreen.nativeBounds` report different numbers. Why?",
+            "options": [
+              "bounds is in points, nativeBounds in physical pixels",
+              "bounds excludes the safe area and nativeBounds includes it",
+              "bounds is the app's window, nativeBounds the whole display",
+              "nativeBounds is the pre-rotation portrait rectangle"
+            ],
+            "correct": 0,
+            "explain": "Measured here: 960x600 points against 1920x1200 pixels at scale 2.0. `bounds.width * scale` equals `nativeBounds.width` exactly."
+          },
+          {
+            "q": "A frame has `x = 10.5`. On which screens does that land on the pixel grid?",
+            "options": [
+              "Neither — a half point is always off the grid",
+              "@2x only: 21 px lands on it, 31.5 px does not",
+              "Both — every Retina scale factor is an even number",
+              "@3x only, because three is odd and absorbs the half"
+            ],
+            "correct": 1,
+            "explain": "Half points are pixel-perfect at @2x and half a dot off at @3x. It's the single most common reason a layout is crisp on one phone and fuzzy on another."
+          }
+        ],
+        [
+          {
+            "q": "A teammate hardcodes a separator's height as `1.0`. What actually ships?",
+            "options": [
+              "A line 2 px thick at @2x, 3 px at @3x — no hairline",
+              "A line that vanishes completely on denser @3x screens",
+              "Correct hairlines — 1.0 already means a single pixel",
+              "A blurred line, since 1.0 sits off the pixel grid"
+            ],
+            "correct": 0,
+            "explain": "`1.0` is one POINT, so it scales up with density. A hairline is `1.0 / displayScale`, which is the only expression that stays one physical dot."
+          },
+          {
+            "q": "Which scale should a view use when aligning its own frame?",
+            "options": [
+              "UIScreen.main.scale, the one authoritative source",
+              "UIView.contentScaleFactor, fixed once at init time",
+              "Its own traitCollection.displayScale value",
+              "The layer's rasterizationScale, which tracks it"
+            ],
+            "correct": 2,
+            "explain": "The trait collection describes the environment this view is actually rendering into, which can differ from the main screen — an offscreen context or an external display, for instance."
+          },
+          {
+            "q": "Why does the HIG state the touch minimum as 44 pt instead of a pixel count?",
+            "options": [
+              "Because pixels keep getting smaller on denser screens",
+              "A point is a fixed apparent size; a pixel is not",
+              "Because 44 divides evenly at both @2x and @3x",
+              "Points are what the touch digitiser actually reports"
+            ],
+            "correct": 1,
+            "explain": "A fingertip is the same size regardless of screen density, so the rule has to be expressed in the unit that tracks apparent size. In pixels it would be 88 on one phone and 132 on another."
+          }
+        ]
+      ]
+    },
+
+    "build": {
+      "brief": "Build a `PixelRuler` view that makes the two units visible at the same time.\n\nDraw a line one point thick directly above a line one pixel thick, and label each with its computed value. The point of the exercise is that you should be able to see the difference with your own eyes, and then explain it with a number you printed rather than one you read here.",
+      "done": [
+        "A 1 pt line and a 1 px line drawn together, visibly different thicknesses",
+        "The 1 px line derives its thickness from `traitCollection.displayScale` — no `0.5` literal anywhere",
+        "The view prints its own scale, plus `bounds` and `nativeBounds`, on screen",
+        "You have zoomed into a screenshot far enough to count the physical dots in each line"
+      ],
+      "stretch": "add a third line at exactly 0.5 pt, and predict BEFORE you look whether it renders identically to the 1 px line on your device"
+    },
+
+    "verify": "// executed on this Mac 2026-08-02 (Mac Catalyst, iOS 26 SDK, @2x display):\n// UIScreen.main.bounds        = (0, 0, 960, 600)      POINTS\n// UIScreen.main.nativeBounds  = (0, 0, 1920, 1200)    PIXELS\n// UIScreen.main.scale         = 2.0   nativeScale = 2.0\n// bounds.width * scale == nativeBounds.width  ->  true\n// view.traitCollection.displayScale = 2.0\n//\n// one pixel expressed in points, by forced displayScale:\n//   @1x -> 1.0        @2x -> 0.5        @3x -> 0.3333333333333333\n//\n// pixel-grid check, x * scale:\n//   x = 10.0  @3x -> 30.0   on the grid\n//   x = 10.5  @2x -> 21.0   on the grid   <- crisp\n//   x = 10.5  @3x -> 31.5   OFF the grid  <- blurry, same number\n//\n// (value * scale).rounded() / scale  ->  7.4 becomes 7.3333 at @3x\n//\n// 44 pt renders as 44 / 88 / 132 physical pixels at @1x / @2x / @3x\n// DOCUMENTED, not executed: real device scales (iPhone @3x, iPad @2x) —\n// this Mac reports @2x, so per-device values are cited, not measured here.",
+
+    "goDeeper": "Apple Human Interface Guidelines, \"Layout\" — the points-vs-pixels table and the per-device scale factors. WWDC 2019 \"Introducing iPad Apps for Mac\" for why Catalyst reports the scale it does. For the rendering end of it, the Core Animation section of the Quartz 2D Programming Guide on how a layer's `contentsScale` decides rasterisation."
+  }
+
+    ]
+  },
+  {
+    id: "s1", name: "The parts bin", planned: 9,
+    tagline: "what exists, and how controls actually behave",
+    units: [
+
+  {
+    "id": "s1-06",
     "kind": "lesson",
     "title": "A button is a state table, not a rectangle",
 
@@ -13351,13 +13602,37 @@ const SUR = {
       ]
     },
 
-    "transfer": "Open your your app and find one button that can be disabled. Check whether anyone ever set its `.disabled` title — most likely nobody did, and it is showing enabled wording while refusing to act. Then measure it: if it is an icon button or a compact text button, its height is almost certainly under 44 pt.",
+    "build": {
+      "brief": "Write a `StatefulButton` — a `UIButton` subclass or a factory function, your call — that fills every row of the state table on purpose instead of leaving the fallback to do it.\n\nStart by opening your your app and finding one button that can be disabled. Almost certainly nobody ever set its `.disabled` row, so it is currently showing enabled wording while refusing to act. That is the bug you are building the fix for.",
+      "done": [
+        "The disabled row says something different from the normal row, because you wrote both",
+        "A loading mode that disables the control and swaps the title — loading is not a `UIControl.State`, so it is yours to model",
+        "The touch target measures at least 44 x 44 — printed and checked, not assumed",
+        "`titleLabel.text` is assigned nowhere in your code"
+      ],
+      "stretch": "add a `.selected` row, then put the button in disabled and selected at once and predict `state.rawValue` before you print it"
+    },
 
     "verify": "// executed on this Mac 2026-08-01 (Mac Catalyst, real UIKit, iOS 26 SDK):\n// UIControl.State raw values:  normal 0 · highlighted 1 · disabled 2 · selected 4\n// [.disabled, .selected].rawValue == 6\n//\n// setTitle(\"Save\", for: .normal) only, then isEnabled = false:\n//   state.rawValue        = 2\n//   currentTitle          = \"Save\"      (fell back)\n//   title(for: .disabled) = \"Save\"      (getter resolves the fallback too)\n//   after setTitle(\"Saving...\", for: .disabled) -> currentTitle = \"Saving...\"\n//\n// titleLabel?.text = \"Hacked\" on a button whose .normal row is \"Original\":\n//   titleLabel?.text = \"Hacked\"   |   currentTitle = \"Original\"\n//   still diverged after layoutIfNeeded(), after hosting in a superview,\n//   and even after setTitle(\"Changed\", for: .normal)\n//   DOCUMENTED, not executed: in a live app with a render server, an update\n//   cycle can re-read the table and wipe the label write. Headless it never did.\n//\n// intrinsicContentSize, the 44pt question:\n//   UIButton(type:.system) \"OK\"        = (30.0, 31.0)   <- fails 44 on BOTH axes\n//   UIButton(type:.system) \"Continue\"  = (64.0, 31.0)   <- fails on height\n//   .filled() configuration \"OK\"       = (48.5, 40.5)   <- still fails height\n//     (contentInsets top 7 / bottom 7 + ~26.5pt of text = 40.5)\n//   .filled() with buttonSize = .large = (64.5, 56.5)   <- passes\n//   heightAnchor >= 44 + widthAnchor >= 44, solved -> frame (0, 0, 44, 44)",
 
     "goDeeper": "Apple Human Interface Guidelines, \"Buttons\" and \"Accessibility > Touch targets\" for the 44 pt rule. WWDC 2021 \"Meet the UIKit button system\" for `UIButton.Configuration` and why the state table grew a configuration handler. WCAG 2.2, success criterion 1.4.11 Non-text Contrast, for the 3:1 floor a disabled control still has to clear."
   }
 
+    ]
+  },
+
+  /* Blocks below are MAPPED IN SURFACE.md but not yet written. They are declared
+     so the roadmap is visible in the UI; they render dimmed until they have units. */
+  { id: "s2",  name: "Space does the grouping",     planned: 9, tagline: "the grid, proximity, the box tree, stacks, hugging, RTL", units: [] },
+  { id: "s3",  name: "Interface Builder writes XML", planned: 9, tagline: "what you click, what it writes, what loads", units: [] },
+  { id: "s4",  name: "Type is a system",            planned: 8, tagline: "the scale, leading, alignment, truncation, figures", units: [] },
+  { id: "s5",  name: "Colour, material, elevation", planned: 8, tagline: "semantic colour, dark mode, blur, what a shadow costs", units: [] },
+  { id: "s6",  name: "Images, icons, and symbols",  planned: 8, tagline: "SF Symbols, content modes, downsampling, placeholders", units: [] },
+  { id: "s7",  name: "Lists are the app",           planned: 9, tagline: "diffable, compositional, reuse, and 60fps", units: [] },
+  { id: "s8",  name: "Motion and feedback",         planned: 8, tagline: "easing, springs, interruptibility, perceived latency", units: [] },
+  { id: "s9",  name: "A screen is its states",      planned: 9, tagline: "empty, loading, partial, error, ideal", units: [] },
+  { id: "s10", name: "Adaptive and accessible",     planned: 8, tagline: "size classes, iPad, VoiceOver, every switch on", units: [] },
+  { id: "s11", name: "A system, not a screen",      planned: 7, tagline: "tokens, a library, handoff, critique, the capstone", units: [] }
   ]
 };
 
@@ -13399,18 +13674,10 @@ function save(){
     alert("Saving is unavailable here (this can happen in a preview). Download the file and open it in Chrome, then progress will persist. You can also back up anytime from Data."); } }
 }
 function todayStr(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
-function dayDiff(a,b){ return Math.round((new Date(b+"T12:00")-new Date(a+"T12:00"))/86400000); }
 function addDays(day, n){
   const d = new Date(day + "T12:00");
   d.setDate(d.getDate() + n);
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-}
-function applyStreak(){
-  const t = todayStr();
-  if(S.lastDay===null){ S.streak=1; }
-  else{ const g = dayDiff(S.lastDay,t);
-    if(g===1) S.streak+=1; else if(g>1) S.streak=1; /* g===0: same day, keep */ }
-  S.lastDay = t;
 }
 /* the ACTIVE block = first with unfinished loops (auto-advance); last if all done.
    It only decides which block the home list opens by default, plus nextLoop(). */
@@ -13468,11 +13735,6 @@ if(TTS){ try{ TTS.getVoices(); }catch(e){} }   // warms the async voice list
 function ttsRate(){
   try{ const r = parseFloat(localStorage.getItem(TTS_KEY)); if(r >= 0.5 && r <= 2) return r; }catch(e){}
   return 1;
-}
-function setTtsRate(r){
-  stopSpeak();
-  try{ localStorage.setItem(TTS_KEY, String(r)); }catch(e){}
-  dataScreen();
 }
 /* the phone's default voice may not be English (the text is) — ask for one explicitly */
 function ttsVoice(){
@@ -13775,11 +14037,6 @@ function home(){
     <h1>${h.title}</h1>
     ${tabsHtml()}
     ${h.body}
-    <div class="row mt16">
-      <button onclick="interview()">Interview</button>
-      <button onclick="history_()">History</button>
-      <button onclick="dataScreen()">Data</button>
-    </div>
   `);
 }
 function machineHome(){
@@ -13818,11 +14075,6 @@ function machineHome(){
   }).join("");
   return { label: "curriculum", title: "The whole machine", body: `
     <div class="sub">${totalDone}/${total} concepts installed across ${CUR.blocks.length} blocks. Tap a block to open it, a loop to read it.</div>
-    <div class="stats">
-      <div class="stat"><div class="n">${S.streak}</div><div class="l">day streak</div></div>
-      <div class="stat"><div class="n">${S.loops}</div><div class="l">loops run</div></div>
-      <div class="stat"><div class="n">${totalDone}<span style="color:var(--dim);font-size:16px">/${total}</span></div><div class="l">concepts</div></div>
-    </div>
     ${due>=1 ? '<button class="primary" onclick="startReview(false)">Start review — '+due+' concept'+(due===1?"":"s")+' due</button>'
              : (allDone() ? '<button class="primary" onclick="startReview(true)">Review weakest concepts</button>' : '')}
     ${blocks}
@@ -13881,11 +14133,9 @@ function extrasHtml(loop){
 function concept(loop, mode){
   const p = loopPos(loop);
   const passed = !!S.log[loop.id];
-  const note = mode==="history" ? "" : (passed ? " · re-run · set "+(sess && sess.set===1?"B":"A") : "");
-  const footer = mode==="history"
-    ? '<button onclick="history_()">Back to history</button>'
-    : '<button class="primary" onclick="problem()">Try the problem</button>'
-      + '<button class="ghost" onclick="home()">Back to the list</button>';
+  const note = passed ? " · re-run · set "+(sess && sess.set===1?"B":"A") : "";
+  const footer = '<button class="primary" onclick="problem()">Try the problem</button>'
+    + '<button class="ghost" onclick="home()">Back to the list</button>';
   screen(`
     <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} · concept ${p.i+1}/${p.n}${note}</span></div>
     <h1>${esc(loop.title)}</h1>
@@ -14020,7 +14270,7 @@ function finishLoop(){
       S.log[sess.loop.id] = {score, date: t, set: sess.set,
         hist: [{score, date: t, set: sess.set}], ivl: 0, due: addDays(t, INTERVALS[0])};
     }
-    S.loops++; applyStreak(); save();
+    save();
   }
   const idx = loopPos(sess.loop).i;
   screen(`
@@ -14099,7 +14349,6 @@ function revNext(){
     e.ivl = it.correct >= 2 ? Math.min((e.ivl || 0) + 1, INTERVALS.length - 1) : 0;
     e.due = addDays(t, INTERVALS[e.ivl]);
   });
-  if(!rev.manual){ S.loops++; applyStreak(); }
   save();
   screen(`
     <div class="eyebrow">review <span class="dim">// result</span></div>
@@ -14119,248 +14368,21 @@ function openLoop(bi, li){
   startLoop(CUR.blocks[bi].loops[li]);
 }
 
-/* ---------- INTERVIEW MODE ----------
-   Drills explainPrompts of ALL passed loops (every block), shuffled.
-   Answers persist in their own key — S and its v:1 shape stay untouched.
-   Ratings here are private practice; they never touch S.log scores. */
-const ANS_KEY = "learnloop.answers.v1";
-function loadAnswers(){
-  try{ const raw = localStorage.getItem(ANS_KEY); if(raw){ const a = JSON.parse(raw); if(Array.isArray(a)) return a; } }
-  catch(e){}
-  return [];
-}
-function saveAnswers(a){
-  try{ localStorage.setItem(ANS_KEY, JSON.stringify(a.slice(-100))); }catch(e){}
-}
 function passedLoops(){
   const out = [];
   CUR.blocks.forEach(b => b.loops.forEach(l => { if(S.log[l.id]) out.push(l); }));
   return out;
 }
-let iv = null;
-let ivTimer = null;
-function interview(){
-  const pool = passedLoops();
-  screen(`
-    <div class="eyebrow">interview <span class="dim">// articulate under pressure</span></div>
-    <h1>Interview drill</h1>
-    <div class="card">
-      <p>Every concept you have passed, asked interview-style in shuffled order. Write your answer in English as if the interviewer is waiting — aim for under 90 seconds — then compare with the model answer and rate yourself.</p>
-      <p class="sub">Answers are saved on this device (last 100 kept). From Data you can copy a batch as text and paste it into claude.ai for English + technical feedback.</p>
-    </div>
-    ${pool.length
-      ? '<button class="primary" onclick="ivStart()">Start — '+pool.length+' concept'+(pool.length===1?"":"s")+'</button>'
-      : '<div class="feedback">Pass at least one loop first — the drill draws on concepts you have installed.</div>'}
-    <button class="ghost" onclick="home()">Home</button>
-  `);
-}
-function ivStart(){
-  const pool = passedLoops();
-  for(let i = pool.length-1; i > 0; i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-  iv = {queue: pool, i: 0, answered: 0, text: "", rating: null};
-  ivQ();
-}
-function ivQ(){
-  const l = iv.queue[iv.i];
-  screen(`
-    <div class="eyebrow">interview <span class="dim">// ${iv.i+1}/${iv.queue.length} · ${esc(l.id)} · </span><span class="dim" id="ivt">0s</span></div>
-    <h2>${esc(l.title)}</h2>
-    <div class="card">${saybar()}${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt", true)}
-      <textarea id="ivans" placeholder="Answer in English, as if the interviewer is waiting…"></textarea>
-    </div>
-    <div id="ivcmp"></div>
-    <button class="primary" id="ivreveal" onclick="ivReveal()">Compare with model answer</button>
-    <button class="ghost" onclick="ivEnd()">End drill</button>
-  `);
-  ivStartTimer();
-}
-function ivStartTimer(){
-  ivStopTimer();
-  if(typeof setInterval !== "function") return;
-  const t0 = Date.now();
-  ivTimer = setInterval(function(){
-    const el = document.getElementById("ivt");
-    if(!el){ ivStopTimer(); return; }
-    el.textContent = Math.round((Date.now()-t0)/1000)+"s";
-  }, 1000);
-}
-function ivStopTimer(){
-  if(ivTimer && typeof clearInterval === "function") clearInterval(ivTimer);
-  ivTimer = null;
-}
-function ivReveal(){
-  ivStopTimer();
-  const l = iv.queue[iv.i];
-  iv.text = (document.getElementById("ivans")?.value || "").trim();
-  document.getElementById("ivreveal")?.remove();
-  document.getElementById("ivcmp").innerHTML = `
-    <div class="card">
-      ${labelRow('<div class="layer-label amb">Model answer</div>')}
-      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer", true)}
-    </div>
-    <div class="card">
-      <div class="layer-label">How close were you?</div>
-      <div class="raterow">${[0,1,2,3,4,5].map(n=>
-        `<button class="rate" id="ivr${n}" onclick="ivRate(${n})">${n}</button>`).join("")}</div>
-    </div>
-    <button class="primary" onclick="ivNext()">${iv.i < iv.queue.length-1 ? "Next question" : "Finish drill"}</button>`;
-  applyHighlights(document.getElementById("ivcmp"));
-}
-function ivRate(n){ iv.rating = n;
-  for(let i=0;i<=5;i++) document.getElementById("ivr"+i)?.classList.toggle("sel", i===n);
-}
-function ivNext(){
-  const l = iv.queue[iv.i];
-  if(iv.text){
-    const a = loadAnswers();
-    a.push({id: l.id, title: l.title, date: todayStr(), text: iv.text, rating: iv.rating});
-    saveAnswers(a);
-    iv.answered++;
-  }
-  iv.text = ""; iv.rating = null;
-  if(iv.i < iv.queue.length-1){ iv.i++; ivQ(); } else ivDone();
-}
-function ivEnd(){ ivStopTimer(); ivDone(); }
-function ivDone(){
-  screen(`
-    <div class="eyebrow">interview <span class="dim">// drill complete</span></div>
-    <h1>${iv.answered} answered</h1>
-    <div class="card"><p>${iv.answered
-      ? "Saved on this device. From the Data screen, copy your saved answers as text and paste a batch into claude.ai for English and technical feedback in one go."
-      : "Nothing saved — write an answer before revealing to build the habit. Thinking it is not the same as saying it."}</p></div>
-    <button class="primary" onclick="home()">Home</button>
-    <button onclick="dataScreen()">Data</button>
-  `);
-}
-
 /* ---------- HISTORY ---------- */
-function history_(){
-  const total = CUR.blocks.reduce((n,b)=>n+b.loops.length, 0);
-  const totalDone = CUR.blocks.reduce((n,b)=>n+b.loops.filter(l=>S.log[l.id]).length, 0);
-  const sections = CUR.blocks.map((b,bi)=>{
-    const rows = b.loops.map((l,i)=>{
-      const r = S.log[l.id];
-      return `<div class="histitem">
-        <span style="font-family:var(--mono);color:var(--dim);font-size:12px">${hexOf(i)}</span>
-        <span style="flex:1">${r?'<button class="linkbtn" style="margin:0" onclick="openHist('+bi+','+i+')">'+esc(l.title)+"</button>":esc(l.title)}</span>
-        ${r?`<span class="badge ${r.score>=4?"s":"w"}">${r.score.toFixed(1)}</span>`:'<span class="badge">—</span>'}
-      </div>`;
-    }).join("");
-    return `<div class="card"><div class="layer-label">${esc(b.id)} · ${esc(b.name)}</div>${rows}</div>`;
-  }).join("");
-  screen(`
-    <div class="eyebrow">history <span class="dim">// ${totalDone}/${total} installed</span></div>
-    <h1>Your memory map</h1>
-    ${sections}
-    <div class="sub mt8">Tap an installed concept to re-read it anytime. Amber badge = weak (&lt;4.0), likely to appear in reviews.</div>
-    <button class="primary" onclick="home()">Home</button>
-  `);
-}
-function openHist(bi, li){ concept(CUR.blocks[bi].loops[li], "history"); }
-
 /* ---------- DATA ---------- */
-function dataScreen(){
-  const hlCount = loadHighlights().length, noteCount = Object.keys(loadNotes()).length;
-  screen(`
-    <div class="eyebrow">data <span class="dim">// backup &amp; restore</span></div>
-    <h1>Your progress</h1>
-    <div class="card">
-      <div class="layer-label">Export</div>
-      <p class="sub">Progress, interview answers, ${hlCount} highlight${hlCount===1?"":"s"}, and ${noteCount} note${noteCount===1?"":"s"} all live in this browser's storage. Back them up before clearing browser data or switching phones.</p>
-      <button onclick="exportData()">Download backup file</button>
-      <button onclick="showExport()">Show as text to copy</button>
-      <div id="exp"></div>
-    </div>
-    <div class="card">
-      <div class="layer-label">Import</div>
-      <p class="sub">Pick a backup file directly — from Drive, Dropbox, Downloads, wherever it's saved — or paste its contents below. Replaces current progress, answers, highlights, and notes.</p>
-      <input type="file" id="impfile" accept="application/json,.json" onchange="importFromFile(this)">
-      <textarea id="imp" placeholder='{"bv":1,...}'></textarea>
-      <button onclick="importData()">Restore</button>
-    </div>
-    <div class="card">
-      <div class="layer-label">Interview answers</div>
-      <p class="sub">${loadAnswers().length} saved on this device (last 100 kept). Copy a batch into claude.ai for English + technical feedback.</p>
-      <button onclick="showAnswers()">Show answers as text to copy</button>
-      <div id="ansout"></div>
-      <button class="ghost" onclick="clearAnswers()">Delete saved answers</button>
-    </div>
-    ${TTS ? `<div class="card">
-      <div class="layer-label">Read aloud</div>
-      <p class="sub">Speaking speed for the ${SPK_ICON} buttons on definitions, model answers, and explanations. Uses your phone's own voice — nothing leaves the device.</p>
-      <div class="raterow mt8">${[0.75,0.9,1,1.15,1.3].map(r=>
-        `<button class="rate${ttsRate()===r?" sel":""}" onclick="setTtsRate(${r})">${r}&times;</button>`).join("")}</div>
-    </div>` : ""}
-    <div class="card">
-      <div class="layer-label" style="color:var(--red)">Danger</div>
-      <button onclick="resetAll()">Reset all progress</button>
-    </div>
-    <button class="primary" onclick="home()">Home</button>
-  `);
-}
-function showAnswers(){
-  const a = loadAnswers();
-  const txt = a.length ? a.map(x =>
-    "### "+x.id+" — "+x.title+" ("+x.date+(x.rating!=null ? ", self-rated "+x.rating+"/5" : "")+")\n"+x.text
-  ).join("\n\n") : "No answers saved yet — run an Interview drill first.";
-  document.getElementById("ansout").innerHTML =
-    `<textarea readonly onclick="this.select()">${esc(txt)}</textarea>`;
-}
-function clearAnswers(){
-  if(confirm("Delete all saved interview answers?")){ saveAnswers([]); dataScreen(); }
-}
 /* bundles everything device-local into one backup object. "bv" (backup-format
    version) is deliberately NOT named "v" — that field already means the
    learnloop.v1 STATE schema version (S.v, migrated by migrate()); reusing the
    name for two independent counters is exactly the ambiguity migrate()'s
    discipline exists to avoid. */
-function buildBackup(){
-  return { bv: 1, state: S, answers: loadAnswers(), highlights: loadHighlights(), notes: loadNotes() };
-}
-function exportData(){
-  const blob = new Blob([JSON.stringify(buildBackup())],{type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "learnloop-backup-"+todayStr()+".json";
-  a.click(); URL.revokeObjectURL(a.href);
-}
-function showExport(){
-  document.getElementById("exp").innerHTML =
-    `<textarea readonly onclick="this.select()">${esc(JSON.stringify(buildBackup()))}</textarea>`;
-}
 /* reads a picked file (works with Drive/Dropbox-backed files via the OS file
    picker — no API, no auth) into the paste box, so Restore behaves identically
    either way */
-function importFromFile(input){
-  const file = input.files && input.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = () => { document.getElementById("imp").value = reader.result; };
-  reader.readAsText(file);
-}
-function importData(){
-  try{
-    const s = JSON.parse(document.getElementById("imp").value.trim());
-    if(s && typeof s.state==="object" && typeof s.state.log==="object"){
-      // new wrapped backup format — restore everything
-      S = migrate(s.state); save();
-      if(Array.isArray(s.answers)) saveAnswers(s.answers);
-      if(Array.isArray(s.highlights)) saveHighlights(s.highlights);
-      if(s.notes && typeof s.notes==="object") saveNotes(s.notes);
-    } else if(s && (s.v===1 || s.v===2) && typeof s.log==="object"){
-      // legacy bare-state format (pre-dates highlights/notes) — restore progress only
-      S = migrate(s); save();
-    } else throw 0;
-    alert("Progress restored."); home();
-  }catch(e){ alert("That doesn't look like a valid LearnLoop backup."); }
-}
-function resetAll(){
-  if(confirm("Erase streak, loops, and all concept scores?")){ S = blank(); save(); home(); }
-}
-
 /* ================= SURFACE TRACK =================
    SUR is defined in surface.js. Deliberately a SEPARATE flow from the loop flow
    above rather than a generalisation of it: the machine track holds real progress,
@@ -14382,31 +14404,63 @@ function saveSurface(){
   catch(e){ if(!storageWarned){ storageWarned = true;
     alert("Saving is unavailable here (this can happen in a preview). Download the file and open it in Chrome, then progress will persist."); } }
 }
-function surLessons(){ return SUR.units.filter(u=>u.kind === "lesson"); }
+/* SUR is blocks-of-units, same shape as CUR. These mirror activeBlock()/loopPos()
+   so the Surface home can render the identical blockcard hierarchy. */
+function surUnits(){ return SUR.blocks.reduce((a,b)=>a.concat(b.units), []); }
 function surDone(u){ return !!SU.lessons[u.id]; }
+function surBlockOf(u){ return SUR.blocks.find(b=>b.units.indexOf(u) >= 0) || SUR.blocks[0]; }
+function surPos(u){ const b = surBlockOf(u); return {b, i: b.units.indexOf(u), n: b.planned}; }
+/* first block with unwritten or unpassed units; drives which one opens by default */
+function surActiveBlock(){
+  return SUR.blocks.find(b => b.units.length < b.planned || b.units.some(u=>!surDone(u)))
+      || SUR.blocks[SUR.blocks.length-1];
+}
+let openSi = null;   // expanded surface block; null = follow surActiveBlock(), -1 = none
+function toggleSBlock(i){ openSi = (openSi === i ? -1 : i); home(); }
 
 function surface(){ goTab("surface"); }
 function surfaceHome(){
-  const us = SUR.units;
-  const done = us.filter(surDone).length;
-  const cells = us.map(u=>{
-    const e = SU.lessons[u.id];
-    return `<div class="cell${e ? " done" + (e.score < 4 ? " weak" : "") : ""}"></div>`;
+  const planned = SUR.blocks.reduce((n,b)=>n + b.planned, 0);
+  const written = surUnits().length;
+  const totalDone = surUnits().filter(surDone).length;
+  const totalBuilt = surUnits().filter(u=>buildDone(u.id)).length;
+  const shown = openSi === null ? SUR.blocks.indexOf(surActiveBlock()) : openSi;
+  const blocks = SUR.blocks.map((b,bi)=>{
+    const done = b.units.filter(surDone).length;
+    const complete = b.units.length === b.planned && done === b.planned;
+    const empty = b.units.length === 0;
+    const open = bi === shown && !empty;
+    /* one cell per PLANNED unit, so the bar measures against the roadmap, not
+       against however much has been authored so far */
+    const cells = b.units.map(u=>{
+      const e = SU.lessons[u.id];
+      return `<div class="cell${e ? " done" + (e.score < 4 ? " weak" : "") : ""}"></div>`;
+    }).join("") + '<div class="cell"></div>'.repeat(Math.max(0, b.planned - b.units.length));
+    /* amber BUILD = a passed lesson still owing its build; green BUILT = settled */
+    const rows = !open ? "" : b.units.map((u,i)=>{
+      const passed = surDone(u), built = buildDone(u.id);
+      const badge = !passed ? '<span class="badge">—</span>'
+        : (built ? '<span class="bbadge on">BUILT</span>' : '<span class="bbadge">BUILD</span>');
+      return `<button class="looprow${passed ? " done" : ""}" onclick="openUnit('${u.id}')">
+        <span class="tick">${passed ? "✓" : hexOf(i)}</span>
+        <span class="lt">${esc(u.title)}</span>
+        ${badge}
+      </button>`;
+    }).join("");
+    return `<div class="blockcard${complete ? " done" : ""}${empty ? " pending" : ""}">
+      <button class="blockhead" ${empty ? 'disabled aria-disabled="true"' : `onclick="toggleSBlock(${bi})" aria-expanded="${open}"`}>
+        <span class="bmark">${complete ? "✓" : esc(b.id.toUpperCase())}</span>
+        <span class="bt"><span class="bn">${esc(b.name)}</span><span class="bs">${esc(b.tagline)}</span></span>
+        <span class="bcount">${empty ? b.planned : done + "/" + b.planned}</span>
+        <span class="chev">${empty ? "·" : (open ? "▴" : "▾")}</span>
+      </button>
+      <div class="cells mini">${cells}</div>
+      ${open ? `<div class="looplist">${rows}</div>` : ""}
+    </div>`;
   }).join("");
-  const rows = us.map((u,i)=>`
-    <button class="looprow${surDone(u) ? " done" : ""}" onclick="openUnit('${u.id}')">
-      <span class="tick">${surDone(u) ? "&check;" : hexOf(i)}</span>
-      <span class="lt">${esc(u.title)}</span>
-      <span class="chev">${u.kind === "build" ? "BUILD" : ""}</span>
-    </button>`).join("");
   return { label: "surface", title: esc(SUR.name), body: `
-    <div class="sub">${esc(SUR.tagline)}</div>
-    <div class="card">
-      <div class="layer-label">Progress</div>
-      <div class="cells">${cells}</div>
-      <div class="cellcap"><span>${done}/${us.length} installed</span><span>surface</span></div>
-    </div>
-    <div class="looplist">${rows}</div>
+    <div class="sub">${totalDone}/${planned} installed across ${SUR.blocks.length} blocks &middot; ${written} written so far. Tap a block to open it.</div>
+    ${blocks}
   `};
 }
 
@@ -14427,8 +14481,35 @@ function specHtml(u){
       ${zone(fmt(u.spec), u.id, "spec", true)}
     </div>`;
 }
+/* THE BUILD — the whole point of this track. The machine track tests prediction,
+   which recognition can fake; a build can't be faked. Never scored: done or not.
+   Shown only after the lesson is passed, same pacing rule as the other extras. */
+function buildDone(id){ const r = SU.builds[id]; return !!(r && r.done); }
+function buildHtml(u){
+  if(!u.build) return "";
+  const done = buildDone(u.id), rec = SU.builds[u.id];
+  const items = (u.build.done || []).map(d =>
+    `<li>${esc(d).replace(/`([^`]+)`/g,"<code>$1</code>")}</li>`).join("");
+  return `<div class="card build${done ? " done" : ""}">
+      ${labelRow('<div class="layer-label amb">The build <span class="layer-note">&mdash; write it yourself, zero AI</span></div>')}
+      ${zone(fmt(u.build.brief), u.id, "build.brief", true)}
+      ${items ? `<div class="layer-label mt16">Done when</div><ul class="checks">${items}</ul>` : ""}
+      ${u.build.stretch ? `<div class="sub mt8">Stretch &mdash; ${esc(u.build.stretch)}</div>` : ""}
+      <button class="${done ? "ghost" : "primary"}" onclick="toggleBuild('${u.id}')">${
+        done ? "Built &check; &mdash; mark unbuilt" : "I built it"}</button>
+      ${done ? `<div class="sub center mt8">Built ${esc(rec.date || "")}</div>` : ""}
+    </div>`;
+}
+/* screen() wipes the DOM, so the toggle needs to know what to redraw */
+let surRedraw = null;
+function toggleBuild(id){
+  if(buildDone(id)) delete SU.builds[id];
+  else SU.builds[id] = {done: true, date: todayStr()};
+  saveSurface();
+  if(surRedraw) surRedraw();
+}
 function surExtras(u){
-  let h = "";
+  let h = buildHtml(u);
   if(u.transfer) h += `<div class="card">
       ${labelRow('<div class="layer-label amb">Transfer <span class="layer-note">&mdash; apply it in your real code</span></div>')}
       ${zone(fmt(u.transfer), u.id, "transfer", true)}</div>`;
@@ -14443,16 +14524,17 @@ function surExtras(u){
 
 let usess = null;
 function openUnit(id){
-  const u = SUR.units.find(x=>x.id === id); if(!u) return surface();
+  const u = surUnits().find(x=>x.id === id); if(!u) return surface();
   const rec = SU.lessons[u.id];
   usess = {u, set: rec ? 1 - (rec.set || 0) : 0, qi:0, correct:0, rating:null,
            draftAnswer:"", comparedShown:false};
   unitScreen(u);
 }
 function unitScreen(u){
-  const i = SUR.units.indexOf(u), passed = surDone(u);
+  const p = surPos(u), passed = surDone(u);
+  surRedraw = ()=>unitScreen(u);
   screen(`
-    <div class="eyebrow">${hexOf(i)} <span class="dim">// ${esc(u.id)} &middot; lesson ${i+1}/${SUR.units.length}${passed ? " &middot; re-run &middot; set " + (usess && usess.set === 1 ? "B" : "A") : ""}</span></div>
+    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} &middot; lesson ${p.i+1}/${p.n}${passed ? " &middot; re-run &middot; set " + (usess && usess.set === 1 ? "B" : "A") : ""}</span></div>
     <h1>${esc(u.title)}</h1>
     ${designHtml(u)}
     ${specHtml(u)}
@@ -14481,7 +14563,7 @@ function unitScreen(u){
 function surProblem(){
   const u = usess.u;
   screen(`
-    <div class="eyebrow">${hexOf(SUR.units.indexOf(u))} <span class="dim">// problem</span></div>
+    <div class="eyebrow">${hexOf(surPos(u).i)} <span class="dim">// problem</span></div>
     <h2>Solve before you reveal</h2>
     <div class="card">${saybar()}${zone(fmt(u.exercise.prompt), u.id, "exercise.prompt", true)}${zone(codeblock(u.exercise.code), u.id, "exercise.code")}</div>
     <div id="sol"></div>
@@ -14506,7 +14588,7 @@ function usessQ(){ const s = usess.u.assess.sets; return (s[usess.set] || s[0])[
 function surMcq(){
   const q = usessQ();
   screen(`
-    <div class="eyebrow">${hexOf(SUR.units.indexOf(usess.u))} <span class="dim">// assess &middot; question ${usess.qi+1}/3</span></div>
+    <div class="eyebrow">${hexOf(surPos(usess.u).i)} <span class="dim">// assess &middot; question ${usess.qi+1}/3</span></div>
     <h2>${esc(q.q).replace(/`([^`]+)`/g,"<code>$1</code>")}</h2>
     <div id="opts">${q.options.map((o,i)=>
       `<button class="opt" onclick="surAnswer(${i})"><span class="mono">${esc(o)}</span></button>`).join("")}
@@ -14531,7 +14613,7 @@ function surNextQ(){ usess.qi++; surMcq(); }
 function surExplain(){
   const u = usess.u;
   screen(`
-    <div class="eyebrow">${hexOf(SUR.units.indexOf(u))} <span class="dim">// assess &middot; articulate</span></div>
+    <div class="eyebrow">${hexOf(surPos(u).i)} <span class="dim">// assess &middot; articulate</span></div>
     <h2>Say it in your own words</h2>
     <div class="card mt8">${saybar()}${zone(fmt(u.assess.explainPrompt), u.id, "assess.explainPrompt", true)}
       <textarea id="ans" placeholder="Write in English, as if answering an interviewer&hellip;">${esc(usess.draftAnswer||"")}</textarea>
@@ -14562,8 +14644,8 @@ function surRate(n){ usess.rating = n;
   for(let i=0;i<=5;i++) document.getElementById("ur"+i).classList.toggle("sel", i===n);
 }
 /* same scoring contract as a loop (mcq + rating*0.4, pass at 3.0) and the same
-   1/3/7/21 ladder — but written into SU.lessons, and it never touches S.streak or
-   S.loops, so the machine track's numbers stay a measure of the machine track. */
+   1/3/7/21 ladder — but written into SU.lessons, so the two tracks' progress
+   stays separate and S is never touched by a Surface lesson. */
 function surFinish(){
   if(usess.rating === null){ alert("Rate your explanation first (0-5)."); return; }
   const u = usess.u;
@@ -14582,8 +14664,12 @@ function surFinish(){
     }
     saveSurface();
   }
+  surRedraw = ()=>surFinishScreen(u, score, passed);
+  surFinishScreen(u, score, passed);
+}
+function surFinishScreen(u, score, passed){
   screen(`
-    <div class="eyebrow">${hexOf(SUR.units.indexOf(u))} <span class="dim">// result</span></div>
+    <div class="eyebrow">${hexOf(surPos(u).i)} <span class="dim">// result</span></div>
     <div class="score-big ${passed?"pass":"fail"}">${score.toFixed(1)}<span style="font-size:20px;color:var(--dim)"> / 5</span></div>
     <div class="center sub">${usess.correct}/3 questions &middot; self-rating ${usess.rating}/5</div>
     <div class="card mt16">

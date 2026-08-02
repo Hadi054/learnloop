@@ -37,7 +37,7 @@ may be freely developed with Claude Code.
 
 | Block | Name | Loops | Status |
 |---|---|---|---|
-| 0 | The Machine Under the Syntax | 16 | DONE (b0-16 bit ops added 2026-07-18) |
+| 0 | The Machine Under the Syntax | 17 | b0-01..16 DONE; MEMORY ARC IN PROGRESS (b0-17 done 2026-08-02, b0-18..24 planned — see "The memory arc" below) |
 | 1 | "Semantics Under the Sugar": optionals/enums, ARC, closures/capture, COW, dispatch, generics, + ext: payload enums, property wrappers, laziness, HOFs | 19 | DONE incl. thorough ext (in curriculum.js) |
 | 2 | "The Machinery of the Screen": run loop, view/layer, VC lifecycle, geometry, Auto Layout, responder chain, hit-testing, target-action, cell reuse, threading, app lifecycle, + ext: navigation, containment, gestures, animation, KVC, keyboard | 20 | DONE (b2-19 KVC + b2-20 keyboard added 2026-07-19; both executed) |
 | 3 | "One Thread Is Never Enough": queues/threads, sync/deadlock, races, async/await, task tree, actors, Sendable, continuations, capstone, + ext: AsyncSequence, MainActor, GCD kit, actor-singleton | 13 | DONE (b3-13 added 2026-07-19, executed) |
@@ -160,6 +160,75 @@ can't (lifecycle, layout), noting which claims were runnable vs documented.
 The learner has granted license to add loops/blocks beyond the original roadmap
 wherever depth is pedagogically worthwhile ("I wanna learn a lot", 2026-07-16) —
 still authored strictly one loop at a time.
+
+## The memory arc (b0-17..b0-24, started 2026-08-02)
+
+Requested by the learner after reading b0-01: "it is a named storage location in
+memory. But what is a memory?" An audit confirmed the hole is real — across all
+137 loops, `virtual memory`, `mmap`, `page fault`, `dirty page`, `dyld shared
+cache` and `memory compressor` appear ZERO times. `jetsam` appears 7 times, but
+only ever as a consequence ("phones jetsam the process at thresholds", b8-07/08)
+— the curriculum tells the learner jetsam kills them and never says what it is.
+b0-01 compiles `score` down to "an address" and never says that address is
+VIRTUAL; everything after it is built on an undefined word.
+
+DECISION (learner, 2026-08-02): extend Block 0 rather than add a 13th block.
+Block ids render as the card marker (`app.js` blockcard `bmark`), so a new "B12"
+sitting between B0 and B1 would read wrong, and at the end of the list
+foundation material would sort after "Shipping the Machine". Extending b0 keeps
+ids sequential and lets `activeBlock()` pull the learner back to B0 naturally.
+Accepted cost: Block 0 loses its ✓ until the arc is finished.
+
+RUNNING EXAMPLE: a 2D platformer game, used across all eight loops (level file
+on disk, sprite atlas that decodes huge, save state that dies with the process).
+NOT an app-shaped example — the learner asked for a game explicitly.
+
+NO DESIGN PANELS: machine loops keep the CUR schema unchanged. The learner's
+call — illustrate only if genuinely needed, and then outside the app. ASCII
+memory diagrams inside `code` blocks, as Block 0 already does.
+
+| id | title | status |
+|---|---|---|
+| b0-17 | The address is a lie (virtual addresses, MMU, ASLR) | DONE 2026-08-02 |
+| b0-18 | Pages, and the fault that fills them | planned |
+| b0-19 | ROM, flash, and the spec-sheet lie | planned |
+| b0-20 | mmap: why a 300 MB game isn't 300 MB of RAM | planned |
+| b0-21 | Clean vs dirty, and why iOS has no swap | planned |
+| b0-22 | Memory pressure and jetsam | planned |
+| b0-23 | Measuring it: footprint vs resident vs virtual | planned |
+| b0-24 | Capstone: budget the game's memory | planned |
+
+All eight are `[EXEC]` on this Mac — verified available: `vmmap`, `footprint`,
+`vm_stat`, `heap`, `leaks`, `sysconf(_SC_PAGESIZE)` = 16384, and `task_info`
+with MACH_TASK_BASIC_INFO for resident/virtual size.
+
+Numbers already executed and banked for the arc (2026-08-02):
+- two live processes both `mmap` MAP_FIXED at `0x400000000000`, each reading
+  back its OWN bytes — the same-address-different-bytes proof (b0-17, used)
+- ASLR, one binary, 4 launches: global `0x1007D4180` / `0x102ACC180` /
+  `0x10058C180` / `0x10255C180`; class metadata sat exactly `0x88` below the
+  global in ALL four — the image slides as a unit (b0-17, used)
+- a trivial Swift process reports **415.1 GB virtual** on a 16 GB Mac;
+  reserving 64 GB more moves resident 5.5 → 5.6 MB; touching 100 pages moves it
+  to 7.2 MB (+1.6 MB = exactly 100 × 16384) — for b0-18/b0-23
+
+## KNOWN DEFECT — MCQ correct-answer index bias (found 2026-08-02, NOT fixed)
+
+Options render in data order ([app.js:550](app.js#L550)) — there is no shuffle.
+In blocks b0–b6 the correct answer sits at **index 1 in 87% of questions**
+(b1: 114/114, b6: 48/48, b5: 59/60). A learner who always picks the second
+option scores 3/3 on the MCQ half without reading anything, and MCQ is 3 of the
+5 score points that gate passing at ≥3.0.
+
+b7–b11 are clean (authored later, properly varied), as is b0-17.
+
+Distribution: idx0=77, idx1=626, idx2=75, idx3=44 across 822 questions.
+
+FIXABLE SAFELY: a scan found only 8 options containing "neither", and all 8 are
+semantic ("neither X nor Y" naming concepts in the stem), NOT positional — no
+question depends on option order, so options can be permuted and `correct`
+rewritten mechanically. Not done yet; needs the learner's go-ahead, since it
+changes 588 questions and they may want to re-review affected loops.
 
 ## Loop anatomy (the four-layer format)
 
