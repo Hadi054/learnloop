@@ -34,18 +34,10 @@ function save(){
     alert("Saving is unavailable here (this can happen in a preview). Download the file and open it in Chrome, then progress will persist. You can also back up anytime from Data."); } }
 }
 function todayStr(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
-function dayDiff(a,b){ return Math.round((new Date(b+"T12:00")-new Date(a+"T12:00"))/86400000); }
 function addDays(day, n){
   const d = new Date(day + "T12:00");
   d.setDate(d.getDate() + n);
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-}
-function applyStreak(){
-  const t = todayStr();
-  if(S.lastDay===null){ S.streak=1; }
-  else{ const g = dayDiff(S.lastDay,t);
-    if(g===1) S.streak+=1; else if(g>1) S.streak=1; /* g===0: same day, keep */ }
-  S.lastDay = t;
 }
 /* the ACTIVE block = first with unfinished loops (auto-advance); last if all done.
    It only decides which block the home list opens by default, plus nextLoop(). */
@@ -103,11 +95,6 @@ if(TTS){ try{ TTS.getVoices(); }catch(e){} }   // warms the async voice list
 function ttsRate(){
   try{ const r = parseFloat(localStorage.getItem(TTS_KEY)); if(r >= 0.5 && r <= 2) return r; }catch(e){}
   return 1;
-}
-function setTtsRate(r){
-  stopSpeak();
-  try{ localStorage.setItem(TTS_KEY, String(r)); }catch(e){}
-  dataScreen();
 }
 /* the phone's default voice may not be English (the text is) — ask for one explicitly */
 function ttsVoice(){
@@ -410,11 +397,6 @@ function home(){
     <h1>${h.title}</h1>
     ${tabsHtml()}
     ${h.body}
-    <div class="row mt16">
-      <button onclick="interview()">Interview</button>
-      <button onclick="history_()">History</button>
-      <button onclick="dataScreen()">Data</button>
-    </div>
   `);
 }
 function machineHome(){
@@ -453,11 +435,6 @@ function machineHome(){
   }).join("");
   return { label: "curriculum", title: "The whole machine", body: `
     <div class="sub">${totalDone}/${total} concepts installed across ${CUR.blocks.length} blocks. Tap a block to open it, a loop to read it.</div>
-    <div class="stats">
-      <div class="stat"><div class="n">${S.streak}</div><div class="l">day streak</div></div>
-      <div class="stat"><div class="n">${S.loops}</div><div class="l">loops run</div></div>
-      <div class="stat"><div class="n">${totalDone}<span style="color:var(--dim);font-size:16px">/${total}</span></div><div class="l">concepts</div></div>
-    </div>
     ${due>=1 ? '<button class="primary" onclick="startReview(false)">Start review — '+due+' concept'+(due===1?"":"s")+' due</button>'
              : (allDone() ? '<button class="primary" onclick="startReview(true)">Review weakest concepts</button>' : '')}
     ${blocks}
@@ -516,11 +493,9 @@ function extrasHtml(loop){
 function concept(loop, mode){
   const p = loopPos(loop);
   const passed = !!S.log[loop.id];
-  const note = mode==="history" ? "" : (passed ? " · re-run · set "+(sess && sess.set===1?"B":"A") : "");
-  const footer = mode==="history"
-    ? '<button onclick="history_()">Back to history</button>'
-    : '<button class="primary" onclick="problem()">Try the problem</button>'
-      + '<button class="ghost" onclick="home()">Back to the list</button>';
+  const note = passed ? " · re-run · set "+(sess && sess.set===1?"B":"A") : "";
+  const footer = '<button class="primary" onclick="problem()">Try the problem</button>'
+    + '<button class="ghost" onclick="home()">Back to the list</button>';
   screen(`
     <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} · concept ${p.i+1}/${p.n}${note}</span></div>
     <h1>${esc(loop.title)}</h1>
@@ -655,7 +630,7 @@ function finishLoop(){
       S.log[sess.loop.id] = {score, date: t, set: sess.set,
         hist: [{score, date: t, set: sess.set}], ivl: 0, due: addDays(t, INTERVALS[0])};
     }
-    S.loops++; applyStreak(); save();
+    save();
   }
   const idx = loopPos(sess.loop).i;
   screen(`
@@ -734,7 +709,6 @@ function revNext(){
     e.ivl = it.correct >= 2 ? Math.min((e.ivl || 0) + 1, INTERVALS.length - 1) : 0;
     e.due = addDays(t, INTERVALS[e.ivl]);
   });
-  if(!rev.manual){ S.loops++; applyStreak(); }
   save();
   screen(`
     <div class="eyebrow">review <span class="dim">// result</span></div>
@@ -754,248 +728,21 @@ function openLoop(bi, li){
   startLoop(CUR.blocks[bi].loops[li]);
 }
 
-/* ---------- INTERVIEW MODE ----------
-   Drills explainPrompts of ALL passed loops (every block), shuffled.
-   Answers persist in their own key — S and its v:1 shape stay untouched.
-   Ratings here are private practice; they never touch S.log scores. */
-const ANS_KEY = "learnloop.answers.v1";
-function loadAnswers(){
-  try{ const raw = localStorage.getItem(ANS_KEY); if(raw){ const a = JSON.parse(raw); if(Array.isArray(a)) return a; } }
-  catch(e){}
-  return [];
-}
-function saveAnswers(a){
-  try{ localStorage.setItem(ANS_KEY, JSON.stringify(a.slice(-100))); }catch(e){}
-}
 function passedLoops(){
   const out = [];
   CUR.blocks.forEach(b => b.loops.forEach(l => { if(S.log[l.id]) out.push(l); }));
   return out;
 }
-let iv = null;
-let ivTimer = null;
-function interview(){
-  const pool = passedLoops();
-  screen(`
-    <div class="eyebrow">interview <span class="dim">// articulate under pressure</span></div>
-    <h1>Interview drill</h1>
-    <div class="card">
-      <p>Every concept you have passed, asked interview-style in shuffled order. Write your answer in English as if the interviewer is waiting — aim for under 90 seconds — then compare with the model answer and rate yourself.</p>
-      <p class="sub">Answers are saved on this device (last 100 kept). From Data you can copy a batch as text and paste it into claude.ai for English + technical feedback.</p>
-    </div>
-    ${pool.length
-      ? '<button class="primary" onclick="ivStart()">Start — '+pool.length+' concept'+(pool.length===1?"":"s")+'</button>'
-      : '<div class="feedback">Pass at least one loop first — the drill draws on concepts you have installed.</div>'}
-    <button class="ghost" onclick="home()">Home</button>
-  `);
-}
-function ivStart(){
-  const pool = passedLoops();
-  for(let i = pool.length-1; i > 0; i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-  iv = {queue: pool, i: 0, answered: 0, text: "", rating: null};
-  ivQ();
-}
-function ivQ(){
-  const l = iv.queue[iv.i];
-  screen(`
-    <div class="eyebrow">interview <span class="dim">// ${iv.i+1}/${iv.queue.length} · ${esc(l.id)} · </span><span class="dim" id="ivt">0s</span></div>
-    <h2>${esc(l.title)}</h2>
-    <div class="card">${saybar()}${zone(fmt(l.assess.explainPrompt), l.id, "assess.explainPrompt", true)}
-      <textarea id="ivans" placeholder="Answer in English, as if the interviewer is waiting…"></textarea>
-    </div>
-    <div id="ivcmp"></div>
-    <button class="primary" id="ivreveal" onclick="ivReveal()">Compare with model answer</button>
-    <button class="ghost" onclick="ivEnd()">End drill</button>
-  `);
-  ivStartTimer();
-}
-function ivStartTimer(){
-  ivStopTimer();
-  if(typeof setInterval !== "function") return;
-  const t0 = Date.now();
-  ivTimer = setInterval(function(){
-    const el = document.getElementById("ivt");
-    if(!el){ ivStopTimer(); return; }
-    el.textContent = Math.round((Date.now()-t0)/1000)+"s";
-  }, 1000);
-}
-function ivStopTimer(){
-  if(ivTimer && typeof clearInterval === "function") clearInterval(ivTimer);
-  ivTimer = null;
-}
-function ivReveal(){
-  ivStopTimer();
-  const l = iv.queue[iv.i];
-  iv.text = (document.getElementById("ivans")?.value || "").trim();
-  document.getElementById("ivreveal")?.remove();
-  document.getElementById("ivcmp").innerHTML = `
-    <div class="card">
-      ${labelRow('<div class="layer-label amb">Model answer</div>')}
-      ${zone(fmt(l.assess.modelAnswer), l.id, "assess.modelAnswer", true)}
-    </div>
-    <div class="card">
-      <div class="layer-label">How close were you?</div>
-      <div class="raterow">${[0,1,2,3,4,5].map(n=>
-        `<button class="rate" id="ivr${n}" onclick="ivRate(${n})">${n}</button>`).join("")}</div>
-    </div>
-    <button class="primary" onclick="ivNext()">${iv.i < iv.queue.length-1 ? "Next question" : "Finish drill"}</button>`;
-  applyHighlights(document.getElementById("ivcmp"));
-}
-function ivRate(n){ iv.rating = n;
-  for(let i=0;i<=5;i++) document.getElementById("ivr"+i)?.classList.toggle("sel", i===n);
-}
-function ivNext(){
-  const l = iv.queue[iv.i];
-  if(iv.text){
-    const a = loadAnswers();
-    a.push({id: l.id, title: l.title, date: todayStr(), text: iv.text, rating: iv.rating});
-    saveAnswers(a);
-    iv.answered++;
-  }
-  iv.text = ""; iv.rating = null;
-  if(iv.i < iv.queue.length-1){ iv.i++; ivQ(); } else ivDone();
-}
-function ivEnd(){ ivStopTimer(); ivDone(); }
-function ivDone(){
-  screen(`
-    <div class="eyebrow">interview <span class="dim">// drill complete</span></div>
-    <h1>${iv.answered} answered</h1>
-    <div class="card"><p>${iv.answered
-      ? "Saved on this device. From the Data screen, copy your saved answers as text and paste a batch into claude.ai for English and technical feedback in one go."
-      : "Nothing saved — write an answer before revealing to build the habit. Thinking it is not the same as saying it."}</p></div>
-    <button class="primary" onclick="home()">Home</button>
-    <button onclick="dataScreen()">Data</button>
-  `);
-}
-
 /* ---------- HISTORY ---------- */
-function history_(){
-  const total = CUR.blocks.reduce((n,b)=>n+b.loops.length, 0);
-  const totalDone = CUR.blocks.reduce((n,b)=>n+b.loops.filter(l=>S.log[l.id]).length, 0);
-  const sections = CUR.blocks.map((b,bi)=>{
-    const rows = b.loops.map((l,i)=>{
-      const r = S.log[l.id];
-      return `<div class="histitem">
-        <span style="font-family:var(--mono);color:var(--dim);font-size:12px">${hexOf(i)}</span>
-        <span style="flex:1">${r?'<button class="linkbtn" style="margin:0" onclick="openHist('+bi+','+i+')">'+esc(l.title)+"</button>":esc(l.title)}</span>
-        ${r?`<span class="badge ${r.score>=4?"s":"w"}">${r.score.toFixed(1)}</span>`:'<span class="badge">—</span>'}
-      </div>`;
-    }).join("");
-    return `<div class="card"><div class="layer-label">${esc(b.id)} · ${esc(b.name)}</div>${rows}</div>`;
-  }).join("");
-  screen(`
-    <div class="eyebrow">history <span class="dim">// ${totalDone}/${total} installed</span></div>
-    <h1>Your memory map</h1>
-    ${sections}
-    <div class="sub mt8">Tap an installed concept to re-read it anytime. Amber badge = weak (&lt;4.0), likely to appear in reviews.</div>
-    <button class="primary" onclick="home()">Home</button>
-  `);
-}
-function openHist(bi, li){ concept(CUR.blocks[bi].loops[li], "history"); }
-
 /* ---------- DATA ---------- */
-function dataScreen(){
-  const hlCount = loadHighlights().length, noteCount = Object.keys(loadNotes()).length;
-  screen(`
-    <div class="eyebrow">data <span class="dim">// backup &amp; restore</span></div>
-    <h1>Your progress</h1>
-    <div class="card">
-      <div class="layer-label">Export</div>
-      <p class="sub">Progress, interview answers, ${hlCount} highlight${hlCount===1?"":"s"}, and ${noteCount} note${noteCount===1?"":"s"} all live in this browser's storage. Back them up before clearing browser data or switching phones.</p>
-      <button onclick="exportData()">Download backup file</button>
-      <button onclick="showExport()">Show as text to copy</button>
-      <div id="exp"></div>
-    </div>
-    <div class="card">
-      <div class="layer-label">Import</div>
-      <p class="sub">Pick a backup file directly — from Drive, Dropbox, Downloads, wherever it's saved — or paste its contents below. Replaces current progress, answers, highlights, and notes.</p>
-      <input type="file" id="impfile" accept="application/json,.json" onchange="importFromFile(this)">
-      <textarea id="imp" placeholder='{"bv":1,...}'></textarea>
-      <button onclick="importData()">Restore</button>
-    </div>
-    <div class="card">
-      <div class="layer-label">Interview answers</div>
-      <p class="sub">${loadAnswers().length} saved on this device (last 100 kept). Copy a batch into claude.ai for English + technical feedback.</p>
-      <button onclick="showAnswers()">Show answers as text to copy</button>
-      <div id="ansout"></div>
-      <button class="ghost" onclick="clearAnswers()">Delete saved answers</button>
-    </div>
-    ${TTS ? `<div class="card">
-      <div class="layer-label">Read aloud</div>
-      <p class="sub">Speaking speed for the ${SPK_ICON} buttons on definitions, model answers, and explanations. Uses your phone's own voice — nothing leaves the device.</p>
-      <div class="raterow mt8">${[0.75,0.9,1,1.15,1.3].map(r=>
-        `<button class="rate${ttsRate()===r?" sel":""}" onclick="setTtsRate(${r})">${r}&times;</button>`).join("")}</div>
-    </div>` : ""}
-    <div class="card">
-      <div class="layer-label" style="color:var(--red)">Danger</div>
-      <button onclick="resetAll()">Reset all progress</button>
-    </div>
-    <button class="primary" onclick="home()">Home</button>
-  `);
-}
-function showAnswers(){
-  const a = loadAnswers();
-  const txt = a.length ? a.map(x =>
-    "### "+x.id+" — "+x.title+" ("+x.date+(x.rating!=null ? ", self-rated "+x.rating+"/5" : "")+")\n"+x.text
-  ).join("\n\n") : "No answers saved yet — run an Interview drill first.";
-  document.getElementById("ansout").innerHTML =
-    `<textarea readonly onclick="this.select()">${esc(txt)}</textarea>`;
-}
-function clearAnswers(){
-  if(confirm("Delete all saved interview answers?")){ saveAnswers([]); dataScreen(); }
-}
 /* bundles everything device-local into one backup object. "bv" (backup-format
    version) is deliberately NOT named "v" — that field already means the
    learnloop.v1 STATE schema version (S.v, migrated by migrate()); reusing the
    name for two independent counters is exactly the ambiguity migrate()'s
    discipline exists to avoid. */
-function buildBackup(){
-  return { bv: 1, state: S, answers: loadAnswers(), highlights: loadHighlights(), notes: loadNotes() };
-}
-function exportData(){
-  const blob = new Blob([JSON.stringify(buildBackup())],{type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "learnloop-backup-"+todayStr()+".json";
-  a.click(); URL.revokeObjectURL(a.href);
-}
-function showExport(){
-  document.getElementById("exp").innerHTML =
-    `<textarea readonly onclick="this.select()">${esc(JSON.stringify(buildBackup()))}</textarea>`;
-}
 /* reads a picked file (works with Drive/Dropbox-backed files via the OS file
    picker — no API, no auth) into the paste box, so Restore behaves identically
    either way */
-function importFromFile(input){
-  const file = input.files && input.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = () => { document.getElementById("imp").value = reader.result; };
-  reader.readAsText(file);
-}
-function importData(){
-  try{
-    const s = JSON.parse(document.getElementById("imp").value.trim());
-    if(s && typeof s.state==="object" && typeof s.state.log==="object"){
-      // new wrapped backup format — restore everything
-      S = migrate(s.state); save();
-      if(Array.isArray(s.answers)) saveAnswers(s.answers);
-      if(Array.isArray(s.highlights)) saveHighlights(s.highlights);
-      if(s.notes && typeof s.notes==="object") saveNotes(s.notes);
-    } else if(s && (s.v===1 || s.v===2) && typeof s.log==="object"){
-      // legacy bare-state format (pre-dates highlights/notes) — restore progress only
-      S = migrate(s); save();
-    } else throw 0;
-    alert("Progress restored."); home();
-  }catch(e){ alert("That doesn't look like a valid LearnLoop backup."); }
-}
-function resetAll(){
-  if(confirm("Erase streak, loops, and all concept scores?")){ S = blank(); save(); home(); }
-}
-
 /* ================= SURFACE TRACK =================
    SUR is defined in surface.js. Deliberately a SEPARATE flow from the loop flow
    above rather than a generalisation of it: the machine track holds real progress,
@@ -1017,31 +764,63 @@ function saveSurface(){
   catch(e){ if(!storageWarned){ storageWarned = true;
     alert("Saving is unavailable here (this can happen in a preview). Download the file and open it in Chrome, then progress will persist."); } }
 }
-function surLessons(){ return SUR.units.filter(u=>u.kind === "lesson"); }
+/* SUR is blocks-of-units, same shape as CUR. These mirror activeBlock()/loopPos()
+   so the Surface home can render the identical blockcard hierarchy. */
+function surUnits(){ return SUR.blocks.reduce((a,b)=>a.concat(b.units), []); }
 function surDone(u){ return !!SU.lessons[u.id]; }
+function surBlockOf(u){ return SUR.blocks.find(b=>b.units.indexOf(u) >= 0) || SUR.blocks[0]; }
+function surPos(u){ const b = surBlockOf(u); return {b, i: b.units.indexOf(u), n: b.planned}; }
+/* first block with unwritten or unpassed units; drives which one opens by default */
+function surActiveBlock(){
+  return SUR.blocks.find(b => b.units.length < b.planned || b.units.some(u=>!surDone(u)))
+      || SUR.blocks[SUR.blocks.length-1];
+}
+let openSi = null;   // expanded surface block; null = follow surActiveBlock(), -1 = none
+function toggleSBlock(i){ openSi = (openSi === i ? -1 : i); home(); }
 
 function surface(){ goTab("surface"); }
 function surfaceHome(){
-  const us = SUR.units;
-  const done = us.filter(surDone).length;
-  const cells = us.map(u=>{
-    const e = SU.lessons[u.id];
-    return `<div class="cell${e ? " done" + (e.score < 4 ? " weak" : "") : ""}"></div>`;
+  const planned = SUR.blocks.reduce((n,b)=>n + b.planned, 0);
+  const written = surUnits().length;
+  const totalDone = surUnits().filter(surDone).length;
+  const totalBuilt = surUnits().filter(u=>buildDone(u.id)).length;
+  const shown = openSi === null ? SUR.blocks.indexOf(surActiveBlock()) : openSi;
+  const blocks = SUR.blocks.map((b,bi)=>{
+    const done = b.units.filter(surDone).length;
+    const complete = b.units.length === b.planned && done === b.planned;
+    const empty = b.units.length === 0;
+    const open = bi === shown && !empty;
+    /* one cell per PLANNED unit, so the bar measures against the roadmap, not
+       against however much has been authored so far */
+    const cells = b.units.map(u=>{
+      const e = SU.lessons[u.id];
+      return `<div class="cell${e ? " done" + (e.score < 4 ? " weak" : "") : ""}"></div>`;
+    }).join("") + '<div class="cell"></div>'.repeat(Math.max(0, b.planned - b.units.length));
+    /* amber BUILD = a passed lesson still owing its build; green BUILT = settled */
+    const rows = !open ? "" : b.units.map((u,i)=>{
+      const passed = surDone(u), built = buildDone(u.id);
+      const badge = !passed ? '<span class="badge">—</span>'
+        : (built ? '<span class="bbadge on">BUILT</span>' : '<span class="bbadge">BUILD</span>');
+      return `<button class="looprow${passed ? " done" : ""}" onclick="openUnit('${u.id}')">
+        <span class="tick">${passed ? "✓" : hexOf(i)}</span>
+        <span class="lt">${esc(u.title)}</span>
+        ${badge}
+      </button>`;
+    }).join("");
+    return `<div class="blockcard${complete ? " done" : ""}${empty ? " pending" : ""}">
+      <button class="blockhead" ${empty ? 'disabled aria-disabled="true"' : `onclick="toggleSBlock(${bi})" aria-expanded="${open}"`}>
+        <span class="bmark">${complete ? "✓" : esc(b.id.toUpperCase())}</span>
+        <span class="bt"><span class="bn">${esc(b.name)}</span><span class="bs">${esc(b.tagline)}</span></span>
+        <span class="bcount">${empty ? b.planned : done + "/" + b.planned}</span>
+        <span class="chev">${empty ? "·" : (open ? "▴" : "▾")}</span>
+      </button>
+      <div class="cells mini">${cells}</div>
+      ${open ? `<div class="looplist">${rows}</div>` : ""}
+    </div>`;
   }).join("");
-  const rows = us.map((u,i)=>`
-    <button class="looprow${surDone(u) ? " done" : ""}" onclick="openUnit('${u.id}')">
-      <span class="tick">${surDone(u) ? "&check;" : hexOf(i)}</span>
-      <span class="lt">${esc(u.title)}</span>
-      <span class="chev">${u.kind === "build" ? "BUILD" : ""}</span>
-    </button>`).join("");
   return { label: "surface", title: esc(SUR.name), body: `
-    <div class="sub">${esc(SUR.tagline)}</div>
-    <div class="card">
-      <div class="layer-label">Progress</div>
-      <div class="cells">${cells}</div>
-      <div class="cellcap"><span>${done}/${us.length} installed</span><span>surface</span></div>
-    </div>
-    <div class="looplist">${rows}</div>
+    <div class="sub">${totalDone}/${planned} installed across ${SUR.blocks.length} blocks &middot; ${written} written so far. Tap a block to open it.</div>
+    ${blocks}
   `};
 }
 
@@ -1062,8 +841,35 @@ function specHtml(u){
       ${zone(fmt(u.spec), u.id, "spec", true)}
     </div>`;
 }
+/* THE BUILD — the whole point of this track. The machine track tests prediction,
+   which recognition can fake; a build can't be faked. Never scored: done or not.
+   Shown only after the lesson is passed, same pacing rule as the other extras. */
+function buildDone(id){ const r = SU.builds[id]; return !!(r && r.done); }
+function buildHtml(u){
+  if(!u.build) return "";
+  const done = buildDone(u.id), rec = SU.builds[u.id];
+  const items = (u.build.done || []).map(d =>
+    `<li>${esc(d).replace(/`([^`]+)`/g,"<code>$1</code>")}</li>`).join("");
+  return `<div class="card build${done ? " done" : ""}">
+      ${labelRow('<div class="layer-label amb">The build <span class="layer-note">&mdash; write it yourself, zero AI</span></div>')}
+      ${zone(fmt(u.build.brief), u.id, "build.brief", true)}
+      ${items ? `<div class="layer-label mt16">Done when</div><ul class="checks">${items}</ul>` : ""}
+      ${u.build.stretch ? `<div class="sub mt8">Stretch &mdash; ${esc(u.build.stretch)}</div>` : ""}
+      <button class="${done ? "ghost" : "primary"}" onclick="toggleBuild('${u.id}')">${
+        done ? "Built &check; &mdash; mark unbuilt" : "I built it"}</button>
+      ${done ? `<div class="sub center mt8">Built ${esc(rec.date || "")}</div>` : ""}
+    </div>`;
+}
+/* screen() wipes the DOM, so the toggle needs to know what to redraw */
+let surRedraw = null;
+function toggleBuild(id){
+  if(buildDone(id)) delete SU.builds[id];
+  else SU.builds[id] = {done: true, date: todayStr()};
+  saveSurface();
+  if(surRedraw) surRedraw();
+}
 function surExtras(u){
-  let h = "";
+  let h = buildHtml(u);
   if(u.transfer) h += `<div class="card">
       ${labelRow('<div class="layer-label amb">Transfer <span class="layer-note">&mdash; apply it in your real code</span></div>')}
       ${zone(fmt(u.transfer), u.id, "transfer", true)}</div>`;
@@ -1078,16 +884,17 @@ function surExtras(u){
 
 let usess = null;
 function openUnit(id){
-  const u = SUR.units.find(x=>x.id === id); if(!u) return surface();
+  const u = surUnits().find(x=>x.id === id); if(!u) return surface();
   const rec = SU.lessons[u.id];
   usess = {u, set: rec ? 1 - (rec.set || 0) : 0, qi:0, correct:0, rating:null,
            draftAnswer:"", comparedShown:false};
   unitScreen(u);
 }
 function unitScreen(u){
-  const i = SUR.units.indexOf(u), passed = surDone(u);
+  const p = surPos(u), passed = surDone(u);
+  surRedraw = ()=>unitScreen(u);
   screen(`
-    <div class="eyebrow">${hexOf(i)} <span class="dim">// ${esc(u.id)} &middot; lesson ${i+1}/${SUR.units.length}${passed ? " &middot; re-run &middot; set " + (usess && usess.set === 1 ? "B" : "A") : ""}</span></div>
+    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} &middot; lesson ${p.i+1}/${p.n}${passed ? " &middot; re-run &middot; set " + (usess && usess.set === 1 ? "B" : "A") : ""}</span></div>
     <h1>${esc(u.title)}</h1>
     ${designHtml(u)}
     ${specHtml(u)}
@@ -1116,7 +923,7 @@ function unitScreen(u){
 function surProblem(){
   const u = usess.u;
   screen(`
-    <div class="eyebrow">${hexOf(SUR.units.indexOf(u))} <span class="dim">// problem</span></div>
+    <div class="eyebrow">${hexOf(surPos(u).i)} <span class="dim">// problem</span></div>
     <h2>Solve before you reveal</h2>
     <div class="card">${saybar()}${zone(fmt(u.exercise.prompt), u.id, "exercise.prompt", true)}${zone(codeblock(u.exercise.code), u.id, "exercise.code")}</div>
     <div id="sol"></div>
@@ -1141,7 +948,7 @@ function usessQ(){ const s = usess.u.assess.sets; return (s[usess.set] || s[0])[
 function surMcq(){
   const q = usessQ();
   screen(`
-    <div class="eyebrow">${hexOf(SUR.units.indexOf(usess.u))} <span class="dim">// assess &middot; question ${usess.qi+1}/3</span></div>
+    <div class="eyebrow">${hexOf(surPos(usess.u).i)} <span class="dim">// assess &middot; question ${usess.qi+1}/3</span></div>
     <h2>${esc(q.q).replace(/`([^`]+)`/g,"<code>$1</code>")}</h2>
     <div id="opts">${q.options.map((o,i)=>
       `<button class="opt" onclick="surAnswer(${i})"><span class="mono">${esc(o)}</span></button>`).join("")}
@@ -1166,7 +973,7 @@ function surNextQ(){ usess.qi++; surMcq(); }
 function surExplain(){
   const u = usess.u;
   screen(`
-    <div class="eyebrow">${hexOf(SUR.units.indexOf(u))} <span class="dim">// assess &middot; articulate</span></div>
+    <div class="eyebrow">${hexOf(surPos(u).i)} <span class="dim">// assess &middot; articulate</span></div>
     <h2>Say it in your own words</h2>
     <div class="card mt8">${saybar()}${zone(fmt(u.assess.explainPrompt), u.id, "assess.explainPrompt", true)}
       <textarea id="ans" placeholder="Write in English, as if answering an interviewer&hellip;">${esc(usess.draftAnswer||"")}</textarea>
@@ -1197,8 +1004,8 @@ function surRate(n){ usess.rating = n;
   for(let i=0;i<=5;i++) document.getElementById("ur"+i).classList.toggle("sel", i===n);
 }
 /* same scoring contract as a loop (mcq + rating*0.4, pass at 3.0) and the same
-   1/3/7/21 ladder — but written into SU.lessons, and it never touches S.streak or
-   S.loops, so the machine track's numbers stay a measure of the machine track. */
+   1/3/7/21 ladder — but written into SU.lessons, so the two tracks' progress
+   stays separate and S is never touched by a Surface lesson. */
 function surFinish(){
   if(usess.rating === null){ alert("Rate your explanation first (0-5)."); return; }
   const u = usess.u;
@@ -1217,8 +1024,12 @@ function surFinish(){
     }
     saveSurface();
   }
+  surRedraw = ()=>surFinishScreen(u, score, passed);
+  surFinishScreen(u, score, passed);
+}
+function surFinishScreen(u, score, passed){
   screen(`
-    <div class="eyebrow">${hexOf(SUR.units.indexOf(u))} <span class="dim">// result</span></div>
+    <div class="eyebrow">${hexOf(surPos(u).i)} <span class="dim">// result</span></div>
     <div class="score-big ${passed?"pass":"fail"}">${score.toFixed(1)}<span style="font-size:20px;color:var(--dim)"> / 5</span></div>
     <div class="center sub">${usess.correct}/3 questions &middot; self-rating ${usess.rating}/5</div>
     <div class="card mt16">

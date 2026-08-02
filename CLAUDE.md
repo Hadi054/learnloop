@@ -24,8 +24,14 @@ may be freely developed with Claude Code.
   15-cell memory-bar progress indicator)
 - `app.js` — all logic; screens are plain functions rendering into `#app`
 - `curriculum.js` — `const CUR = {...}` content data (generated; see schema below)
+- `surface.js` — `const SUR = {...}` the SURFACE track's content (UI/UX + UIKit).
+  Separate file and separate schema; see "The Surface track" below.
+- `SURFACE.md` — the Surface curriculum map: 12 blocks, 100 loops, 100 builds,
+  12 capstones, each with its title, verification tier and build. THE PLAN, not
+  the content — only one loop is actually written so far.
 - `build.js` — `node build.js` inlines everything into `dist/learnloop.html`, the
-  single file deployed to the phone (Chrome → Add to Home screen)
+  single file deployed to the phone (Chrome → Add to Home screen). Inlines
+  curriculum.js AND surface.js.
 
 ## Curriculum roadmap (content status)
 
@@ -210,6 +216,107 @@ Content authoring rules (quality bar — hold every generated loop to these):
 - Later loops may reference earlier ones by number; earlier never reference later
   except as explicit "preview" questions.
 
+## The Surface track (added 2026-08-02)
+
+A SECOND curriculum, parallel to the machine track, for UI/UX knowledge fused
+with its UIKit implementation. Requested by the learner: "I am really bad at
+building UI components… if I see a UI, the layout should come into my mind, but
+it doesn't." An audit found why — across all 137 machine loops, `UIStackView`
+appears ONCE and `design system` ONCE, both as wrong MCQ options. The machine
+track teaches the constraint solver thoroughly and never teaches what to ask it
+for. Surface fills that gap; it does not duplicate mechanism (b2-05/06/07 own
+the solver, b10 owns storyboards-as-NSCoder, b2-11 owns cell reuse).
+
+STATUS: 1 of 100 loops written (`s1-06`, the button state table — the format
+prototype). The other 99 are MAPPED IN `SURFACE.md`, NOT WRITTEN. Do not assume
+content exists because the map lists it.
+
+### Structure (learner's, 2026-08-02)
+
+Organised by design MATERIAL and by TOOL, not by artefact scope — the learner
+rejected a scope-based structure (component → screen → system) and substituted
+this, correctly: the gap is a naming failure as much as a decomposition one.
+12 blocks · 100 loops · 100 loop-builds · 12 capstones. Full detail in
+`SURFACE.md`; blocks are s0 units, s1 parts bin, s2 space, s3 Interface Builder,
+s4 type, s5 colour/material, s6 images/symbols, s7 lists, s8 motion/feedback,
+s9 screen states, s10 adaptive/accessible, s11 the system.
+
+Authoring order is FIXED at the front: s0 → s1 → s2 → s3. IB does not make sense
+until constraints do. After that, material blocks in any order; s11 last.
+
+### The rule that shapes every unit
+
+> "The more code I do myself is better for me. So after each loop, we need
+> something to build." — the learner, 2026-08-02
+
+The machine track tests PREDICTION; Surface tests PRODUCTION, because prediction
+can be passed by recognition and a build cannot. So `transfer` is replaced by
+`build` — a specified artefact with a definition of done. Builds are never
+scored: done or not done, tracked in `SU.builds`, outside the review ladder.
+
+### Verification tiers — the anti-trivia gate
+
+Every unit is tagged `[EXEC]` (runnable here: plain `swift`, Mac Catalyst,
+`ibtool`), `[DEV]` (needs a real device), or `[DOC]` (cited convention).
+
+**A loop that is entirely `[DOC]` is a failed loop.** Every unit must carry at
+least one MEASURED number. This is the defence against design content decaying
+into recitable trivia ("minimum touch target? → 44pt"). HIG numbers are citation;
+the implementation around them is not.
+
+Design claims ARE executable more often than expected. Verified while writing
+`s1-06`: `UIControl.State` raw values (normal 0/highlighted 1/disabled 2/selected
+4, OR-combining to 6); `title(for:.disabled)` returns the `.normal` title, NOT
+nil, because the fallback lives in the read path; `titleLabel?.text` stays
+diverged from `currentTitle` through `layoutIfNeeded()`, through hosting, and
+through a later `setTitle(_:for:)` (headless — a live render server may re-sync,
+marked DOCUMENTED); `UIButton(type:.system)` "OK" measures 30×31pt and a
+`.filled()` configuration 40.5pt tall, both UNDER the 44pt HIG minimum, while
+`.large` and an explicit constraint clear it.
+
+Component taxonomy, also executed: containers (UIView/StackView/ScrollView/
+TableView/CollectionView/TextView) report no intrinsic size; UISlider and
+UIProgressView report height only (-1 width); UITextView is NOT a UIControl and
+UIPickerView is not either, while UIDatePicker is.
+
+### Content schema (surface.js)
+
+```
+SUR = { name, tagline, units: [Unit] }
+Unit = {
+  id: "s1-06",                      // sN-NN, block-scoped, never renumber
+  kind: "lesson" | "capstone",
+  title,
+  design:  { caption, svg },        // INLINE SVG — offline, scales, uses the
+                                    // app's own CSS variables. No raster, no CDN.
+  spec:    "the design standard as rules with numbers in them",
+  concept: { definition, code, underlying, whyItMatters },   // as CUR
+  exercise:{ prompt, code, solution, explanation },          // as CUR
+  assess:  { explainPrompt, modelAnswer, sets: [[Q,Q,Q],[Q,Q,Q]] },
+  build:   { brief, done: [checklist], stretch },   // NOT YET IMPLEMENTED
+  verify, goDeeper
+}
+```
+
+Same authoring rules as curriculum.js — one concept per unit, plausible
+distractors, NO LENGTH TELLS, and additionally: vary which index is correct.
+(The first draft of `s1-06` had four length tells AND every correct answer at
+index 0; both were caught by a gate script before the loop shipped. Run that
+gate before writing, not after.)
+
+### Where performance lives
+
+There is deliberately NO performance block. A frame budget is spent by a design
+decision, so each performance loop sits inside the block where that decision is
+made: shadow cost with elevation (s5-04), decode cost with images (s6-06), scroll
+jank with lists (s7-09). Teaching it separately lets the learner know the cost
+without connecting it to the choice that caused it.
+
+### Deliberately out of scope
+
+Widgets, App Clips and launch screens — surfaces the learner's your app doesn't
+ship. WidgetKit is SwiftUI-only and this is a UIKit track.
+
 ## App mechanics (do not change without a deliberate decision)
 
 - Scoring: `score = mcqCorrect (0–3) + selfRating × 0.4 (0–2)`, rounded to 1 decimal.
@@ -283,6 +390,24 @@ Content authoring rules (quality bar — hold every generated loop to these):
   `learnloop.answers.v1`, outside S. NEVER change shapes without extending
   migrate() — real user progress exists.
 - All storage access stays wrapped in try/catch (file:// contexts can restrict it).
+- SURFACE TRACK (2026-08-02): reached via the home TAB system (see "Home tabs"
+  above) — `surface()` is just `goTab("surface")`, and `surfaceHome()` returns
+  `{label, title, body}` for the shared shell. It does NOT call `screen()`.
+  `openUnit(id)` runs the lesson flow, which DOES own its screens.
+  DELIBERATELY A SEPARATE FLOW from the loop flow, not a generalisation of it —
+  the machine track holds real progress, the unit shape differs (design panel,
+  spec, builds), and a shared abstraction would need unpicking the moment builds
+  land. Rendering helpers ARE shared: `screen`/`zone`/`fmt`/`codeblock`/
+  `labelRow`/`saybar`/`notesCardHtml`/`applyHighlights` all work unchanged.
+  Storage is its OWN key `learnloop.surface.v1`, shape
+  `{v:1, lessons:{id:{score,date,set,hist,ivl,due}}, builds:{id:{done,date,...}}}`
+  — so `S`, `KEY` and `migrate()` never move and real progress can't be broken.
+  Scoring contract is identical (mcq + rating×0.4, pass 3.0, 1/3/7/21 ladder) but
+  it writes to `SU.lessons` and NEVER touches `S.streak` or `S.loops`, so the
+  machine track's numbers stay a measure of the machine track. Surface reviews
+  are their own pool inside the Surface tab, not merged into the machine track's
+  due list. (Both of those are reversible decisions, taken to keep blast radius
+  at zero while the format is unproven.)
 
 ## Working agreements for Claude Code
 
@@ -318,6 +443,15 @@ Content authoring rules (quality bar — hold every generated loop to these):
   picks up new blocks/loops automatically — no app.js change needed.
   Node.js is NOT installed on this Mac — build dist with a faithful replica of
   build.js's replacements, and syntax-check JS via `osascript -l JavaScript`.
+  The replica must inline FOUR files now: style.css, curriculum.js, surface.js,
+  app.js. `new Function(src)` under JXA parses without executing; to inspect SUR
+  use `eval(src + "\nSUR")` since a bare `const` won't escape the eval scope.
+- Surface loops carry an inline-SVG `design` panel. RENDER IT AND LOOK AT IT
+  before shipping — extract the SVG, substitute the CSS variables for literals,
+  and rasterise with `qlmanage -t`. The first `s1-06` panel overran its viewBox
+  and was only caught by looking. Headless Chrome (`--headless --screenshot`)
+  will also render whole app screens: copy dist, replace the trailing `home();`
+  with `surface();` or `openUnit("id");`, and screenshot that.
 - Preserve the visual language: eyebrow labels like `0x07 // CONCEPT`, memory-cell
   progress bar, amber = weak/attention, green = solid.
 
@@ -353,3 +487,25 @@ Content authoring rules (quality bar — hold every generated loop to these):
    code (swift-collections, stdlib) + questions about it. New exercise format;
    only after the core loop format is proven.
 7. Block 6 mobile system design content (write last, after Block 5).
+
+### SURFACE TRACK TODO (current work, 2026-08-02)
+
+1. ~~The `build` field~~ DONE 2026-08-02. `build: {brief, done:[], stretch}`
+   renders via `buildHtml()` at the TOP of `surExtras()` (it is the point of the
+   track), so it appears on the passed-result screen and on re-reads, never
+   during a live lesson. `toggleBuild(id)` writes `SU.builds[id] = {done, date}`
+   and re-renders through `surRedraw`, a function pointer set by `unitScreen()`
+   and `surFinish()` because `screen()` wipes the DOM. The unit list shows an
+   amber `BUILD` badge (owed) or green `BUILT`, and the cellcap counts both
+   `N/M installed` and `N/M built`. Builds are NEVER scored.
+2. Author `s0-01` "The point is not the pixel", then the rest of s0. One loop at
+   a time, thorough mode, gate script BEFORE write, dist rebuild per loop.
+3. Surface reviews: the due-count button and review flow exist for the machine
+   track only. Surface lessons schedule `due` correctly but nothing surfaces them
+   yet — add a "Start review — N due" to the Surface list once >1 loop exists.
+4. History screen is machine-only. Add a Surface section once there is content
+   worth showing.
+5. Capstone units (`kind: "capstone"`) are mapped but the app has no renderer for
+   them — they need a brief + checklist + done toggle, no MCQs, no score.
+6. Consider merging Surface reviews into the machine track's due pool once the
+   format is proven. Deliberately NOT done now (see App mechanics).

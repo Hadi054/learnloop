@@ -150,5 +150,17 @@
   .design{background:#10131A;border:1px solid var(--line);border-radius:8px;
     padding:14px 12px;margin-top:10px;overflow-x:auto}
   .design svg{display:block;width:100%;height:auto;max-width:34em;margin:0 auto}
+  /* the build card — amber while owed, green once built */
+  .card.build{border-color:var(--amber-dim)}
+  .card.build.done{border-color:var(--green);background:rgba(134,191,138,.06)}
+  ul.checks{margin:6px 0 0 1.15em;padding:0}
+  ul.checks li{margin-bottom:5px;line-height:1.5}
+  ul.checks li:last-child{margin-bottom:0}
+  .bbadge{font-family:var(--mono);font-size:.62em;letter-spacing:.1em;flex:0 0 auto;
+    border:1px solid var(--amber);color:var(--amber);border-radius:4px;padding:2px 5px}
+  .bbadge.on{border-color:var(--green);color:var(--green)}
+  /* a block that is mapped but not yet authored — visible road ahead, not tappable */
+  .blockcard.pending{opacity:.5}
+  .blockcard.pending .blockhead{cursor:default}
   input[type=file]{width:100%;margin-top:10px;color:var(--dim);font-size:.8em}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}

@@ -5,13 +5,157 @@
    target you implement with zero AI, tracked done/not-done, outside the ladder).
    Same authoring rules as curriculum.js: one concept per unit, no length tells,
    every machine claim executed before it was written. */
+/* Blocks mirror CUR.blocks so the Surface home can render the same hierarchy.
+   `planned` is the loop count from SURFACE.md — blocks are declared UP FRONT with
+   their planned size so the memory bar shows progress against the real roadmap
+   and the whole road is visible from day one. A block whose `units` is still
+   empty renders dimmed and does not expand. Never mark a block complete on
+   units.length; complete means done === planned. */
 const SUR = {
   name: "The whole surface",
   tagline: "Designing the screen, and building what you designed",
-  units: [
+  blocks: [
+  {
+    id: "s0", name: "The screen has units", planned: 8,
+    tagline: "pt vs px, hairlines, safe areas, contrast as arithmetic",
+    units: [
 
   {
-    "id": "s-01",
+    "id": "s0-01",
+    "kind": "lesson",
+    "title": "The point is not the pixel",
+
+    "design": {
+      "caption": "The same one point, on three screens. The point is what the design specifies; the pixel is what the hardware happens to have.",
+      "svg": "<svg viewBox='0 0 360 250' xmlns='http://www.w3.org/2000/svg' role='img' aria-label='One point rendered at 1x, 2x and 3x'><g font-family='ui-monospace,monospace' font-size='9'><text x='4' y='12' fill='var(--dim)'>ONE POINT, THREE SCREENS</text><text x='55' y='32' fill='var(--dim)' text-anchor='middle'>@1x</text><text x='175' y='32' fill='var(--dim)' text-anchor='middle'>@2x</text><text x='295' y='32' fill='var(--dim)' text-anchor='middle'>@3x</text><g fill='var(--panel2)' stroke='var(--line)'><rect x='25' y='38' width='10' height='28'/><rect x='35' y='38' width='10' height='28'/><rect x='45' y='38' width='10' height='28'/><rect x='55' y='38' width='10' height='28'/><rect x='65' y='38' width='10' height='28'/><rect x='75' y='38' width='10' height='28'/><rect x='145' y='38' width='10' height='28'/><rect x='155' y='38' width='10' height='28'/><rect x='165' y='38' width='10' height='28'/><rect x='175' y='38' width='10' height='28'/><rect x='185' y='38' width='10' height='28'/><rect x='195' y='38' width='10' height='28'/><rect x='265' y='38' width='10' height='28'/><rect x='275' y='38' width='10' height='28'/><rect x='285' y='38' width='10' height='28'/><rect x='295' y='38' width='10' height='28'/><rect x='305' y='38' width='10' height='28'/><rect x='315' y='38' width='10' height='28'/></g><rect x='25' y='38' width='10' height='28' fill='var(--amber)'/><rect x='145' y='38' width='20' height='28' fill='var(--amber)'/><rect x='265' y='38' width='30' height='28' fill='var(--amber)'/><text x='55' y='80' fill='var(--amber)' text-anchor='middle'>1 pt = 1 px</text><text x='175' y='80' fill='var(--amber)' text-anchor='middle'>1 pt = 2 px</text><text x='295' y='80' fill='var(--amber)' text-anchor='middle'>1 pt = 3 px</text><line x1='4' y1='96' x2='356' y2='96' stroke='var(--line)'/><text x='4' y='114' fill='var(--dim)'>and ONE PIXEL, back in points:</text><text x='55' y='134' fill='var(--text)' text-anchor='middle'>1.0 pt</text><text x='175' y='134' fill='var(--cyan)' text-anchor='middle'>0.5 pt</text><text x='295' y='134' fill='var(--red)' text-anchor='middle'>0.333... pt</text><text x='175' y='150' fill='var(--cyan)' text-anchor='middle'>only @2x divides cleanly</text><line x1='4' y1='166' x2='356' y2='166' stroke='var(--line)'/><text x='4' y='184' fill='var(--dim)'>44 pt, the touch minimum:</text><text x='55' y='204' fill='var(--text)' text-anchor='middle'>44 px</text><text x='175' y='204' fill='var(--text)' text-anchor='middle'>88 px</text><text x='295' y='204' fill='var(--text)' text-anchor='middle'>132 px</text><text x='4' y='232' fill='var(--amber)'>the point stays the same size. the pixel does not.</text><text x='4' y='245' fill='var(--dim)'>measured on this Mac, not guessed</text></g></svg>"
+    },
+
+    "spec": "Specify every measurement in points. A design that says \"2 pixels\" is under-specified — it means a different physical size on every device.\n\nHairlines are `1.0 / displayScale`, never a literal. `0.5` is right only at @2x; at @3x one pixel is a third of a point and a hardcoded `0.5` is one and a half pixels, which is a blur.\n\nRead the scale from the view's `traitCollection.displayScale`, not from the screen. A view can be rendered into a context whose scale differs from the display's.\n\nKeep frames on the pixel grid. Half-point values are safe at @2x and blurry at @3x, so \"it looks fine on my phone\" proves nothing about anyone else's.",
+
+    "concept": {
+      "definition": "A point is a unit of apparent size: 44 pt looks the same on every iPhone regardless of how dense the screen is. A pixel is one physical dot of hardware, and how many of them fit inside a point is the screen's scale factor. UIKit's whole geometry API speaks points, and the conversion to pixels happens once, at the very bottom, when the layer is rasterised.",
+
+      "code": "// executed on this Mac (Catalyst, @2x display):\nUIScreen.main.bounds        // (0, 0, 960, 600)   <- POINTS\nUIScreen.main.nativeBounds  // (0, 0, 1920, 1200) <- PIXELS\nUIScreen.main.scale         // 2.0\n\nbounds.width * scale == nativeBounds.width   // true\n\n// the scale a VIEW should trust:\nview.traitCollection.displayScale            // 2.0\n\n// one physical pixel, expressed in points:\n1.0 / 1.0  // 1.0     @1x\n1.0 / 2.0  // 0.5      @2x\n1.0 / 3.0  // 0.3333.. @3x  <- never a clean fraction",
+
+      "underlying": "There are two coordinate systems and UIKit only ever shows you one. Every frame, constraint, font size and inset you write is in points, and the screen keeps a parallel description of itself in pixels — `bounds` against `nativeBounds`. The bridge between them is a single number, `scale`, and the relationship is exact: `bounds.width * scale` equals `nativeBounds.width` to the last decimal.\n\nThe conversion happens late. Auto Layout solves in points, your frames are stored in points, and only when a layer is rasterised does the render server multiply by the scale to decide which physical dots to light. That lateness is what makes a point a stable design unit: you specify apparent size once and every density gets a correct rendering for free.\n\nIt also means a point can land between pixels. At @2x a half point is exactly one pixel, so `10.5` is perfectly sharp. At @3x the same `10.5` becomes 31.5 pixels — half a dot, which the renderer resolves by blending across two, and blending is what \"blurry\" means. The number that was pixel-perfect on your phone is a soft edge on the phone in someone else's pocket.",
+
+      "whyItMatters": "Every \"why is this slightly fuzzy\" bug and every wrong-thickness separator traces back to confusing the two units. And it decides what a design spec may even say: a spec written in pixels is under-specified, because the same pixel count is a different physical size on each device — which is exactly why the HIG states its touch minimum as 44 pt and never as a pixel count."
+    },
+
+    "exercise": {
+      "prompt": "A card is positioned at `x = 10.5` and it looks perfectly crisp on the reviewer's iPhone. QA files a bug saying the left edge is fuzzy on theirs.\n\nNeither device is faulty. Predict each line, then say who is right.",
+
+      "code": "func pixels(_ points: CGFloat, _ scale: CGFloat) -> CGFloat {\n    points * scale\n}\n\nprint(1, pixels(10.5, 2.0))\nprint(2, pixels(10.5, 3.0))\nprint(3, pixels(1.0, 3.0))\nprint(4, 1.0 / 3.0)\n\n// which of lines 1 and 2 lands on a whole pixel?",
+
+      "solution": "1 21.0    // @2x — a whole pixel. crisp.\n2 31.5    // @3x — half a pixel. blurry.\n3 3.0     // one point is three whole pixels at @3x\n4 0.3333333333333333\n\nBoth of them are right. The reviewer has an @2x phone, QA has an @3x phone,\nand 10.5 is pixel-aligned on one and not the other.",
+
+      "explanation": "The half point is the trap: it feels like a safe, round number precisely because it is the value that works at @2x, which is where the 0.5 hairline convention comes from.\n\nThe extra inch is line 4. Because one pixel at @3x is a third of a point and thirds are not representable in binary floating point, you cannot fix this by typing a nicer literal. The only reliable move is to round through the scale — `(value * scale).rounded() / scale` — and let the arithmetic land you on the grid."
+    },
+
+    "assess": {
+      "explainPrompt": "Interview-ready, 3-4 sentences: what is the difference between a point and a pixel, what connects them, and why does a design specification have to be written in points rather than pixels?",
+
+      "modelAnswer": "A point is a unit of apparent size that stays visually constant across devices, while a pixel is one physical dot whose size depends on the screen's density. The screen's scale factor connects them exactly: the bounds in points multiplied by the scale gives the native bounds in pixels. UIKit's entire geometry API is in points and converts only at rasterisation, which is what lets one layout render correctly at @1x, @2x and @3x. A spec written in pixels is therefore under-specified, because the same pixel count is a different physical size on every device.",
+
+      "sets": [
+        [
+          {
+            "q": "On an @3x screen, how many points is one physical pixel?",
+            "options": [
+              "1.0 — a pixel and a point are the same unit",
+              "0.5 — the half-pixel value every Retina screen uses",
+              "3.0 — one pixel spans three points at that scale",
+              "One third of a point, which never divides cleanly"
+            ],
+            "correct": 3,
+            "explain": "One pixel is `1.0 / scale` points, so a third at @3x. Thirds aren't representable in binary floating point, which is why you round through the scale instead of typing a literal."
+          },
+          {
+            "q": "`UIScreen.bounds` and `UIScreen.nativeBounds` report different numbers. Why?",
+            "options": [
+              "bounds is in points, nativeBounds in physical pixels",
+              "bounds excludes the safe area and nativeBounds includes it",
+              "bounds is the app's window, nativeBounds the whole display",
+              "nativeBounds is the pre-rotation portrait rectangle"
+            ],
+            "correct": 0,
+            "explain": "Measured here: 960x600 points against 1920x1200 pixels at scale 2.0. `bounds.width * scale` equals `nativeBounds.width` exactly."
+          },
+          {
+            "q": "A frame has `x = 10.5`. On which screens does that land on the pixel grid?",
+            "options": [
+              "Neither — a half point is always off the grid",
+              "@2x only: 21 px lands on it, 31.5 px does not",
+              "Both — every Retina scale factor is an even number",
+              "@3x only, because three is odd and absorbs the half"
+            ],
+            "correct": 1,
+            "explain": "Half points are pixel-perfect at @2x and half a dot off at @3x. It's the single most common reason a layout is crisp on one phone and fuzzy on another."
+          }
+        ],
+        [
+          {
+            "q": "A teammate hardcodes a separator's height as `1.0`. What actually ships?",
+            "options": [
+              "A line 2 px thick at @2x, 3 px at @3x — no hairline",
+              "A line that vanishes completely on denser @3x screens",
+              "Correct hairlines — 1.0 already means a single pixel",
+              "A blurred line, since 1.0 sits off the pixel grid"
+            ],
+            "correct": 0,
+            "explain": "`1.0` is one POINT, so it scales up with density. A hairline is `1.0 / displayScale`, which is the only expression that stays one physical dot."
+          },
+          {
+            "q": "Which scale should a view use when aligning its own frame?",
+            "options": [
+              "UIScreen.main.scale, the one authoritative source",
+              "UIView.contentScaleFactor, fixed once at init time",
+              "Its own traitCollection.displayScale value",
+              "The layer's rasterizationScale, which tracks it"
+            ],
+            "correct": 2,
+            "explain": "The trait collection describes the environment this view is actually rendering into, which can differ from the main screen — an offscreen context or an external display, for instance."
+          },
+          {
+            "q": "Why does the HIG state the touch minimum as 44 pt instead of a pixel count?",
+            "options": [
+              "Because pixels keep getting smaller on denser screens",
+              "A point is a fixed apparent size; a pixel is not",
+              "Because 44 divides evenly at both @2x and @3x",
+              "Points are what the touch digitiser actually reports"
+            ],
+            "correct": 1,
+            "explain": "A fingertip is the same size regardless of screen density, so the rule has to be expressed in the unit that tracks apparent size. In pixels it would be 88 on one phone and 132 on another."
+          }
+        ]
+      ]
+    },
+
+    "build": {
+      "brief": "Build a `PixelRuler` view that makes the two units visible at the same time.\n\nDraw a line one point thick directly above a line one pixel thick, and label each with its computed value. The point of the exercise is that you should be able to see the difference with your own eyes, and then explain it with a number you printed rather than one you read here.",
+      "done": [
+        "A 1 pt line and a 1 px line drawn together, visibly different thicknesses",
+        "The 1 px line derives its thickness from `traitCollection.displayScale` — no `0.5` literal anywhere",
+        "The view prints its own scale, plus `bounds` and `nativeBounds`, on screen",
+        "You have zoomed into a screenshot far enough to count the physical dots in each line"
+      ],
+      "stretch": "add a third line at exactly 0.5 pt, and predict BEFORE you look whether it renders identically to the 1 px line on your device"
+    },
+
+    "verify": "// executed on this Mac 2026-08-02 (Mac Catalyst, iOS 26 SDK, @2x display):\n// UIScreen.main.bounds        = (0, 0, 960, 600)      POINTS\n// UIScreen.main.nativeBounds  = (0, 0, 1920, 1200)    PIXELS\n// UIScreen.main.scale         = 2.0   nativeScale = 2.0\n// bounds.width * scale == nativeBounds.width  ->  true\n// view.traitCollection.displayScale = 2.0\n//\n// one pixel expressed in points, by forced displayScale:\n//   @1x -> 1.0        @2x -> 0.5        @3x -> 0.3333333333333333\n//\n// pixel-grid check, x * scale:\n//   x = 10.0  @3x -> 30.0   on the grid\n//   x = 10.5  @2x -> 21.0   on the grid   <- crisp\n//   x = 10.5  @3x -> 31.5   OFF the grid  <- blurry, same number\n//\n// (value * scale).rounded() / scale  ->  7.4 becomes 7.3333 at @3x\n//\n// 44 pt renders as 44 / 88 / 132 physical pixels at @1x / @2x / @3x\n// DOCUMENTED, not executed: real device scales (iPhone @3x, iPad @2x) —\n// this Mac reports @2x, so per-device values are cited, not measured here.",
+
+    "goDeeper": "Apple Human Interface Guidelines, \"Layout\" — the points-vs-pixels table and the per-device scale factors. WWDC 2019 \"Introducing iPad Apps for Mac\" for why Catalyst reports the scale it does. For the rendering end of it, the Core Animation section of the Quartz 2D Programming Guide on how a layer's `contentsScale` decides rasterisation."
+  }
+
+    ]
+  },
+  {
+    id: "s1", name: "The parts bin", planned: 9,
+    tagline: "what exists, and how controls actually behave",
+    units: [
+
+  {
+    "id": "s1-06",
     "kind": "lesson",
     "title": "A button is a state table, not a rectangle",
 
@@ -121,12 +265,36 @@ const SUR = {
       ]
     },
 
-    "transfer": "Open your your app and find one button that can be disabled. Check whether anyone ever set its `.disabled` title — most likely nobody did, and it is showing enabled wording while refusing to act. Then measure it: if it is an icon button or a compact text button, its height is almost certainly under 44 pt.",
+    "build": {
+      "brief": "Write a `StatefulButton` — a `UIButton` subclass or a factory function, your call — that fills every row of the state table on purpose instead of leaving the fallback to do it.\n\nStart by opening your your app and finding one button that can be disabled. Almost certainly nobody ever set its `.disabled` row, so it is currently showing enabled wording while refusing to act. That is the bug you are building the fix for.",
+      "done": [
+        "The disabled row says something different from the normal row, because you wrote both",
+        "A loading mode that disables the control and swaps the title — loading is not a `UIControl.State`, so it is yours to model",
+        "The touch target measures at least 44 x 44 — printed and checked, not assumed",
+        "`titleLabel.text` is assigned nowhere in your code"
+      ],
+      "stretch": "add a `.selected` row, then put the button in disabled and selected at once and predict `state.rawValue` before you print it"
+    },
 
     "verify": "// executed on this Mac 2026-08-01 (Mac Catalyst, real UIKit, iOS 26 SDK):\n// UIControl.State raw values:  normal 0 · highlighted 1 · disabled 2 · selected 4\n// [.disabled, .selected].rawValue == 6\n//\n// setTitle(\"Save\", for: .normal) only, then isEnabled = false:\n//   state.rawValue        = 2\n//   currentTitle          = \"Save\"      (fell back)\n//   title(for: .disabled) = \"Save\"      (getter resolves the fallback too)\n//   after setTitle(\"Saving...\", for: .disabled) -> currentTitle = \"Saving...\"\n//\n// titleLabel?.text = \"Hacked\" on a button whose .normal row is \"Original\":\n//   titleLabel?.text = \"Hacked\"   |   currentTitle = \"Original\"\n//   still diverged after layoutIfNeeded(), after hosting in a superview,\n//   and even after setTitle(\"Changed\", for: .normal)\n//   DOCUMENTED, not executed: in a live app with a render server, an update\n//   cycle can re-read the table and wipe the label write. Headless it never did.\n//\n// intrinsicContentSize, the 44pt question:\n//   UIButton(type:.system) \"OK\"        = (30.0, 31.0)   <- fails 44 on BOTH axes\n//   UIButton(type:.system) \"Continue\"  = (64.0, 31.0)   <- fails on height\n//   .filled() configuration \"OK\"       = (48.5, 40.5)   <- still fails height\n//     (contentInsets top 7 / bottom 7 + ~26.5pt of text = 40.5)\n//   .filled() with buttonSize = .large = (64.5, 56.5)   <- passes\n//   heightAnchor >= 44 + widthAnchor >= 44, solved -> frame (0, 0, 44, 44)",
 
     "goDeeper": "Apple Human Interface Guidelines, \"Buttons\" and \"Accessibility > Touch targets\" for the 44 pt rule. WWDC 2021 \"Meet the UIKit button system\" for `UIButton.Configuration` and why the state table grew a configuration handler. WCAG 2.2, success criterion 1.4.11 Non-text Contrast, for the 3:1 floor a disabled control still has to clear."
   }
 
+    ]
+  },
+
+  /* Blocks below are MAPPED IN SURFACE.md but not yet written. They are declared
+     so the roadmap is visible in the UI; they render dimmed until they have units. */
+  { id: "s2",  name: "Space does the grouping",     planned: 9, tagline: "the grid, proximity, the box tree, stacks, hugging, RTL", units: [] },
+  { id: "s3",  name: "Interface Builder writes XML", planned: 9, tagline: "what you click, what it writes, what loads", units: [] },
+  { id: "s4",  name: "Type is a system",            planned: 8, tagline: "the scale, leading, alignment, truncation, figures", units: [] },
+  { id: "s5",  name: "Colour, material, elevation", planned: 8, tagline: "semantic colour, dark mode, blur, what a shadow costs", units: [] },
+  { id: "s6",  name: "Images, icons, and symbols",  planned: 8, tagline: "SF Symbols, content modes, downsampling, placeholders", units: [] },
+  { id: "s7",  name: "Lists are the app",           planned: 9, tagline: "diffable, compositional, reuse, and 60fps", units: [] },
+  { id: "s8",  name: "Motion and feedback",         planned: 8, tagline: "easing, springs, interruptibility, perceived latency", units: [] },
+  { id: "s9",  name: "A screen is its states",      planned: 9, tagline: "empty, loading, partial, error, ideal", units: [] },
+  { id: "s10", name: "Adaptive and accessible",     planned: 8, tagline: "size classes, iPad, VoiceOver, every switch on", units: [] },
+  { id: "s11", name: "A system, not a screen",      planned: 7, tagline: "tokens, a library, handoff, critique, the capstone", units: [] }
   ]
 };
