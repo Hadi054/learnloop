@@ -179,6 +179,11 @@ foundation material would sort after "Shipping the Machine". Extending b0 keeps
 ids sequential and lets `activeBlock()` pull the learner back to B0 naturally.
 Accepted cost: Block 0 loses its ✓ until the arc is finished.
 
+  SUPERSEDED same day by "Ids and order" below: the card marker is derived from
+  POSITION now, so a mid-list block reads correctly and this constraint is gone.
+  The arc stays in b0 regardless — moving it now would be churn. Kept here
+  because the reasoning is what motivated the fix.
+
 RUNNING EXAMPLE: a 2D platformer game, used across all eight loops (level file
 on disk, sprite atlas that decodes huge, save state that dies with the process).
 NOT an app-shaped example — the learner asked for a game explicitly.
@@ -251,7 +256,7 @@ Each loop = one atomic concept, ~20 minutes, three phases:
 ```
 CUR = { blocks: [ { id, name, tagline, loops: [Loop] } ] }
 Loop = {
-  id: "b0-01",                     // stable, never renumber existing ids
+  id: "b0-01",                     // OPAQUE KEY, not a position. See "Ids and order"
   title,
   concept:  { definition, code, underlying, whyItMatters },
   exercise: { prompt, code, solution, explanation },
@@ -271,6 +276,34 @@ Loop = {
 Q = { q, options: [4 strings], correct: 0-3, explain }
 ```
 
+### Ids and order (revised 2026-08-02 — this app is a personal notebook)
+
+The learner adds entries as they learn, so a new loop or a new block must be able
+to land IN THE MIDDLE, not only at the end. Two rules, and they don't conflict:
+
+- **Order is ARRAY POSITION.** Everything that reads order reads the array —
+  `loopPos()` (`b.loops.indexOf`), `activeBlock()`, the `hexOf(i)` eyebrow marker,
+  the memory bar, the counts. Splice a loop in wherever it belongs and the whole
+  app renumbers itself. Verified 2026-08-02 by splicing a loop into position 3 of
+  b0 and a whole block into position 2 of `CUR.blocks` and rendering the result:
+  correct positions, existing `S.log` entries untouched.
+- **The id is an OPAQUE STORAGE KEY.** It keys `S.log`, `learnloop.notes.v1`,
+  `learnloop.highlights.v1` and the interview-answers export. Renaming one
+  silently orphans real progress, so ids are permanent and never reused. The
+  number in an id is a serial, NOT a position.
+
+So, to insert a loop: pick the position, then take **the next unused number in
+that block** (b0's next is `b0-25` no matter where in b0 it sits) and splice it
+in. A `b0-25` sitting third in the list is correct and expected.
+
+To insert a block: splice it into `CUR.blocks` anywhere and give it any unused
+id. Block ids are stored NOWHERE — the card marker and the eyebrow both derive
+from position now (`blockMark()`, `app.js`), so a block inserted between b1 and
+b2 renders as "B2" and pushes the rest down. This retires the reasoning in "The
+memory arc" below that forced the arc into b0 instead of its own block; that
+constraint no longer exists (the arc stays in b0 anyway — moving it would be
+churn for nothing).
+
 Content authoring rules (quality bar — hold every generated loop to these):
 - One concept per loop, never two. If a definition needs "and", split it.
 - Wrong MCQ options must be plausible misconceptions, not filler.
@@ -284,6 +317,23 @@ Content authoring rules (quality bar — hold every generated loop to these):
   paragraphs. No other markup.
 - Later loops may reference earlier ones by number; earlier never reference later
   except as explicit "preview" questions.
+- **PLAIN ENGLISH (added 2026-08-02).** The learner is still growing their English
+  and reads this on a phone. Measured across all 138 loops before this rule:
+  28.2 words/sentence in `definition`, Flesch 39 (college level), 31% of the 1,907
+  sentences over 30 words, 238 over 40, the worst a single 98-word sentence
+  (b9-04). The hard part was never the vocabulary — `mmap` and `retain cycle` have
+  to stay — it was **sentence length and the semicolon-chain habit**. So:
+  max 25 words/sentence averaged over a field, no single sentence over 35, one
+  idea per sentence. Keep `definition` interview-polished: shorten the sentences,
+  don't drop the register. `underlying` is where the 90-word chains live and they
+  have no excuse. **Run `python3 gate.py <id>` BEFORE writing the file** — it
+  checks readability, MCQ length tells and correct-index bias, and it fails both
+  of the newest loops (b0-17, s1-06) as written.
+- EXISTING content is rewritten ON THE LEARNER'S REQUEST ONLY (their call
+  2026-08-02: "i will read one by one, tell you to change"). Do NOT bulk-rewrite
+  loops for readability; `gate.py` failures on old content are a worklist for
+  them, not a mandate.
+
 
 ## The Surface track (added 2026-08-02)
 
@@ -353,7 +403,7 @@ UIPickerView is not either, while UIDatePicker is.
 ```
 SUR = { name, tagline, units: [Unit] }
 Unit = {
-  id: "s1-06",                      // sN-NN, block-scoped, never renumber
+  id: "s1-06",                      // opaque key, same rules as CUR ("Ids and order")
   kind: "lesson" | "capstone",
   title,
   design:  { caption, svg },        // INLINE SVG — offline, scales, uses the
@@ -403,7 +453,10 @@ ship. WidgetKit is SwiftUI-only and this is a UIKit track.
   with the block's mini memory bar; one block is expanded at a time (`openBi`,
   default = active block, -1 = all collapsed; `toggleBlock(i)`). A passed loop row
   gets `✓` + `.looprow.done` (green tint); a block with every loop passed gets `✓`
-  in place of its id + `.blockcard.done` (green border and tint). Tapping any loop
+  in place of its marker + `.blockcard.done` (green border and tint). That marker
+  is `blockMark()` = "B" + array position (Surface: `surBlockMark()` = "S" + …),
+  NOT `b.id` — changed 2026-08-02 so a block can be inserted mid-list and still
+  read right; see "Ids and order". Tapping any loop
   opens it in concept "browse" mode — read-only if passed, "Start this loop" if
   not — and returning keeps that block expanded. The old Browse screen is gone
   (home absorbed it); nav is Interview / History / Data plus the review button.
@@ -507,9 +560,18 @@ ship. WidgetKit is SwiftUI-only and this is a UIKit track.
   (verified working: UIView geometry, VC lazy loading, Auto Layout solving,
   responder chain, hit-testing, cell dequeue). Claims that need a live app
   (render server, app lifecycle) are marked documented in their verify fields.
-- When adding loops: follow the schema and authoring rules above, keep ids sequential
-  within the block (b1-01…), append into the block's `loops` array. The home list
-  picks up new blocks/loops automatically — no app.js change needed.
+- When adding loops: follow the schema and authoring rules above, then SPLICE the
+  loop into the block's `loops` array at the position where it belongs
+  conceptually — not necessarily the end — with the next unused number in that
+  block as its id (see "Ids and order"). The home list picks up new blocks/loops
+  automatically — no app.js change needed.
+- THE LEARNER BRINGS THE TOPIC (their call 2026-08-02: the app is their personal
+  notebook of whatever they are learning, and they author through Claude Code
+  rather than typing entries on the phone — no in-app capture UI, deliberately).
+  When they say "I learned X", the job is: decide which block and which position
+  X belongs in, say so and why, author one full loop to the quality bar, run
+  `python3 gate.py <new-id>`, splice, rebuild dist. Ask about placement only when
+  two blocks are genuinely defensible.
   Node.js is NOT installed on this Mac — build dist with a faithful replica of
   build.js's replacements, and syntax-check JS via `osascript -l JavaScript`.
   The replica must inline FOUR files now: style.css, curriculum.js, surface.js,

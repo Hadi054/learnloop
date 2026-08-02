@@ -65,6 +65,11 @@ function weakestPool(){
 }
 function blockOf(loop){ return CUR.blocks.find(b=>b.loops.indexOf(loop)>=0) || CUR.blocks[0]; }
 function loopPos(loop){ const b = blockOf(loop); return {b, i:b.loops.indexOf(loop), n:b.loops.length}; }
+/* The marker shown on a block card is its POSITION, not its id. Ids are opaque
+   storage keys (S.log is keyed by loop id, so they can never be renumbered); the
+   learner reads order off the list. Deriving the marker from position is what
+   lets a block be inserted anywhere in CUR.blocks later and still read right. */
+function blockMark(b){ return "B" + CUR.blocks.indexOf(b); }
 
 /* ---------- rendering helpers ---------- */
 const app = document.getElementById("app");
@@ -424,7 +429,7 @@ function machineHome(){
     }).join("");
     return `<div class="blockcard${complete?" done":""}">
       <button class="blockhead" onclick="toggleBlock(${bi})" aria-expanded="${open}">
-        <span class="bmark">${complete?"✓":esc(b.id.toUpperCase())}</span>
+        <span class="bmark">${complete?"✓":"B"+bi}</span>
         <span class="bt"><span class="bn">${esc(b.name)}</span><span class="bs">${esc(b.tagline)}</span></span>
         <span class="bcount">${done}/${b.loops.length}</span>
         <span class="chev">${open?"▴":"▾"}</span>
@@ -497,7 +502,7 @@ function concept(loop, mode){
   const footer = '<button class="primary" onclick="problem()">Try the problem</button>'
     + '<button class="ghost" onclick="home()">Back to the list</button>';
   screen(`
-    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} · concept ${p.i+1}/${p.n}${note}</span></div>
+    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${blockMark(p.b)} · concept ${p.i+1}/${p.n}${note}</span></div>
     <h1>${esc(loop.title)}</h1>
     ${conceptCardsHtml(loop)}
     ${passed ? extrasHtml(loop) : ""}
@@ -510,7 +515,7 @@ function peekConcept(loop, returnFn){
   peekReturn = returnFn;
   const p = loopPos(loop);
   screen(`
-    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} · concept ${p.i+1}/${p.n} · reference</span></div>
+    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${blockMark(p.b)} · concept ${p.i+1}/${p.n} · reference</span></div>
     <h1>${esc(loop.title)}</h1>
     ${conceptCardsHtml(loop)}
     <button class="primary" onclick="resumePeek()">Back to question</button>
@@ -770,6 +775,7 @@ function surUnits(){ return SUR.blocks.reduce((a,b)=>a.concat(b.units), []); }
 function surDone(u){ return !!SU.lessons[u.id]; }
 function surBlockOf(u){ return SUR.blocks.find(b=>b.units.indexOf(u) >= 0) || SUR.blocks[0]; }
 function surPos(u){ const b = surBlockOf(u); return {b, i: b.units.indexOf(u), n: b.planned}; }
+function surBlockMark(b){ return "S" + SUR.blocks.indexOf(b); }   /* position, not id — see blockMark() */
 /* first block with unwritten or unpassed units; drives which one opens by default */
 function surActiveBlock(){
   return SUR.blocks.find(b => b.units.length < b.planned || b.units.some(u=>!surDone(u)))
@@ -809,7 +815,7 @@ function surfaceHome(){
     }).join("");
     return `<div class="blockcard${complete ? " done" : ""}${empty ? " pending" : ""}">
       <button class="blockhead" ${empty ? 'disabled aria-disabled="true"' : `onclick="toggleSBlock(${bi})" aria-expanded="${open}"`}>
-        <span class="bmark">${complete ? "✓" : esc(b.id.toUpperCase())}</span>
+        <span class="bmark">${complete ? "✓" : "S"+bi}</span>
         <span class="bt"><span class="bn">${esc(b.name)}</span><span class="bs">${esc(b.tagline)}</span></span>
         <span class="bcount">${empty ? b.planned : done + "/" + b.planned}</span>
         <span class="chev">${empty ? "·" : (open ? "▴" : "▾")}</span>
@@ -894,7 +900,7 @@ function unitScreen(u){
   const p = surPos(u), passed = surDone(u);
   surRedraw = ()=>unitScreen(u);
   screen(`
-    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${esc(p.b.id)} &middot; lesson ${p.i+1}/${p.n}${passed ? " &middot; re-run &middot; set " + (usess && usess.set === 1 ? "B" : "A") : ""}</span></div>
+    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${surBlockMark(p.b)} &middot; lesson ${p.i+1}/${p.n}${passed ? " &middot; re-run &middot; set " + (usess && usess.set === 1 ? "B" : "A") : ""}</span></div>
     <h1>${esc(u.title)}</h1>
     ${designHtml(u)}
     ${specHtml(u)}
