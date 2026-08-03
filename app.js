@@ -82,6 +82,46 @@ function codeblock(c){
   return "<pre>"+esc(c).replace(kw,'<span class="k">$1</span>')+"</pre>";
 }
 function hexOf(n){ return "0x"+n.toString(16).toUpperCase().padStart(2,"0"); }
+
+/* ---------- theme ----------
+   Its own localStorage key, outside S, exactly like the TTS rate: an appearance
+   preference is not progress, so it needs no migration and cannot corrupt the
+   log. "auto" is resolved against prefers-color-scheme at apply time and the
+   RESOLVED value is stamped on <html>, which is why style.css needs only one
+   light block instead of duplicating it inside a media query. */
+const THEME_KEY = "learnloop.theme.v1";
+function themePref(){
+  try{ const t = localStorage.getItem(THEME_KEY);
+       if(t === "light" || t === "dark" || t === "auto") return t; }catch(e){}
+  return "auto";
+}
+function applyTheme(){
+  const pref = themePref();
+  let resolved = pref;
+  if(pref === "auto"){
+    let light = false;
+    try{ light = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches); }catch(e){}
+    resolved = light ? "light" : "dark";
+  }
+  document.documentElement.dataset.theme = resolved;
+}
+function setTheme(t){
+  try{ localStorage.setItem(THEME_KEY, t); }catch(e){}
+  applyTheme(); home();
+}
+/* follow the system while the preference is "auto" */
+try{
+  const mq = window.matchMedia("(prefers-color-scheme: light)");
+  const onChange = ()=>{ if(themePref() === "auto") applyTheme(); };
+  if(mq.addEventListener) mq.addEventListener("change", onChange);
+  else if(mq.addListener) mq.addListener(onChange);
+}catch(e){}
+function themeRow(){
+  const p = themePref();
+  const b = (id,label)=>`<button class="thm${p===id?" sel":""}" onclick="setTheme('${id}')">${label}</button>`;
+  return `<div class="cellcap mt24"><span>appearance</span><span>${p}</span></div>
+    <div class="themerow">${b("auto","Auto")}${b("light","Light")}${b("dark","Dark")}</div>`;
+}
 function screen(html){ stopSpeak(); app.innerHTML = html; applyHighlights(app); window.scrollTo(0,0); }
 
 /* ---------- read aloud (Web Speech API) ----------
@@ -402,6 +442,7 @@ function home(){
     <h1>${h.title}</h1>
     ${tabsHtml()}
     ${h.body}
+    ${themeRow()}
   `);
 }
 function machineHome(){
@@ -1047,4 +1088,5 @@ function surFinishScreen(u, score, passed){
   `);
 }
 
+applyTheme();
 home();

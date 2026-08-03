@@ -7,11 +7,37 @@
 <title>LearnLoop — iOS from the metal up</title>
 <style>
   :root{
+    /* DARK — the original memory-diagram palette, and still the default. */
     --bg:#14171D; --panel:#1B2027; --panel2:#222833; --line:#2E3742;
     --text:#D9DEE5; --dim:#8A94A3; --amber:#E9B44C; --amber-dim:#8a6c2f;
     --cyan:#7FB4C4; --green:#86BF8A; --red:#D07575;
+    --on-amber:#1A1608; --input-bg:#10131A;
+    --tint-green:rgba(134,191,138,.07); --tint-green-2:rgba(134,191,138,.10);
+    --tint-red:rgba(208,117,117,.10);
+    --hl:rgba(127,180,196,.28); --hl-2:rgba(127,180,196,.45);
+    --shadow:rgba(0,0,0,.45);
+    /* Code listings and design panels stay dark in BOTH themes — see the
+       pre/.design rule below for why. */
+    --code-bg:#10131A; --code-fg:#C7D0DB;
     --mono:ui-monospace,'SF Mono','Cascadia Mono','Roboto Mono',Menlo,monospace;
     --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+    /* Prose is a SYSTEM serif: no font file, no licence, no network, nothing to
+       inline — and on Android this resolves to Noto Serif, which is a genuinely
+       comfortable long-reading face. UI chrome stays sans; labels stay mono. */
+    --serif:ui-serif,Georgia,'Noto Serif','Times New Roman',serif;
+  }
+  /* LIGHT — warm off-white, for reading rather than for diagrams. app.js
+     resolves "auto" against prefers-color-scheme and stamps data-theme on
+     <html>, so this block is the only place the light values live. */
+  :root[data-theme="light"]{
+    --bg:#FAF9F5; --panel:#FFFFFF; --panel2:#F0EEE6; --line:#E2DED2;
+    --text:#2F2E2A; --dim:#6B675E; --amber:#A9741B; --amber-dim:#CBB183;
+    --cyan:#2C6C7E; --green:#4A7F4F; --red:#A94F4F;
+    --on-amber:#FFFFFF; --input-bg:#FFFFFF;
+    --tint-green:rgba(74,127,79,.08); --tint-green-2:rgba(74,127,79,.12);
+    --tint-red:rgba(169,79,79,.09);
+    --hl:rgba(44,108,126,.18); --hl-2:rgba(44,108,126,.32);
+    --shadow:rgba(60,50,30,.18);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
@@ -21,7 +47,7 @@
      call 2026-08-02) — proportional, not capped in em — with the safe-area insets
      subtracted so a notch in landscape never clips it. To make the phone type
      bigger, raise the 17px floor; the wide-screen ceiling is the 20px. */
-  body{background:var(--bg);color:var(--text);font-family:var(--sans);
+  body{background:var(--bg);color:var(--text);font-family:var(--serif);
     font-size:clamp(17px, 0.75vw + 14.2px, 20px);line-height:1.62;min-height:100vh;
     padding:max(14px,env(safe-area-inset-top)) 0 calc(28px + env(safe-area-inset-bottom));}
   #app{width:min(90vw, calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right)));
@@ -41,25 +67,33 @@
   p{margin-bottom:10px} p:last-child{margin-bottom:0}
   code{font-family:var(--mono);font-size:.88em;background:var(--panel2);
     border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--cyan);white-space:nowrap}
-  pre{font-family:var(--mono);font-size:.79em;line-height:1.55;background:#10131A;
+  /* Code listings and design panels keep the dark palette in BOTH themes. The
+     amber/cyan/green inside them is semantic (b0's memory diagrams, the Surface
+     SVGs), not decoration, and a listing reads better dark on either background.
+     Re-declaring the palette inside the block means nested spans and inline SVG
+     inherit the dark values without knowing the theme changed. */
+  pre,.design{--line:#2E3742;--dim:#8A94A3;--text:var(--code-fg);
+    --amber:#E9B44C;--cyan:#7FB4C4;--green:#86BF8A}
+  pre{font-family:var(--mono);font-size:.79em;line-height:1.55;background:var(--code-bg);
     border:1px solid var(--line);border-radius:8px;padding:13px 14px;overflow-x:auto;
-    color:#C7D0DB;margin:10px 0}
+    color:var(--code-fg);margin:10px 0}
   pre .k{color:var(--amber)}
   button{font-family:var(--sans);font-size:.97em;cursor:pointer;border-radius:9px;
     border:1px solid var(--line);background:var(--panel2);color:var(--text);
     padding:13px 16px;width:100%;margin-top:12px;text-align:center;transition:filter .12s}
   button:active{filter:brightness(1.25)}
   button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
-  button.primary{background:var(--amber);border-color:var(--amber);color:#1A1608;font-weight:600}
+  button.primary{background:var(--amber);border-color:var(--amber);color:var(--on-amber);font-weight:600}
   button.ghost{background:transparent;color:var(--dim)}
-  button.opt{text-align:left;font-size:.91em;line-height:1.45;margin-top:9px;white-space:pre-wrap}
+  button.opt{text-align:left;font-size:.91em;line-height:1.45;margin-top:9px;white-space:pre-wrap;
+    font-family:var(--serif)}
   button.opt .mono{font-family:var(--mono);font-size:.9em}
-  button.opt.correct{border-color:var(--green);background:rgba(134,191,138,.10);color:var(--text)}
-  button.opt.wrong{border-color:var(--red);background:rgba(208,117,117,.10)}
+  button.opt.correct{border-color:var(--green);background:var(--tint-green-2);color:var(--text)}
+  button.opt.wrong{border-color:var(--red);background:var(--tint-red)}
   button.opt.faded{opacity:.45}
   button:disabled{cursor:default}
   button.rate{width:auto;display:inline-block;padding:10px 0;flex:1;font-family:var(--mono)}
-  button.rate.sel{background:var(--amber);border-color:var(--amber);color:#1A1608;font-weight:700}
+  button.rate.sel{background:var(--amber);border-color:var(--amber);color:var(--on-amber);font-weight:700}
   .raterow{display:flex;gap:7px}
   /* memory-cell progress bar — the signature */
   .cells{display:flex;gap:4px;margin:10px 0 4px}
@@ -90,7 +124,7 @@
   /* curriculum list (home): one container per block, green + ticked when done */
   .blockcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;
     padding:12px 14px 13px;margin-top:12px}
-  .blockcard.done{border-color:var(--green);background:rgba(134,191,138,.07)}
+  .blockcard.done{border-color:var(--green);background:var(--tint-green)}
   button.blockhead{display:flex;align-items:center;gap:10px;width:100%;margin:0;
     padding:0;background:none;border:none;border-radius:0;text-align:left}
   .bmark{font-family:var(--mono);font-size:.72em;color:var(--dim);letter-spacing:.06em;
@@ -110,7 +144,7 @@
     padding:10px 4px;background:none;border:none;border-radius:0;
     border-bottom:1px solid var(--line);text-align:left;font-size:.91em}
   button.looprow:last-child{border-bottom:none}
-  button.looprow.done{background:rgba(134,191,138,.06)}
+  button.looprow.done{background:var(--tint-green)}
   button.looprow .tick{font-family:var(--mono);font-size:.8em;color:var(--dim);
     min-width:2em;flex:0 0 auto}
   button.looprow.done .tick{color:var(--green);font-size:1em}
@@ -124,9 +158,9 @@
   .badge.w{color:var(--amber);border-color:var(--amber)}
   .linkbtn{background:none;border:none;color:var(--cyan);width:auto;padding:4px 0;
     font-size:.84em;text-decoration:underline;margin-top:6px}
-  textarea{width:100%;min-height:7em;background:#10131A;color:var(--text);
+  textarea{width:100%;min-height:7em;background:var(--input-bg);color:var(--text);
     border:1px solid var(--line);border-radius:8px;padding:12px;font-size:.96em;
-    font-family:var(--sans);line-height:1.5;margin-top:10px;resize:vertical}
+    font-family:var(--serif);line-height:1.5;margin-top:10px;resize:vertical}
   textarea:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
   .score-big{font-family:var(--mono);font-size:2.6em;font-weight:700;text-align:center;margin:8px 0 0}
   .score-big.pass{color:var(--green)} .score-big.fail{color:var(--red)}
@@ -143,24 +177,24 @@
   button.spk.on{color:var(--amber);border-color:var(--amber)}
   .sub svg{width:.9em;height:.9em;fill:currentColor;vertical-align:-1px}
   /* text highlighting — cyan, deliberately not amber (amber already means "weak/attention") */
-  mark.hl{background:rgba(127,180,196,.28);color:inherit;border-bottom:2px solid var(--cyan);
+  mark.hl{background:var(--hl);color:inherit;border-bottom:2px solid var(--cyan);
     padding:0 1px;border-radius:2px;cursor:pointer}
-  mark.hl.has-comment{background:rgba(127,180,196,.45);border-bottom-style:double;border-bottom-width:3px}
+  mark.hl.has-comment{background:var(--hl-2);border-bottom-style:double;border-bottom-width:3px}
   .hl-float-btn{position:fixed;left:50%;bottom:max(20px,env(safe-area-inset-bottom));
     transform:translateX(-50%);z-index:50;width:auto;margin:0;padding:12px 24px;
-    background:var(--amber);border:1px solid var(--amber);color:#1A1608;font-weight:600;
-    border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.45);
+    background:var(--amber);border:1px solid var(--amber);color:var(--on-amber);font-weight:600;
+    border-radius:999px;box-shadow:0 4px 16px var(--shadow);
     font-family:var(--sans);font-size:.9em;cursor:pointer}
   .hl-float-btn:active{filter:brightness(1.15)}
   /* surface track — the design panel. Inline SVG, so it inherits the palette above
      and needs no network; width:100% keeps it inside the column on a phone, and the
      34em cap stops a diagram ballooning when the column is wide. */
-  .design{background:#10131A;border:1px solid var(--line);border-radius:8px;
+  .design{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;
     padding:14px 12px;margin-top:10px;overflow-x:auto}
   .design svg{display:block;width:100%;height:auto;max-width:34em;margin:0 auto}
   /* the build card — amber while owed, green once built */
   .card.build{border-color:var(--amber-dim)}
-  .card.build.done{border-color:var(--green);background:rgba(134,191,138,.06)}
+  .card.build.done{border-color:var(--green);background:var(--tint-green)}
   ul.checks{margin:6px 0 0 1.15em;padding:0}
   ul.checks li{margin-bottom:5px;line-height:1.5}
   ul.checks li:last-child{margin-bottom:0}
@@ -171,6 +205,13 @@
   .blockcard.pending{opacity:.5}
   .blockcard.pending .blockhead{cursor:default}
   input[type=file]{width:100%;margin-top:10px;color:var(--dim);font-size:.8em}
+  /* theme switch — the app has no settings screen at all right now, so this
+     sits at the foot of the home list. Same shape as the 0–5 rating row. */
+  .themerow{display:flex;gap:7px;margin-top:10px}
+  button.thm{width:auto;flex:1;margin:0;padding:9px 0;font-family:var(--mono);
+    font-size:.74em;letter-spacing:.1em;text-transform:uppercase}
+  button.thm.sel{background:var(--amber);border-color:var(--amber);
+    color:var(--on-amber);font-weight:700}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 
 </style>
@@ -14387,6 +14428,46 @@ function codeblock(c){
   return "<pre>"+esc(c).replace(kw,'<span class="k">$1</span>')+"</pre>";
 }
 function hexOf(n){ return "0x"+n.toString(16).toUpperCase().padStart(2,"0"); }
+
+/* ---------- theme ----------
+   Its own localStorage key, outside S, exactly like the TTS rate: an appearance
+   preference is not progress, so it needs no migration and cannot corrupt the
+   log. "auto" is resolved against prefers-color-scheme at apply time and the
+   RESOLVED value is stamped on <html>, which is why style.css needs only one
+   light block instead of duplicating it inside a media query. */
+const THEME_KEY = "learnloop.theme.v1";
+function themePref(){
+  try{ const t = localStorage.getItem(THEME_KEY);
+       if(t === "light" || t === "dark" || t === "auto") return t; }catch(e){}
+  return "auto";
+}
+function applyTheme(){
+  const pref = themePref();
+  let resolved = pref;
+  if(pref === "auto"){
+    let light = false;
+    try{ light = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches); }catch(e){}
+    resolved = light ? "light" : "dark";
+  }
+  document.documentElement.dataset.theme = resolved;
+}
+function setTheme(t){
+  try{ localStorage.setItem(THEME_KEY, t); }catch(e){}
+  applyTheme(); home();
+}
+/* follow the system while the preference is "auto" */
+try{
+  const mq = window.matchMedia("(prefers-color-scheme: light)");
+  const onChange = ()=>{ if(themePref() === "auto") applyTheme(); };
+  if(mq.addEventListener) mq.addEventListener("change", onChange);
+  else if(mq.addListener) mq.addListener(onChange);
+}catch(e){}
+function themeRow(){
+  const p = themePref();
+  const b = (id,label)=>`<button class="thm${p===id?" sel":""}" onclick="setTheme('${id}')">${label}</button>`;
+  return `<div class="cellcap mt24"><span>appearance</span><span>${p}</span></div>
+    <div class="themerow">${b("auto","Auto")}${b("light","Light")}${b("dark","Dark")}</div>`;
+}
 function screen(html){ stopSpeak(); app.innerHTML = html; applyHighlights(app); window.scrollTo(0,0); }
 
 /* ---------- read aloud (Web Speech API) ----------
@@ -14707,6 +14788,7 @@ function home(){
     <h1>${h.title}</h1>
     ${tabsHtml()}
     ${h.body}
+    ${themeRow()}
   `);
 }
 function machineHome(){
@@ -15352,6 +15434,7 @@ function surFinishScreen(u, score, passed){
   `);
 }
 
+applyTheme();
 home();
 
 </script>

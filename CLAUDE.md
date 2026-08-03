@@ -19,9 +19,12 @@ may be freely developed with Claude Code.
 ## Files
 
 - `index.html` — shell only
-- `style.css` — all styling (dark charcoal + amber "memory diagram" aesthetic;
-  monospace for labels/code/numbers, system sans for body; signature element is the
-  15-cell memory-bar progress indicator)
+- `style.css` — all styling. TWO themes (see "Theme" under App mechanics): dark
+  charcoal + amber "memory diagram", and a warm off-white light theme for
+  reading. Monospace for labels/code/numbers, system SERIF for body prose,
+  system sans for UI chrome; signature element is the 15-cell memory-bar
+  progress indicator. Code blocks and Surface design panels stay dark in BOTH
+  themes — the amber/cyan/green in them is semantic, not decoration.
 - `app.js` — all logic; screens are plain functions rendering into `#app`
 - `curriculum.js` — `const CUR = {...}` content data (generated; see schema below)
 - `surface.js` — `const SUR = {...}` the SURFACE track's content (UI/UX + UIKit).
@@ -538,6 +541,19 @@ ship. WidgetKit is SwiftUI-only and this is a UIKit track.
   but never increments S.loops/streak.
 - Streak: +1 if last completed day was yesterday, reset to 1 if older, unchanged if
   today. Reviews count as loops.
+- Theme (2026-08-04, learner's request — they read for hours and wanted a light,
+  serif reading surface): `learnloop.theme.v1` holds "auto" | "light" | "dark",
+  its OWN key outside S like the TTS rate, so no migration and no way to corrupt
+  the log. `applyTheme()` resolves "auto" against `prefers-color-scheme` and
+  stamps the RESOLVED value on `<html>` as `data-theme`; style.css therefore
+  needs one `:root[data-theme="light"]` block rather than duplicating it in a
+  media query. It runs before the first `home()` so there is no flash, and a
+  matchMedia listener re-resolves while the pref is "auto". The switch renders
+  at the foot of the home list (`themeRow()`) because the app currently has NO
+  settings screen — see the note under TODO. Body prose is a system serif
+  (`ui-serif, Georgia, 'Noto Serif', serif`) — deliberately NOT a webfont: no
+  file to license, nothing to inline, and it still works offline as a local
+  file. On Android it resolves to Noto Serif.
 - Type scale (2026-08-01): ONE knob drives everything — `body{font-size:clamp(17px,
   0.75vw + 14.2px, 20px)}`; every other font-size in style.css is in `em`, so the
   whole app scales with it (390px viewport → 17.1px; 1440px → 20px). To enlarge the
