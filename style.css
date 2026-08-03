@@ -5,7 +5,7 @@
     --cyan:#7FB4C4; --green:#86BF8A; --red:#D07575;
     --on-amber:#1A1608; --input-bg:#10131A;
     --tint-green:rgba(134,191,138,.07); --tint-green-2:rgba(134,191,138,.10);
-    --tint-red:rgba(208,117,117,.10);
+    --tint-red:rgba(208,117,117,.10); --tint-amber:rgba(233,180,76,.13);
     --hl:rgba(127,180,196,.28); --hl-2:rgba(127,180,196,.45);
     --shadow:rgba(0,0,0,.45);
     /* Code listings and design panels stay dark in BOTH themes — see the
@@ -27,7 +27,7 @@
     --cyan:#2C6C7E; --green:#4A7F4F; --red:#A94F4F;
     --on-amber:#FFFFFF; --input-bg:#FFFFFF;
     --tint-green:rgba(74,127,79,.08); --tint-green-2:rgba(74,127,79,.12);
-    --tint-red:rgba(169,79,79,.09);
+    --tint-red:rgba(169,79,79,.09); --tint-amber:rgba(169,116,27,.10);
     --hl:rgba(44,108,126,.18); --hl-2:rgba(44,108,126,.32);
     --shadow:rgba(60,50,30,.18);
   }
@@ -82,6 +82,7 @@
   button.opt .mono{font-family:var(--mono);font-size:.9em}
   button.opt.correct{border-color:var(--green);background:var(--tint-green-2);color:var(--text)}
   button.opt.wrong{border-color:var(--red);background:var(--tint-red)}
+  button.opt.sel{border-color:var(--amber);background:var(--tint-amber)}
   button.opt.faded{opacity:.45}
   button:disabled{cursor:default}
   button.rate{width:auto;display:inline-block;padding:10px 0;flex:1;font-family:var(--mono)}
@@ -197,6 +198,12 @@
   .blockcard.pending{opacity:.5}
   .blockcard.pending .blockhead{cursor:default}
   input[type=file]{width:100%;margin-top:10px;color:var(--dim);font-size:.8em}
+  /* the flowing concept format's closing list — term in mono/amber so it reads
+     as a label, description in the body serif so it reads as a sentence */
+  ul.points{margin:4px 0 0 1.05em;padding:0}
+  ul.points li{margin-bottom:8px;line-height:1.5}
+  ul.points li:last-child{margin-bottom:0}
+  ul.points b{font-family:var(--mono);font-size:.88em;color:var(--amber);font-weight:600}
   /* theme switch — the app has no settings screen at all right now, so this
      sits at the foot of the home list. Same shape as the 0–5 rating row. */
   .themerow{display:flex;gap:7px;margin-top:10px}

@@ -22,6 +22,7 @@ import json, re, subprocess, sys, collections
 MAX_AVG_SENTENCE = 25      # words, averaged over a prose field
 MAX_SENTENCE     = 35      # words, any single sentence
 PROSE = ["concept.definition", "concept.underlying", "concept.whyItMatters",
+         "concept.explain",
          "exercise.prompt", "exercise.explanation",
          "assess.explainPrompt", "assess.modelAnswer", "transfer", "goDeeper", "spec"]
 

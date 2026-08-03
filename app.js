@@ -77,6 +77,7 @@ function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/
 function fmt(s){ // paragraphs + `inline code`
   return esc(s).split(/\n\n+/).map(p=>"<p>"+p.replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\n/g,"<br>")+"</p>").join("");
 }
+function fmtInline(s){ return esc(s).replace(/`([^`]+)`/g,"<code>$1</code>"); }
 function codeblock(c){
   const kw = /\b(func|var|let|class|struct|enum|return|if|else|while|for|in|init|inout|import|nil|true|false|print)\b/g;
   return "<pre>"+esc(c).replace(kw,'<span class="k">$1</span>')+"</pre>";
@@ -116,6 +117,56 @@ try{
   if(mq.addEventListener) mq.addEventListener("change", onChange);
   else if(mq.addListener) mq.addListener(onChange);
 }catch(e){}
+/* ---------- back navigation ----------
+   The app renders by swapping innerHTML, so without this the browser back
+   button — and the Android system back button, once added to the home screen —
+   leaves the app entirely and throws away an in-progress attempt.
+
+   One history entry per SCREEN LEVEL, not per render: home is the base, a loop
+   or unit is level 1, its practice page level 2. navStack holds the RE-RENDER
+   for each level, so coming back redraws the screen without resetting the
+   session behind it. popstate does not touch the DOM, which is what makes the
+   guard cheap: if you say no to leaving, we push the entry back and you are
+   still looking at exactly what you were looking at. */
+let navStack = [];
+function navGo(render){
+  navStack.push(render);
+  try{ history.pushState({d: navStack.length}, ""); }catch(e){}
+  render();
+}
+function navBack(){
+  if(navStack.length){ try{ history.back(); return; }catch(e){} }
+  home();
+}
+function navHome(){
+  if(navStack.length){
+    try{ history.go(-navStack.length); return; }catch(e){}
+    navStack.length = 0;
+  }
+  home();
+}
+function navHasWork(){
+  if(sess && (sess.checked || sess.qi > 0 || sess.correct > 0 || sess.rating !== null
+      || (sess.picks || []).some(x => x !== null) || (sess.draftAnswer || "").trim())) return true;
+  if(usess && (usess.qi > 0 || usess.correct > 0 || (usess.draftAnswer || "").trim())) return true;
+  if(rev && (rev.i > 0 || rev.qi > 0)) return true;
+  return false;
+}
+try{
+  history.replaceState({d:0}, "");
+  window.addEventListener("popstate", function(e){
+    const d = (e && e.state && e.state.d) || 0;
+    if(d === 0 && navHasWork()
+       && !confirm("Leave this? Answers you haven't finished won't be saved.")){
+      try{ history.pushState({d: navStack.length}, ""); }catch(e2){}
+      return;                       /* stay put — the DOM was never touched */
+    }
+    navStack.length = d;
+    if(d === 0){ sess = null; usess = null; rev = null; home(); }
+    else navStack[d-1]();
+  });
+}catch(e){}
+function goPractice(){ navGo(practice); }
 function themeRow(){
   const p = themePref();
   const b = (id,label)=>`<button class="thm${p===id?" sel":""}" onclick="setTheme('${id}')">${label}</button>`;
@@ -194,8 +245,9 @@ function toggleSpeak(btn){
   stopSpeak();
   if(same) return;
   const card = btn.closest(".card") || btn.parentElement;
-  const el = card ? card.querySelector(".hl-zone.say") : null;
-  const text = el ? ttsClean(el.innerText || el.textContent || "") : "";
+  const els = card ? card.querySelectorAll(".hl-zone.say") : [];
+  const text = ttsClean(Array.from(els)
+    .map(e => e.innerText || e.textContent || "").join("\n\n"));
   if(!text) return;
   spkChunks = ttsChunks(text); spkIdx = 0;
   if(!spkChunks.length) return;
@@ -496,11 +548,40 @@ function startLoop(loop){
   loop = loop || nextLoop(); if(!loop) return home();
   const rec = S.log[loop.id];
   const set = rec ? 1 - (rec.set || 0) : 0;
-  sess = {loop, set, qi:0, correct:0, rating:null, draftAnswer:"", comparedShown:false};
-  concept(loop);
+  sess = {loop, set, qi:0, correct:0, rating:null, draftAnswer:"", comparedShown:false,
+          picks:[null,null,null], checked:false, shown:false};
+  navGo(()=>concept(loop));
 }
 function sessQ(){ const s = sess.loop.assess.sets; return (s[sess.set] || s[0])[sess.qi]; }
+/* THE FLOWING FORMAT (trial, 2026-08-04 — see CLAUDE.md "Concept formats").
+   One explanation that reads start to finish, the way it would be explained in
+   a chat, followed by a list of the points it installed. Prose and code are
+   separate zones so that highlighting still anchors per block and read-aloud
+   skips the listings. A loop opts in simply by having concept.explain; every
+   loop without it renders the original four layers, unchanged. */
+function flowHtml(text, loopId){
+  return String(text).split(/```[a-z]*\n?/).map((part, i) => {
+    if(i % 2) return zone(codeblock(part.replace(/\n$/, "")), loopId, "concept.explain." + i);
+    const t = part.trim();
+    return t ? zone(fmt(t), loopId, "concept.explain." + i, true) : "";
+  }).join("");
+}
+function pointsHtml(points){
+  return '<ul class="points">' + points.map(p =>
+    `<li><b>${esc(p.t)}</b> — ${fmtInline(p.d)}</li>`).join("") + "</ul>";
+}
 function conceptCardsHtml(loop){
+  if(loop.concept.explain){
+    return `
+    <div class="card">
+      ${labelRow('<div class="layer-label">The idea</div>')}
+      ${flowHtml(loop.concept.explain, loop.id)}
+    </div>
+    <div class="card">
+      <div class="layer-label amb">What we just learned</div>
+      ${pointsHtml(loop.concept.points || [])}
+    </div>`;
+  }
   return `
     <div class="card">
       ${labelRow('<div class="layer-label">Definition <span class="layer-note">— say this to an interviewer</span></div>')}
@@ -540,8 +621,13 @@ function concept(loop, mode){
   const p = loopPos(loop);
   const passed = !!S.log[loop.id];
   const note = passed ? " · re-run · set "+(sess && sess.set===1?"B":"A") : "";
-  const footer = '<button class="primary" onclick="problem()">Try the problem</button>'
-    + '<button class="ghost" onclick="home()">Back to the list</button>';
+  /* A chapter loop reads like a book chapter: the whole idea first, then ONE
+     practice page holding every exercise. The stepwise loop below is kept for
+     loops not yet converted — a loop opts in purely by having concept.explain. */
+  const footer = (loop.concept.explain
+      ? '<button class="primary" onclick="goPractice()">Practice \u2192</button>'
+      : '<button class="primary" onclick="problem()">Try the problem</button>')
+    + '<button class="ghost" onclick="navHome()">Back to the list</button>';
   screen(`
     <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${blockMark(p.b)} · concept ${p.i+1}/${p.n}${note}</span></div>
     <h1>${esc(loop.title)}</h1>
@@ -563,6 +649,75 @@ function peekConcept(loop, returnFn){
   `);
 }
 function resumePeek(){ const fn = peekReturn; peekReturn = null; if(fn) fn(); }
+/* ---------- CHAPTER PRACTICE (one page, checked at the end) ----------
+   Everything is visible and answerable in any order, nothing is revealed until
+   Check, and one Check computes the score. It fills the SAME sess fields the
+   stepwise flow does (correct, rating, set), so finishLoop() — the ladder, the
+   history append, the result screen — is reused untouched. */
+function practice(){
+  const loop = sess.loop, p = loopPos(loop), qs = loop.assess.sets[sess.set] || loop.assess.sets[0];
+  const ck = sess.checked;
+  const ex = loop.exercise;
+  const cards = qs.map((q,qi)=>{
+    const pick = sess.picks[qi];
+    const opts = q.options.map((o,oi)=>{
+      let cls = "opt";
+      if(ck){
+        if(oi === q.correct) cls += " correct";
+        else if(oi === pick) cls += " wrong";
+        else cls += " faded";
+      } else if(oi === pick) cls += " sel";
+      return `<button class="${cls}" ${ck?"disabled":""} onclick="pick(${qi},${oi})">${fmtInline(o)}</button>`;
+    }).join("");
+    const fb = ck ? `<div class="feedback ${pick===q.correct?"good":"bad"}">${
+        pick===q.correct?"Correct.":(pick===null?"Not answered.":"Not quite.")} ${fmt(q.explain)}</div>` : "";
+    return `<div class="card" id="q${qi}">
+      <div class="layer-label">Question ${qi+1} of ${qs.length}</div>
+      <p>${fmtInline(q.q)}</p>${opts}${fb}</div>`;
+  }).join("");
+  screen(`
+    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${blockMark(p.b)} \u00b7 practice</span></div>
+    <h1>${esc(loop.title)}</h1>
+    <div class="card">
+      ${labelRow('<div class="layer-label amb">Predict it <span class="layer-note">\u2014 before you read on</span></div>')}
+      ${zone(fmt(ex.prompt), loop.id, "exercise.prompt", true)}
+      ${zone(codeblock(ex.code), loop.id, "exercise.code")}
+      ${sess.shown
+        ? zone(fmt(ex.solution), loop.id, "exercise.solution", true)
+          + `<div class="feedback good">${fmt(ex.explanation)}</div>`
+        : '<button onclick="showSolution()">Show the answer</button>'}
+    </div>
+    ${cards}
+    <div class="card">
+      ${labelRow('<div class="layer-label">Explain it <span class="layer-note">\u2014 in your own English</span></div>')}
+      ${zone(fmt(loop.assess.explainPrompt), loop.id, "assess.explainPrompt", true)}
+      <textarea id="ans" ${ck?"readonly":""} placeholder="Write it as if answering an interviewer\u2026">${esc(sess.draftAnswer||"")}</textarea>
+      ${ck ? `${labelRow('<div class="layer-label amb">Model answer</div>')}
+        ${zone(fmt(loop.assess.modelAnswer), loop.id, "assess.modelAnswer", true)}
+        <div class="layer-label mt16">Rate your own answer</div>
+        <div class="raterow">${[0,1,2,3,4,5].map(n=>
+          `<button class="rate${sess.rating===n?" sel":""}" id="r${n}" onclick="rate(${n})">${n}</button>`).join("")}</div>
+        <div class="sub mt8">0 = couldn\u2019t say it \u00b7 3 = the idea, roughly \u00b7 5 = interview-ready</div>` : ""}
+    </div>
+    ${ck ? `<div class="center sub mt16">${sess.correct}/${qs.length} correct \u2014 rate your written answer, then finish.</div>
+            <button class="primary" onclick="finishLoop()">Finish</button>`
+         : '<button class="primary" onclick="check()">Check answers</button>'}
+    <button class="ghost" onclick="navBack()">\u2190 Back to the idea</button>
+  `);
+}
+function saveDraft(){ const t = document.getElementById("ans"); if(t) sess.draftAnswer = t.value; }
+function pick(qi, oi){
+  sess.picks[qi] = oi;
+  document.querySelectorAll("#q"+qi+" .opt").forEach((b,j)=> b.classList.toggle("sel", j===oi));
+}
+function showSolution(){ saveDraft(); sess.shown = true; practice(); }
+function check(){
+  saveDraft();
+  const qs = sess.loop.assess.sets[sess.set] || sess.loop.assess.sets[0];
+  sess.correct = qs.reduce((n,q,i)=> n + (sess.picks[i] === q.correct ? 1 : 0), 0);
+  sess.checked = true; sess.shown = true;
+  practice();
+}
 function problem(){
   const l = sess.loop, idx = loopPos(l).i;
   screen(`
@@ -691,12 +846,12 @@ function finishLoop(){
     </div>
     ${passed ? extrasHtml(sess.loop) : ""}
     ${passed ? "" : '<button onclick="retry()">Re-read this concept</button>'}
-    <button class="primary" onclick="home()">Back to the list</button>
+    <button class="primary" onclick="navHome()">Back to the list</button>
   `);
 }
 function retry(){ const l = sess.loop, set = sess.set || 0;
   sess = {loop:l, set, qi:0, correct:0, rating:null, draftAnswer:"", comparedShown:false}; concept(l); }
-function confirmExit(){ if(confirm("Exit this loop? Progress in it won't be saved.")) home(); }
+function confirmExit(){ navHome(); }   /* the popstate guard does the asking */
 
 /* ---------- REVIEW LOOP ---------- */
 let rev = null;
@@ -704,6 +859,10 @@ function startReview(manual){
   const pool = manual ? weakestPool() : reviewPool();
   if(pool.length < 1){ alert("Nothing to review yet — pass a loop first."); return home(); }
   rev = {manual, items: pool.map(l=>({loop:l, set: 1-(S.log[l.id].set||0), correct:0})), i:0, qi:0};
+  navGo(reviewIntro);
+}
+function reviewIntro(){
+  const manual = rev.manual;
   screen(`
     <div class="eyebrow">review <span class="dim">// ${manual ? "weakest concepts" : "due today"}</span></div>
     <h1>Review loop</h1>
@@ -712,7 +871,7 @@ function startReview(manual){
       ${rev.items.map(it=>`<div class="histitem"><span>${esc(it.loop.title)}</span><span class="badge w">${S.log[it.loop.id].score.toFixed(1)}</span></div>`).join("")}
     </div>
     <button class="primary" onclick="revQ()">Begin — ${rev.items.length*3} questions</button>
-    <button class="ghost" onclick="home()">Back</button>
+    <button class="ghost" onclick="navHome()">Back</button>
   `);
 }
 function revQ(){
@@ -764,7 +923,7 @@ function revNext(){
         <span class="badge ${it.correct>=2?"s":"w"}">${it.correct}/3 → ${(Math.round(it.correct/3*5*10)/10).toFixed(1)}</span></div>`).join("")}
       <p class="sub mt8">Missed concepts come back tomorrow; solid ones climb the 1/3/7/21-day ladder. That's spaced repetition doing its job.</p>
     </div>
-    <button class="primary" onclick="home()">Home</button>
+    <button class="primary" onclick="navHome()">Home</button>
   `);
 }
 
@@ -935,7 +1094,7 @@ function openUnit(id){
   const rec = SU.lessons[u.id];
   usess = {u, set: rec ? 1 - (rec.set || 0) : 0, qi:0, correct:0, rating:null,
            draftAnswer:"", comparedShown:false};
-  unitScreen(u);
+  navGo(()=>unitScreen(u));
 }
 function unitScreen(u){
   const p = surPos(u), passed = surDone(u);
@@ -964,7 +1123,7 @@ function unitScreen(u){
     ${passed ? surExtras(u) : ""}
     ${notesCardHtml(u.id)}
     <button class="primary" onclick="surProblem()">Try the problem</button>
-    <button class="ghost" onclick="surface()">Back to the list</button>
+    <button class="ghost" onclick="navHome()">Back to the list</button>
   `);
 }
 function surProblem(){
@@ -975,7 +1134,7 @@ function surProblem(){
     <div class="card">${saybar()}${zone(fmt(u.exercise.prompt), u.id, "exercise.prompt", true)}${zone(codeblock(u.exercise.code), u.id, "exercise.code")}</div>
     <div id="sol"></div>
     <button class="primary" id="revealBtn" onclick="surReveal()">Reveal solution</button>
-    <button class="ghost" onclick="surface()">Exit lesson</button>
+    <button class="ghost" onclick="navHome()">Exit lesson</button>
   `);
 }
 function surReveal(){
@@ -1084,7 +1243,7 @@ function surFinishScreen(u, score, passed){
       <div>${passed ? "Due for review tomorrow." : "Below 3.0. Re-read the design and the spec, then take another pass."}</div>
     </div>
     ${passed ? surExtras(u) : ""}
-    <button class="primary" onclick="surface()">Back to the surface list</button>
+    <button class="primary" onclick="navHome()">Back to the surface list</button>
   `);
 }
 

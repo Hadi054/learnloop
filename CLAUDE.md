@@ -289,6 +289,26 @@ changes 588 questions and they may want to re-review affected loops.
 
 ## Loop anatomy (the four-layer format)
 
+TWO CONCEPT FORMATS (second one added 2026-08-04, on the learner's request:
+"the purpose is making the language a bit easier, not 5 different sections").
+A loop opts into the newer one purely by HAVING `concept.explain`; every loop
+without it renders the original four layers, unchanged. Only b0-01 is converted
+so far — this is a trial, not a migration.
+
+  THE CHAPTER FORMAT — `concept.explain` (flowing text, ``` fences for code)
+  plus `concept.points` ([{t,d}], the "what we just learned" list). It renders
+  as TWO pages, like a book chapter: the whole idea first, then ONE practice
+  page holding the problem, all three MCQs and the written answer, visible at
+  once and answerable in any order. Nothing is revealed until "Check answers",
+  which grades every question at once and then asks for the self-rating.
+  `flowHtml()` splits the text on fences so prose zones are `.say` and code
+  zones are not — highlighting still anchors per block and read-aloud skips the
+  listings. It fills the SAME sess fields the stepwise flow does, so
+  `finishLoop()` — score, 1/3/7/21 ladder, history append, result screen — is
+  reused untouched and the memory bar, block ticks and review pool keep working.
+
+  THE STEPWISE FORMAT (original) — the four layers below, one screen per step.
+
 Each loop = one atomic concept, ~20 minutes, three phases:
 
 1. **Concept** — four layers, all required:
@@ -541,6 +561,25 @@ ship. WidgetKit is SwiftUI-only and this is a UIKit track.
   but never increments S.loops/streak.
 - Streak: +1 if last completed day was yesterday, reset to 1 if older, unchanged if
   today. Reviews count as loops.
+- Back navigation (2026-08-04): the app renders by swapping innerHTML, so until
+  now the browser/Android back button LEFT THE APP and discarded an in-progress
+  attempt. `navGo(render)` pushes ONE history entry per SCREEN LEVEL — home is
+  the base, a loop/unit is level 1, the chapter practice page is level 2 — and
+  keeps the re-render function for each level in `navStack`, so coming back
+  redraws without resetting the session behind it. The popstate handler reads
+  `state.d`, truncates the stack and calls that level's renderer. Because
+  popstate does NOT touch the DOM, the guard is cheap: leaving level 0 with
+  unfinished work asks first, and on Cancel it simply pushes the entry back and
+  you are still looking at the same screen. Every "leave this screen" button
+  routes through `navHome()` / `navBack()` (never bare `home()`) so the browser
+  stack and the app can't drift apart; `home()` stays the pure renderer and is
+  still called directly by toggleBlock/goTab/setTheme, which are depth-0
+  re-renders. NOTE: Chrome ignores programmatic `history.back()` for entries
+  pushed without a user gesture, so this cannot be exercised by an automated
+  script — every push here follows a tap, which is why it works on the device.
+  Verified by stubbing the history stack and driving the handler directly.
+  Known gaps: `peekConcept` and the review's internal screens are all level 1,
+  so back from them goes home rather than one step.
 - Theme (2026-08-04, learner's request — they read for hours and wanted a light,
   serif reading surface): `learnloop.theme.v1` holds "auto" | "light" | "dark",
   its OWN key outside S like the TTS rate, so no migration and no way to corrupt
