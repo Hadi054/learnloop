@@ -37,7 +37,7 @@ may be freely developed with Claude Code.
 
 | Block | Name | Loops | Status |
 |---|---|---|---|
-| 0 | The Machine Under the Syntax | 17 | b0-01..16 DONE; MEMORY ARC IN PROGRESS (b0-17 done 2026-08-02, b0-18..24 planned — see "The memory arc" below) |
+| 0 | The Machine Under the Syntax | 24 | COMPLETE — b0-01..16 plus the MEMORY ARC (b0-17 done 2026-08-02, b0-18..24 done 2026-08-03; see "The memory arc" below) |
 | 1 | "Semantics Under the Sugar": optionals/enums, ARC, closures/capture, COW, dispatch, generics, + ext: payload enums, property wrappers, laziness, HOFs | 19 | DONE incl. thorough ext (in curriculum.js) |
 | 2 | "The Machinery of the Screen": run loop, view/layer, VC lifecycle, geometry, Auto Layout, responder chain, hit-testing, target-action, cell reuse, threading, app lifecycle, + ext: navigation, containment, gestures, animation, KVC, keyboard | 20 | DONE (b2-19 KVC + b2-20 keyboard added 2026-07-19; both executed) |
 | 3 | "One Thread Is Never Enough": queues/threads, sync/deadlock, races, async/await, task tree, actors, Sendable, continuations, capstone, + ext: AsyncSequence, MainActor, GCD kit, actor-singleton | 13 | DONE (b3-13 added 2026-07-19, executed) |
@@ -188,6 +188,10 @@ RUNNING EXAMPLE: a 2D platformer game, used across all eight loops (level file
 on disk, sprite atlas that decodes huge, save state that dies with the process).
 NOT an app-shaped example — the learner asked for a game explicitly.
 
+MEMORY ARC COMPLETE 2026-08-03. All eight loops written, every one gated clean
+before splicing, every executable claim executed on this Mac. Block 0 is now 24
+loops and regains its ✓. Curriculum totals: 12 blocks, 145 loops.
+
 NO DESIGN PANELS: machine loops keep the CUR schema unchanged. The learner's
 call — illustrate only if genuinely needed, and then outside the app. ASCII
 memory diagrams inside `code` blocks, as Block 0 already does.
@@ -195,13 +199,13 @@ memory diagrams inside `code` blocks, as Block 0 already does.
 | id | title | status |
 |---|---|---|
 | b0-17 | The address is a lie (virtual addresses, MMU, ASLR) | DONE 2026-08-02 |
-| b0-18 | Pages, and the fault that fills them | planned |
-| b0-19 | ROM, flash, and the spec-sheet lie | planned |
-| b0-20 | mmap: why a 300 MB game isn't 300 MB of RAM | planned |
-| b0-21 | Clean vs dirty, and why iOS has no swap | planned |
-| b0-22 | Memory pressure and jetsam | planned |
-| b0-23 | Measuring it: footprint vs resident vs virtual | planned |
-| b0-24 | Capstone: budget the game's memory | planned |
+| b0-18 | Pages, and the fault that fills them | DONE 2026-08-03 |
+| b0-19 | ROM, flash, and the spec-sheet lie | DONE 2026-08-03 |
+| b0-20 | mmap: why a 300 MB game isn't 300 MB of RAM | DONE 2026-08-03 |
+| b0-21 | Clean vs dirty, and why iOS has no swap | DONE 2026-08-03 |
+| b0-22 | Memory pressure and jetsam | DONE 2026-08-03 |
+| b0-23 | Measuring it: footprint vs resident vs virtual | DONE 2026-08-03 |
+| b0-24 | Capstone: budget the game's memory | DONE 2026-08-03 |
 
 All eight are `[EXEC]` on this Mac — verified available: `vmmap`, `footprint`,
 `vm_stat`, `heap`, `leaks`, `sysconf(_SC_PAGESIZE)` = 16384, and `task_info`
@@ -213,6 +217,51 @@ Numbers already executed and banked for the arc (2026-08-02):
 - ASLR, one binary, 4 launches: global `0x1007D4180` / `0x102ACC180` /
   `0x10058C180` / `0x10255C180`; class metadata sat exactly `0x88` below the
   global in ALL four — the image slides as a unit (b0-17, used)
+- b0-24 executed (2026-08-03) end to end, one process, the whole budget:
+  launch 5.5/1.4 -> map 300 MB atlas +0.1/+0.0 -> read 10% +30.0/+0.2 ->
+  decoded sprites +45.0/+45.1 -> tilemap +64.0/+64.0 -> audio +8.0/+8.0 ->
+  save +1.0/+1.0 -> player walks +108.0/+0.0. FINAL resident 261.8 MB,
+  footprint 119.8 MB, clean gap 142.0 MB. Decoded sprites are MODELLED by an
+  allocation, not a real decode (b8-08 owns that). One early run showed a
+  spurious +0.0 for the 8 MB audio step; four later runs all gave +8.0.
+- b0-23 executed (2026-08-03), one process, five stages: baseline virtual
+  425,106 MB / resident 15.8 / footprint 11.6; reserve 4 GB anon = virtual
+  only; fill 100 MB anon = all three; read 256 MB mapped = resident +256 but
+  footprint +0.2; write it = all three +256. Same pid same instant: ps rss
+  627.9 MB vs footprint(1) 368 MB (gap = the clean mapped file). free() on
+  300 MB returned NOTHING — resident/footprint unchanged immediately after.
+  Xcode gauge + Activity Monitor reporting footprint stays DOCUMENTED.
+- b0-22 read live (2026-08-03): kern.memorystatus_level 63, vm.memory_pressure 0,
+  purge_on_warning/urgent/critical 2/5/8, kill_on_sustained_pressure window
+  600s delay 500ms. vm_stat: free 12,794 pages (0.21 GB = 1.2% of 16 GB),
+  inactive 312,938 (5.13 GB), purgeable 23,722, purged-since-boot 418,871
+  (6.86 GB). setrlimit(RLIMIT_AS, 512MB) REJECTED on macOS and a 2 GB mmap
+  then succeeded — there is no self-imposed ceiling. Jetsam bands, iOS
+  footprint limits and JetsamEvent reports stay DOCUMENTED: forcing a real
+  kill would require putting this machine under genuine pressure.
+- b0-21 executed (2026-08-03) via task_info(TASK_VM_INFO), 256 MB file:
+  read all mapped = footprint +0.3 MB (file-backed +256); write 1 byte per
+  page = footprint +256 MB (COW, 16,384 pages dirtied whole); fill 256 MB
+  anon = +256 MB. vmmap live: mapped file [256.0M RSDNT, 0K DIRTY],
+  Physical footprint 513.9M. vm.swapusage 0.00M used; vm_stat compressor
+  488,472 pages stored (8.00 GB) in 239,689 occupied (3.93 GB) = 2.04:1.
+  iPhone's lack of a swap file is DOCUMENTED, not measurable here.
+- b0-20 executed (2026-08-03), one 1 GB file: pread whole file = resident
+  +1024.0 MB / +65,543 faults; mmap 1 GB touching nothing = +0.0 MB / 4 faults;
+  touching 1 page in 10 = +102.5 MB / +6,559 faults (6553 pages, exact).
+  Mapped read ~8 ns (overlapped loads) vs pread ~1470 ns. Fault counts vary:
+  another run of the same loop reported 4890 faults — the kernel sometimes
+  maps neighbouring pages on one fault, so clustering is an observation only.
+- b0-19 executed (2026-08-03): hw.memsize 16 GB vs 460 GB storage; random 4 KB
+  read over an 8 GB file with F_NOCACHE ≈ 72 µs vs ≈100 ns for a resident
+  random load (~700x); same bytes via read() from the page cache ≈ 820 ns.
+  A 512 MB file was NOT enough — the SSD's own cache answered and the figure
+  collapsed to ~1 µs. SecureROM size is documented, not measurable here.
+- b0-18 executed (2026-08-03, compiled `swiftc -O`): page size 16384; `mmap`
+  256 MB with no writes = virtual +256.00 MB, resident +0.05 MB, 3 faults;
+  writing 1 byte in 500 pages = resident +7.81 MB (500 × 16384 to the byte),
+  +500 minor faults, 0.99 ms; the SAME 500 again = +0 faults, 0.037 ms (27x);
+  reading 500 untouched pages = +500 faults, every byte zero
 - a trivial Swift process reports **415.1 GB virtual** on a 16 GB Mac;
   reserving 64 GB more moves resident 5.5 → 5.6 MB; touching 100 pages moves it
   to 7.2 MB (+1.6 MB = exactly 100 × 16384) — for b0-18/b0-23
