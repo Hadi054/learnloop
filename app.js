@@ -732,6 +732,10 @@ function practiceScreen(t){
           `<button class="rate${ss.rating===n?" sel":""}" id="${t.rid(n)}" onclick="${on.rate}(${n})">${n}</button>`).join("")}</div>
         <div class="sub mt8">0 = couldn&rsquo;t say it &middot; 3 = the idea, roughly &middot; 5 = interview-ready</div>` : ""}
     </div>
+    ${item.build ? `<div class="card build">
+      ${labelRow('<div class="layer-label amb">Then build it <span class="layer-note">&mdash; once you pass</span></div>')}
+      ${zone(fmt(item.build.brief), item.id, "build.brief", true)}
+    </div>` : ""}
     ${ck ? `<div class="center sub mt16">${ss.correct}/${qs.length} correct &mdash; rate your written answer, then finish.</div>
             <button class="primary" onclick="${on.finish}()">Finish</button>`
          : `<button class="primary" onclick="${on.check}()">Check answers</button>`}

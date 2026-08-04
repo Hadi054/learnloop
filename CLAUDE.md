@@ -768,7 +768,12 @@ ship. WidgetKit is SwiftUI-only and this is a UIKit track.
 1. ~~The `build` field~~ DONE 2026-08-02. `build: {brief, done:[], stretch}`
    renders via `buildHtml()` at the TOP of `surExtras()` (it is the point of the
    track), so it appears on the passed-result screen and on re-reads, never
-   during a live lesson. `toggleBuild(id)` writes `SU.builds[id] = {done, date}`
+   during a live lesson. SINCE 2026-08-04 the `brief` ALONE also previews at the
+   foot of the chapter practice page ("Then build it — once you pass"), because
+   the build was otherwise invisible until the unit was passed and the learner
+   could not see what they were working toward. The checklist, stretch and the
+   done-toggle stay behind the pass. It is in the SHARED `practiceScreen()`
+   guarded by `item.build`, so a machine loop showing a build would get it free. `toggleBuild(id)` writes `SU.builds[id] = {done, date}`
    and re-renders through `surRedraw`, a function pointer set by `unitScreen()`
    and `surFinish()` because `screen()` wipes the DOM. The unit list shows an
    amber `BUILD` badge (owed) or green `BUILT`, and the cellcap counts both
