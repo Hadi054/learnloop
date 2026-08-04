@@ -21,9 +21,13 @@ may be freely developed with Claude Code.
 - `index.html` — shell only
 - `style.css` — all styling. TWO themes (see "Theme" under App mechanics): dark
   charcoal + amber "memory diagram", and a warm off-white light theme for
-  reading. Monospace for labels/code/numbers, system SERIF for body prose,
-  system sans for UI chrome; signature element is the 15-cell memory-bar
-  progress indicator. Code blocks and Surface design panels stay dark in BOTH
+  reading. SYSTEM SERIF EVERYWHERE (learner's call 2026-08-04, "make all
+  Serif") — prose, headings, eyebrow labels, badges, buttons, numbers. The ONLY
+  monospace left is `code`, `pre` and the explicit `.mono` span, because their
+  alignment is load-bearing: b0's memory diagrams are drawn with spaces and b7's
+  byte tables line up in columns. The `--mono` and `--sans` variables still
+  exist for those. Signature element is the 15-cell memory-bar progress
+  indicator. Code blocks and Surface design panels stay dark in BOTH
   themes — the amber/cyan/green in them is semantic, not decoration.
 - `app.js` — all logic; screens are plain functions rendering into `#app`
 - `curriculum.js` — `const CUR = {...}` content data (generated; see schema below)
@@ -735,7 +739,9 @@ ship. WidgetKit is SwiftUI-only and this is a UIKit track.
   will also render whole app screens: copy dist, replace the trailing `home();`
   with `surface();` or `openUnit("id");`, and screenshot that.
 - Preserve the visual language: eyebrow labels like `0x07 // CONCEPT`, memory-cell
-  progress bar, amber = weak/attention, green = solid.
+  progress bar, amber = weak/attention, green = solid. Those labels are SERIF
+  now, not mono — the language is the wording, the amber and the cell bar, not
+  the typeface.
 
 ## TODO (rough priority)
 
