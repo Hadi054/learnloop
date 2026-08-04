@@ -389,6 +389,12 @@ Content authoring rules (quality bar — hold every generated loop to these):
   paragraphs. No other markup.
 - Later loops may reference earlier ones by number; earlier never reference later
   except as explicit "preview" questions.
+- `gate.py` SKIPS `concept.definition`, `concept.underlying`,
+  `concept.whyItMatters` and `spec` on any item that has `concept.explain` —
+  those fields are still in the data but nobody renders them, so their
+  readability is no longer the learner's problem. Everything still rendered
+  (including `assess.explainPrompt`, which the practice page shows) is gated
+  exactly as before.
 - **PLAIN ENGLISH (added 2026-08-02).** The learner is still growing their English
   and reads this on a phone. Measured across all 138 loops before this rule:
   28.2 words/sentence in `definition`, Flesch 39 (college level), 31% of the 1,907
@@ -427,9 +433,24 @@ track teaches the constraint solver thoroughly and never teaches what to ask it
 for. Surface fills that gap; it does not duplicate mechanism (b2-05/06/07 own
 the solver, b10 owns storyboards-as-NSCoder, b2-11 owns cell reuse).
 
-STATUS: 1 of 100 loops written (`s1-06`, the button state table — the format
-prototype). The other 99 are MAPPED IN `SURFACE.md`, NOT WRITTEN. Do not assume
-content exists because the map lists it.
+STATUS: 2 of 100 units written — `s0-01` "The point is not the pixel" and
+`s1-06` the button state table. The other 98 are MAPPED IN `SURFACE.md`, NOT
+WRITTEN. Do not assume content exists because the map lists it.
+
+s0-01 IS CONVERTED to the chapter format (2026-08-04); s1-06 is not. A Surface
+unit has more parts than a machine loop, so conversion makes three moves:
+  - the design panel goes INSIDE the flowing text, at a line reading `[design]`,
+    where the picture earns its place — `flowHtml(text, id, figure)` splits on
+    that marker. It is no longer a plate above the prose.
+  - `spec` becomes the closing rules list (`concept.points`). For a design unit,
+    "the standard as rules with numbers" and "what we just learned" are the same
+    list said twice.
+  - `build` does NOT move. It is a deliverable, not reading, and still renders
+    through surExtras() after the unit is passed.
+The Surface flow is separate by design, so the format is ported, not shared:
+`unitScreen()` branches on `concept.explain`, and `surPractice()` mirrors
+`practice()` on `usess`, finishing through `surFinish()` so SU.lessons and the
+ladder are untouched.
 
 ### Structure (learner's, 2026-08-02)
 
@@ -742,8 +763,9 @@ ship. WidgetKit is SwiftUI-only and this is a UIKit track.
    and `surFinish()` because `screen()` wipes the DOM. The unit list shows an
    amber `BUILD` badge (owed) or green `BUILT`, and the cellcap counts both
    `N/M installed` and `N/M built`. Builds are NEVER scored.
-2. Author `s0-01` "The point is not the pixel", then the rest of s0. One loop at
-   a time, thorough mode, gate script BEFORE write, dist rebuild per loop.
+2. ~~Author `s0-01`~~ DONE — it shipped inside the build-field commit, so this
+   TODO was stale. Next: the rest of s0, one unit at a time, thorough mode,
+   gate BEFORE write, dist rebuild per unit.
 3. Surface reviews: the due-count button and review flow exist for the machine
    track only. Surface lessons schedule `due` correctly but nothing surfaces them
    yet — add a "Start review — N due" to the Surface list once >1 loop exists.

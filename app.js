@@ -148,7 +148,8 @@ function navHome(){
 function navHasWork(){
   if(sess && (sess.checked || sess.qi > 0 || sess.correct > 0 || sess.rating !== null
       || (sess.picks || []).some(x => x !== null) || (sess.draftAnswer || "").trim())) return true;
-  if(usess && (usess.qi > 0 || usess.correct > 0 || (usess.draftAnswer || "").trim())) return true;
+  if(usess && (usess.checked || usess.qi > 0 || usess.correct > 0 || usess.rating !== null
+      || (usess.picks || []).some(x => x != null) || (usess.draftAnswer || "").trim())) return true;
   if(rev && (rev.i > 0 || rev.qi > 0)) return true;
   return false;
 }
@@ -559,12 +560,22 @@ function sessQ(){ const s = sess.loop.assess.sets; return (s[sess.set] || s[0])[
    separate zones so that highlighting still anchors per block and read-aloud
    skips the listings. A loop opts in simply by having concept.explain; every
    loop without it renders the original four layers, unchanged. */
-function flowHtml(text, loopId){
+function flowHtml(text, loopId, figure){
   return String(text).split(/```[a-z]*\n?/).map((part, i) => {
     if(i % 2) return zone(codeblock(part.replace(/\n$/, "")), loopId, "concept.explain." + i);
-    const t = part.trim();
-    return t ? zone(fmt(t), loopId, "concept.explain." + i, true) : "";
+    /* a line containing only [design] drops the figure in where it earns its
+       place, rather than parking it above the text like a plate */
+    return part.split(/^[ \t]*\[design\][ \t]*$/m).map((seg, k) => {
+      const t = seg.trim();
+      const html = t ? zone(fmt(t), loopId, "concept.explain." + i + "." + k, true) : "";
+      return k === 0 ? html : (figure || "") + html;
+    }).join("");
   }).join("");
+}
+function designFigure(u){
+  if(!u.design) return "";
+  return `<div class="design">${u.design.svg}</div>`
+    + (u.design.caption ? `<div class="sub mt8">${esc(u.design.caption)}</div>` : "");
 }
 function pointsHtml(points){
   return '<ul class="points">' + points.map(p =>
@@ -1093,12 +1104,34 @@ function openUnit(id){
   const u = surUnits().find(x=>x.id === id); if(!u) return surface();
   const rec = SU.lessons[u.id];
   usess = {u, set: rec ? 1 - (rec.set || 0) : 0, qi:0, correct:0, rating:null,
-           draftAnswer:"", comparedShown:false};
+           draftAnswer:"", comparedShown:false, picks:[], checked:false, shown:false};
   navGo(()=>unitScreen(u));
 }
 function unitScreen(u){
   const p = surPos(u), passed = surDone(u);
   surRedraw = ()=>unitScreen(u);
+  const eyebrow = `<div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${surBlockMark(p.b)} &middot; lesson ${p.i+1}/${p.n}${passed ? " &middot; re-run &middot; set " + (usess && usess.set === 1 ? "B" : "A") : ""}</span></div>`;
+  /* chapter format: the design panel moves INTO the explanation and the spec
+     becomes the closing rules list. The build stays where it is — it is a
+     deliverable, not reading. */
+  if(u.concept.explain){
+    return screen(`
+      ${eyebrow}
+      <h1>${esc(u.title)}</h1>
+      <div class="card">
+        ${labelRow('<div class="layer-label">The idea</div>')}
+        ${flowHtml(u.concept.explain, u.id, designFigure(u))}
+      </div>
+      <div class="card">
+        <div class="layer-label amb">The rules <span class="layer-note">&mdash; what to specify, with numbers</span></div>
+        ${pointsHtml(u.concept.points || [])}
+      </div>
+      ${passed ? surExtras(u) : ""}
+      ${notesCardHtml(u.id)}
+      <button class="primary" onclick="goSurPractice()">Practice &rarr;</button>
+      <button class="ghost" onclick="navHome()">Back to the list</button>
+    `);
+  }
   screen(`
     <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${surBlockMark(p.b)} &middot; lesson ${p.i+1}/${p.n}${passed ? " &middot; re-run &middot; set " + (usess && usess.set === 1 ? "B" : "A") : ""}</span></div>
     <h1>${esc(u.title)}</h1>
@@ -1125,6 +1158,72 @@ function unitScreen(u){
     <button class="primary" onclick="surProblem()">Try the problem</button>
     <button class="ghost" onclick="navHome()">Back to the list</button>
   `);
+}
+/* Surface's one-page practice — the same shape as the machine track's, on
+   usess, finishing through surFinish() so SU.lessons and the ladder are
+   untouched. */
+function goSurPractice(){ navGo(surPractice); }
+function surPractice(){
+  const u = usess.u, p = surPos(u), qs = u.assess.sets[usess.set] || u.assess.sets[0];
+  const ck = usess.checked, ex = u.exercise;
+  surRedraw = surPractice;
+  const cards = qs.map((q,qi)=>{
+    const pick = (usess.picks || [])[qi];
+    const opts = q.options.map((o,oi)=>{
+      let cls = "opt";
+      if(ck){ cls += oi === q.correct ? " correct" : (oi === pick ? " wrong" : " faded"); }
+      else if(oi === pick) cls += " sel";
+      return `<button class="${cls}" ${ck?"disabled":""} onclick="surPick(${qi},${oi})">${fmtInline(o)}</button>`;
+    }).join("");
+    const fb = ck ? `<div class="feedback ${pick===q.correct?"good":"bad"}">${
+        pick===q.correct?"Correct.":(pick==null?"Not answered.":"Not quite.")} ${fmt(q.explain)}</div>` : "";
+    return `<div class="card" id="q${qi}">
+      <div class="layer-label">Question ${qi+1} of ${qs.length}</div>
+      <p>${fmtInline(q.q)}</p>${opts}${fb}</div>`;
+  }).join("");
+  screen(`
+    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${surBlockMark(p.b)} &middot; practice</span></div>
+    <h1>${esc(u.title)}</h1>
+    <div class="card">
+      ${labelRow('<div class="layer-label amb">Predict it <span class="layer-note">&mdash; before you read on</span></div>')}
+      ${zone(fmt(ex.prompt), u.id, "exercise.prompt", true)}
+      ${zone(codeblock(ex.code), u.id, "exercise.code")}
+      ${usess.shown
+        ? zone(fmt(ex.solution), u.id, "exercise.solution", true)
+          + `<div class="feedback good">${fmt(ex.explanation)}</div>`
+        : '<button onclick="surShowSolution()">Show the answer</button>'}
+    </div>
+    ${cards}
+    <div class="card">
+      ${labelRow('<div class="layer-label">Explain it <span class="layer-note">&mdash; in your own English</span></div>')}
+      ${zone(fmt(u.assess.explainPrompt), u.id, "assess.explainPrompt", true)}
+      <textarea id="ans" ${ck?"readonly":""} placeholder="Write it as if answering an interviewer&hellip;">${esc(usess.draftAnswer||"")}</textarea>
+      ${ck ? `${labelRow('<div class="layer-label amb">Model answer</div>')}
+        ${zone(fmt(u.assess.modelAnswer), u.id, "assess.modelAnswer", true)}
+        <div class="layer-label mt16">Rate your own answer</div>
+        <div class="raterow">${[0,1,2,3,4,5].map(n=>
+          `<button class="rate${usess.rating===n?" sel":""}" id="ur${n}" onclick="surRate(${n})">${n}</button>`).join("")}</div>
+        <div class="sub mt8">0 = couldn&rsquo;t say it &middot; 3 = the idea, roughly &middot; 5 = interview-ready</div>` : ""}
+    </div>
+    ${ck ? `<div class="center sub mt16">${usess.correct}/${qs.length} correct &mdash; rate your written answer, then finish.</div>
+            <button class="primary" onclick="surFinish()">Finish</button>`
+         : '<button class="primary" onclick="surCheck()">Check answers</button>'}
+    <button class="ghost" onclick="navBack()">&larr; Back to the idea</button>
+  `);
+}
+function surSaveDraft(){ const t = document.getElementById("ans"); if(t) usess.draftAnswer = t.value; }
+function surPick(qi, oi){
+  usess.picks = usess.picks || [];
+  usess.picks[qi] = oi;
+  document.querySelectorAll("#q"+qi+" .opt").forEach((b,j)=> b.classList.toggle("sel", j===oi));
+}
+function surShowSolution(){ surSaveDraft(); usess.shown = true; surPractice(); }
+function surCheck(){
+  surSaveDraft();
+  const qs = usess.u.assess.sets[usess.set] || usess.u.assess.sets[0];
+  usess.correct = qs.reduce((n,q,i)=> n + ((usess.picks||[])[i] === q.correct ? 1 : 0), 0);
+  usess.checked = true; usess.shown = true;
+  surPractice();
 }
 function surProblem(){
   const u = usess.u;

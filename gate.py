@@ -69,7 +69,13 @@ def sentences(text):
 
 def check(item):
     fails = []
+    # A converted item renders concept.explain instead of the four layers, and
+    # its rules list instead of spec — the superseded fields are still in the
+    # data (nothing was deleted) but nobody reads them, so don't gate them.
+    superseded = {"concept.definition", "concept.underlying", "concept.whyItMatters", "spec"} \
+        if dig(item, "concept.explain") else set()
     for path in PROSE:
+        if path in superseded: continue
         text = dig(item, path)
         if not isinstance(text, str) or not text.strip():
             continue
