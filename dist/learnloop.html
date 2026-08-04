@@ -15033,74 +15033,108 @@ function peekConcept(loop, returnFn){
 }
 function resumePeek(){ const fn = peekReturn; peekReturn = null; if(fn) fn(); }
 /* ---------- CHAPTER PRACTICE (one page, checked at the end) ----------
-   Everything is visible and answerable in any order, nothing is revealed until
-   Check, and one Check computes the score. It fills the SAME sess fields the
-   stepwise flow does (correct, rating, set), so finishLoop() — the ladder, the
-   history append, the result screen — is reused untouched. */
-function practice(){
-  const loop = sess.loop, p = loopPos(loop), qs = loop.assess.sets[sess.set] || loop.assess.sets[0];
-  const ck = sess.checked;
-  const ex = loop.exercise;
-  const cards = qs.map((q,qi)=>{
-    const pick = sess.picks[qi];
-    const opts = q.options.map((o,oi)=>{
+   ONE renderer for both tracks. These were two copies of the same screen, and
+   copies drift: the rating row's element ids diverged (r0..r5 against ur0..ur5)
+   and Finish silently did nothing, because the handler threw on a null element.
+   Everything track-specific now lives in a descriptor, so a change lands in
+   both places or neither.
+
+   The page shows the problem, all three MCQs and the written answer at once,
+   answerable in any order. Nothing is revealed until Check, which grades every
+   question together and then asks for the self-rating. It fills the same
+   session fields the stepwise flow does, so finishLoop()/surFinish() — score,
+   1/3/7/21 ladder, history append, result screen — are reused untouched. */
+const PRACTICE = {
+  machine: {
+    get s(){ return sess; },
+    item: () => sess.loop,
+    pos:  () => loopPos(sess.loop),
+    mark: p  => blockMark(p.b),
+    rid:  n  => "r" + n,
+    on: {pick:"pick", show:"showSolution", check:"check", rate:"rate", finish:"finishLoop"}
+  },
+  surface: {
+    get s(){ return usess; },
+    item: () => usess.u,
+    pos:  () => surPos(usess.u),
+    mark: p  => surBlockMark(p.b),
+    rid:  n  => "ur" + n,
+    on: {pick:"surPick", show:"surShowSolution", check:"surCheck", rate:"surRate", finish:"surFinish"}
+  }
+};
+function practiceScreen(t){
+  const ss = t.s, item = t.item(), p = t.pos(), on = t.on;
+  const qs = item.assess.sets[ss.set] || item.assess.sets[0];
+  const ck = ss.checked, ex = item.exercise;
+  const cards = qs.map((q, qi) => {
+    const pick = (ss.picks || [])[qi];
+    const opts = q.options.map((o, oi) => {
       let cls = "opt";
-      if(ck){
-        if(oi === q.correct) cls += " correct";
-        else if(oi === pick) cls += " wrong";
-        else cls += " faded";
-      } else if(oi === pick) cls += " sel";
-      return `<button class="${cls}" ${ck?"disabled":""} onclick="pick(${qi},${oi})">${fmtInline(o)}</button>`;
+      if(ck) cls += oi === q.correct ? " correct" : (oi === pick ? " wrong" : " faded");
+      else if(oi === pick) cls += " sel";
+      return `<button class="${cls}" ${ck?"disabled":""} onclick="${on.pick}(${qi},${oi})">${fmtInline(o)}</button>`;
     }).join("");
     const fb = ck ? `<div class="feedback ${pick===q.correct?"good":"bad"}">${
-        pick===q.correct?"Correct.":(pick===null?"Not answered.":"Not quite.")} ${fmt(q.explain)}</div>` : "";
+        pick===q.correct ? "Correct." : (pick == null ? "Not answered." : "Not quite.")} ${fmt(q.explain)}</div>` : "";
     return `<div class="card" id="q${qi}">
       <div class="layer-label">Question ${qi+1} of ${qs.length}</div>
       <p>${fmtInline(q.q)}</p>${opts}${fb}</div>`;
   }).join("");
   screen(`
-    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${blockMark(p.b)} \u00b7 practice</span></div>
-    <h1>${esc(loop.title)}</h1>
+    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${t.mark(p)} &middot; practice</span></div>
+    <h1>${esc(item.title)}</h1>
     <div class="card">
-      ${labelRow('<div class="layer-label amb">Predict it <span class="layer-note">\u2014 before you read on</span></div>')}
-      ${zone(fmt(ex.prompt), loop.id, "exercise.prompt", true)}
-      ${zone(codeblock(ex.code), loop.id, "exercise.code")}
-      ${sess.shown
-        ? zone(fmt(ex.solution), loop.id, "exercise.solution", true)
+      ${labelRow('<div class="layer-label amb">Predict it <span class="layer-note">&mdash; before you read on</span></div>')}
+      ${zone(fmt(ex.prompt), item.id, "exercise.prompt", true)}
+      ${zone(codeblock(ex.code), item.id, "exercise.code")}
+      ${ss.shown
+        ? zone(fmt(ex.solution), item.id, "exercise.solution", true)
           + `<div class="feedback good">${fmt(ex.explanation)}</div>`
-        : '<button onclick="showSolution()">Show the answer</button>'}
+        : `<button onclick="${on.show}()">Show the answer</button>`}
     </div>
     ${cards}
     <div class="card">
-      ${labelRow('<div class="layer-label">Explain it <span class="layer-note">\u2014 in your own English</span></div>')}
-      ${zone(fmt(loop.assess.explainPrompt), loop.id, "assess.explainPrompt", true)}
-      <textarea id="ans" ${ck?"readonly":""} placeholder="Write it as if answering an interviewer\u2026">${esc(sess.draftAnswer||"")}</textarea>
+      ${labelRow('<div class="layer-label">Explain it <span class="layer-note">&mdash; in your own English</span></div>')}
+      ${zone(fmt(item.assess.explainPrompt), item.id, "assess.explainPrompt", true)}
+      <textarea id="ans" ${ck?"readonly":""} placeholder="Write it as if answering an interviewer&hellip;">${esc(ss.draftAnswer||"")}</textarea>
       ${ck ? `${labelRow('<div class="layer-label amb">Model answer</div>')}
-        ${zone(fmt(loop.assess.modelAnswer), loop.id, "assess.modelAnswer", true)}
+        ${zone(fmt(item.assess.modelAnswer), item.id, "assess.modelAnswer", true)}
         <div class="layer-label mt16">Rate your own answer</div>
-        <div class="raterow">${[0,1,2,3,4,5].map(n=>
-          `<button class="rate${sess.rating===n?" sel":""}" id="r${n}" onclick="rate(${n})">${n}</button>`).join("")}</div>
-        <div class="sub mt8">0 = couldn\u2019t say it \u00b7 3 = the idea, roughly \u00b7 5 = interview-ready</div>` : ""}
+        <div class="raterow">${[0,1,2,3,4,5].map(n =>
+          `<button class="rate${ss.rating===n?" sel":""}" id="${t.rid(n)}" onclick="${on.rate}(${n})">${n}</button>`).join("")}</div>
+        <div class="sub mt8">0 = couldn&rsquo;t say it &middot; 3 = the idea, roughly &middot; 5 = interview-ready</div>` : ""}
     </div>
-    ${ck ? `<div class="center sub mt16">${sess.correct}/${qs.length} correct \u2014 rate your written answer, then finish.</div>
-            <button class="primary" onclick="finishLoop()">Finish</button>`
-         : '<button class="primary" onclick="check()">Check answers</button>'}
-    <button class="ghost" onclick="navBack()">\u2190 Back to the idea</button>
+    ${ck ? `<div class="center sub mt16">${ss.correct}/${qs.length} correct &mdash; rate your written answer, then finish.</div>
+            <button class="primary" onclick="${on.finish}()">Finish</button>`
+         : `<button class="primary" onclick="${on.check}()">Check answers</button>`}
+    <button class="ghost" onclick="navBack()">&larr; Back to the idea</button>
   `);
 }
-function saveDraft(){ const t = document.getElementById("ans"); if(t) sess.draftAnswer = t.value; }
-function pick(qi, oi){
-  sess.picks[qi] = oi;
+function practiceSaveDraft(ss){ const t = document.getElementById("ans"); if(t) ss.draftAnswer = t.value; }
+function practicePick(ss, qi, oi){
+  ss.picks = ss.picks || [];
+  ss.picks[qi] = oi;
   document.querySelectorAll("#q"+qi+" .opt").forEach((b,j)=> b.classList.toggle("sel", j===oi));
 }
-function showSolution(){ saveDraft(); sess.shown = true; practice(); }
-function check(){
-  saveDraft();
-  const qs = sess.loop.assess.sets[sess.set] || sess.loop.assess.sets[0];
-  sess.correct = qs.reduce((n,q,i)=> n + (sess.picks[i] === q.correct ? 1 : 0), 0);
-  sess.checked = true; sess.shown = true;
-  practice();
+function practiceShow(ss, redraw){ practiceSaveDraft(ss); ss.shown = true; redraw(); }
+function practiceCheck(ss, item, redraw){
+  practiceSaveDraft(ss);
+  const qs = item.assess.sets[ss.set] || item.assess.sets[0];
+  ss.correct = qs.reduce((n,q,i)=> n + ((ss.picks||[])[i] === q.correct ? 1 : 0), 0);
+  ss.checked = true; ss.shown = true;
+  redraw();
 }
+/* thin per-track entry points — the onclick strings above name these */
+function practice(){ practiceScreen(PRACTICE.machine); }
+function pick(qi, oi){ practicePick(sess, qi, oi); }
+function showSolution(){ practiceShow(sess, practice); }
+function check(){ practiceCheck(sess, sess.loop, practice); }
+function goSurPractice(){ navGo(surPractice); }
+function surPractice(){ surRedraw = surPractice; practiceScreen(PRACTICE.surface); }
+function surPick(qi, oi){ practicePick(usess, qi, oi); }
+function surShowSolution(){ practiceShow(usess, surPractice); }
+function surCheck(){ practiceCheck(usess, usess.u, surPractice); }
+
 function problem(){
   const l = sess.loop, idx = loopPos(l).i;
   screen(`
@@ -15530,72 +15564,6 @@ function unitScreen(u){
     <button class="primary" onclick="surProblem()">Try the problem</button>
     <button class="ghost" onclick="navHome()">Back to the list</button>
   `);
-}
-/* Surface's one-page practice — the same shape as the machine track's, on
-   usess, finishing through surFinish() so SU.lessons and the ladder are
-   untouched. */
-function goSurPractice(){ navGo(surPractice); }
-function surPractice(){
-  const u = usess.u, p = surPos(u), qs = u.assess.sets[usess.set] || u.assess.sets[0];
-  const ck = usess.checked, ex = u.exercise;
-  surRedraw = surPractice;
-  const cards = qs.map((q,qi)=>{
-    const pick = (usess.picks || [])[qi];
-    const opts = q.options.map((o,oi)=>{
-      let cls = "opt";
-      if(ck){ cls += oi === q.correct ? " correct" : (oi === pick ? " wrong" : " faded"); }
-      else if(oi === pick) cls += " sel";
-      return `<button class="${cls}" ${ck?"disabled":""} onclick="surPick(${qi},${oi})">${fmtInline(o)}</button>`;
-    }).join("");
-    const fb = ck ? `<div class="feedback ${pick===q.correct?"good":"bad"}">${
-        pick===q.correct?"Correct.":(pick==null?"Not answered.":"Not quite.")} ${fmt(q.explain)}</div>` : "";
-    return `<div class="card" id="q${qi}">
-      <div class="layer-label">Question ${qi+1} of ${qs.length}</div>
-      <p>${fmtInline(q.q)}</p>${opts}${fb}</div>`;
-  }).join("");
-  screen(`
-    <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${surBlockMark(p.b)} &middot; practice</span></div>
-    <h1>${esc(u.title)}</h1>
-    <div class="card">
-      ${labelRow('<div class="layer-label amb">Predict it <span class="layer-note">&mdash; before you read on</span></div>')}
-      ${zone(fmt(ex.prompt), u.id, "exercise.prompt", true)}
-      ${zone(codeblock(ex.code), u.id, "exercise.code")}
-      ${usess.shown
-        ? zone(fmt(ex.solution), u.id, "exercise.solution", true)
-          + `<div class="feedback good">${fmt(ex.explanation)}</div>`
-        : '<button onclick="surShowSolution()">Show the answer</button>'}
-    </div>
-    ${cards}
-    <div class="card">
-      ${labelRow('<div class="layer-label">Explain it <span class="layer-note">&mdash; in your own English</span></div>')}
-      ${zone(fmt(u.assess.explainPrompt), u.id, "assess.explainPrompt", true)}
-      <textarea id="ans" ${ck?"readonly":""} placeholder="Write it as if answering an interviewer&hellip;">${esc(usess.draftAnswer||"")}</textarea>
-      ${ck ? `${labelRow('<div class="layer-label amb">Model answer</div>')}
-        ${zone(fmt(u.assess.modelAnswer), u.id, "assess.modelAnswer", true)}
-        <div class="layer-label mt16">Rate your own answer</div>
-        <div class="raterow">${[0,1,2,3,4,5].map(n=>
-          `<button class="rate${usess.rating===n?" sel":""}" id="ur${n}" onclick="surRate(${n})">${n}</button>`).join("")}</div>
-        <div class="sub mt8">0 = couldn&rsquo;t say it &middot; 3 = the idea, roughly &middot; 5 = interview-ready</div>` : ""}
-    </div>
-    ${ck ? `<div class="center sub mt16">${usess.correct}/${qs.length} correct &mdash; rate your written answer, then finish.</div>
-            <button class="primary" onclick="surFinish()">Finish</button>`
-         : '<button class="primary" onclick="surCheck()">Check answers</button>'}
-    <button class="ghost" onclick="navBack()">&larr; Back to the idea</button>
-  `);
-}
-function surSaveDraft(){ const t = document.getElementById("ans"); if(t) usess.draftAnswer = t.value; }
-function surPick(qi, oi){
-  usess.picks = usess.picks || [];
-  usess.picks[qi] = oi;
-  document.querySelectorAll("#q"+qi+" .opt").forEach((b,j)=> b.classList.toggle("sel", j===oi));
-}
-function surShowSolution(){ surSaveDraft(); usess.shown = true; surPractice(); }
-function surCheck(){
-  surSaveDraft();
-  const qs = usess.u.assess.sets[usess.set] || usess.u.assess.sets[0];
-  usess.correct = qs.reduce((n,q,i)=> n + ((usess.picks||[])[i] === q.correct ? 1 : 0), 0);
-  usess.checked = true; usess.shown = true;
-  surPractice();
 }
 function surProblem(){
   const u = usess.u;

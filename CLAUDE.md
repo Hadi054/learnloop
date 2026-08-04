@@ -447,10 +447,20 @@ unit has more parts than a machine loop, so conversion makes three moves:
     list said twice.
   - `build` does NOT move. It is a deliverable, not reading, and still renders
     through surExtras() after the unit is passed.
-The Surface flow is separate by design, so the format is ported, not shared:
-`unitScreen()` branches on `concept.explain`, and `surPractice()` mirrors
-`practice()` on `usess`, finishing through `surFinish()` so SU.lessons and the
-ladder are untouched.
+The Surface LESSON flow stays separate (`unitScreen()` branches on
+`concept.explain`), but the PRACTICE PAGE IS SHARED: one `practiceScreen(t)`
+renders both tracks from a descriptor in `PRACTICE` holding the session getter,
+the item, the position/mark functions, the rating-row id prefix and the handler
+names. `practice()` and `surPractice()` are one line each; `pick`/`check`/
+`showSolution` are thin wrappers over `practicePick`/`practiceCheck`/
+`practiceShow`. Each track still finishes through its own `finishLoop()` /
+`surFinish()`, so S.log and SU.lessons never mix.
+
+  WHY: they started as two copies and drifted within a day — the rating row's
+  ids went `r0..r5` on one side and `ur0..ur5` on the other, `surRate()` got a
+  null element, and Finish silently did nothing. Copies of a screen do not stay
+  in step. Anything track-specific belongs in the descriptor, not in a second
+  copy of the renderer.
 
 ### Structure (learner's, 2026-08-02)
 
