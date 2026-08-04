@@ -572,11 +572,12 @@ function flowHtml(text, loopId, figure){
     }).join("");
   }).join("");
 }
-function designFigure(u){
-  if(!u.design) return "";
-  return `<div class="design">${u.design.svg}</div>`
-    + (u.design.caption ? `<div class="sub mt8">${esc(u.design.caption)}</div>` : "");
+function figureHtml(d){
+  if(!d || !d.svg) return "";
+  return `<div class="design">${d.svg}</div>`
+    + (d.caption ? `<div class="sub mt8">${esc(d.caption)}</div>` : "");
 }
+function designFigure(u){ return figureHtml(u.design); }
 function pointsHtml(points){
   return '<ul class="points">' + points.map(p =>
     `<li><b>${esc(p.t)}</b> — ${fmtInline(p.d)}</li>`).join("") + "</ul>";
@@ -735,6 +736,7 @@ function practiceScreen(t){
     ${item.build ? `<div class="card build">
       ${labelRow('<div class="layer-label amb">Then build it <span class="layer-note">&mdash; once you pass</span></div>')}
       ${zone(fmt(item.build.brief), item.id, "build.brief", true)}
+      ${item.build.design ? figureHtml(item.build.design) : ""}
     </div>` : ""}
     ${ck ? `<div class="center sub mt16">${ss.correct}/${qs.length} correct &mdash; rate your written answer, then finish.</div>
             <button class="primary" onclick="${on.finish}()">Finish</button>`
@@ -1108,6 +1110,7 @@ function buildHtml(u){
   return `<div class="card build${done ? " done" : ""}">
       ${labelRow('<div class="layer-label amb">The build <span class="layer-note">&mdash; write it yourself, zero AI</span></div>')}
       ${zone(fmt(u.build.brief), u.id, "build.brief", true)}
+      ${u.build.design ? `<div class="layer-label mt16">Build this</div>${figureHtml(u.build.design)}` : ""}
       ${items ? `<div class="layer-label mt16">Done when</div><ul class="checks">${items}</ul>` : ""}
       ${u.build.stretch ? `<div class="sub mt8">Stretch &mdash; ${esc(u.build.stretch)}</div>` : ""}
       <button class="${done ? "ghost" : "primary"}" onclick="toggleBuild('${u.id}')">${

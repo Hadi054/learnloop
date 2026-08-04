@@ -524,7 +524,14 @@ Unit = {
   concept: { definition, code, underlying, whyItMatters },   // as CUR
   exercise:{ prompt, code, solution, explanation },          // as CUR
   assess:  { explainPrompt, modelAnswer, sets: [[Q,Q,Q],[Q,Q,Q]] },
-  build:   { brief, done: [checklist], stretch },   // NOT YET IMPLEMENTED
+  build:   { brief, design?: {svg, caption}, done: [checklist], stretch },
+           // implemented 2026-08-02; `design` added 2026-08-04 — an optional
+           // TARGET figure, i.e. what the artefact should look like, distinct
+           // from the unit-level `design` which illustrates the CONCEPT. It
+           // renders under "Build this" in the build card, and beside the brief
+           // on the practice page. Same inline-SVG rules as any panel: app CSS
+           // variables, dark in both themes, and RENDER IT AND LOOK before
+           // shipping — s0-01's first draft overran its frame on the right.
   verify, goDeeper
 }
 ```
