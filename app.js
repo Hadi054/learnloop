@@ -267,8 +267,16 @@ function ttsVoice(){
     return vs.find(v=>/^en[-_]US/i.test(v.lang)) || vs.find(v=>/^en/i.test(v.lang)) || null;
   }catch(e){ return null; }
 }
+const SUPERSCRIPT_DIGITS = {"⁰":"0","¹":"1","²":"2","³":"3","⁴":"4","⁵":"5","⁶":"6","⁷":"7","⁸":"8","⁹":"9"};
+/* the new paths.js lessons fence plain notation, not just Swift, so code zones
+   are read aloud too (2026-08-08) — this maps the math/arrow glyphs that show
+   up in those fences into words a TTS voice can say. */
 function ttsClean(t){
-  return t.replace(/[→›]/g," to ").replace(/[·•]/g,", ").replace(/…/g,"...")
+  return t.replace(/(\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g, (m, base, sup) =>
+            base + " to the power " + sup.split("").map(c=>SUPERSCRIPT_DIGITS[c]||c).join(""))
+          .replace(/ⁿ/g," n").replace(/[→›↓]/g," then ").replace(/[×]/g," times ")
+          .replace(/≈/g," approximately ").replace(/≠/g," is not ")
+          .replace(/─{2,}/g,", ").replace(/[·•]/g,", ").replace(/…/g,"...")
           .replace(/[`"“”]/g,"").replace(/\s+/g," ").trim();
 }
 /* Chrome truncates long utterances, so speak sentence-sized pieces in sequence */
@@ -684,7 +692,7 @@ function lessonPractice(){
     <div class="card">
       <div class="layer-label">${esc(q.type)} <span class="layer-note">question ${qi+1}/${qs.length}</span></div>
       ${zone(fmt(q.prompt), l.id, "questions."+qi+".prompt", true)}
-      ${q.code ? zone(codeblock(q.code), l.id, "questions."+qi+".code") : ""}
+      ${q.code ? zone(codeblock(q.code), l.id, "questions."+qi+".code", true) : ""}
       <details class="answer">
         <summary>Show model answer</summary>
         ${zone(fmt(q.answer), l.id, "questions."+qi+".answer", true)}
@@ -694,11 +702,11 @@ function lessonPractice(){
   const exHtml = exs.map((ex, ei) => `
     <div class="card">
       <div class="layer-label amb">Exercise ${ei+1}/${exs.length}</div>
-      ${zone(fmt(ex.brief), l.id, "exercises."+ei+".brief", true)}
+      ${flowHtml(ex.brief, l.id, null, "exercises."+ei+".brief")}
       ${ex.done && ex.done.length ? '<ul class="points">' + ex.done.map(d=>`<li>${fmtInline(d)}</li>`).join("") + '</ul>' : ""}
       <details class="answer">
         <summary>Show expected result</summary>
-        ${zone(fmt(ex.expected), l.id, "exercises."+ei+".expected", true)}
+        ${flowHtml(ex.expected, l.id, null, "exercises."+ei+".expected")}
       </details>
     </div>`).join("");
   screen(`
@@ -812,14 +820,22 @@ function sessQ(){ const s = sess.loop.assess.sets; return (s[sess.set] || s[0])[
    separate zones so that highlighting still anchors per block and read-aloud
    skips the listings. A loop opts in simply by having concept.explain; every
    loop without it renders the original four layers, unchanged. */
-function flowHtml(text, loopId, figure){
+/* fieldPrefix defaults to "concept.explain" so existing highlights on b0-01/
+   s0-01/paths.js `read` fields keep resolving to the same keys; callers with
+   their own text (an exercise brief, say) pass their own prefix so multiple
+   fenced fields on one screen don't collide under the same zone keys.
+   Code zones are `say` too (2026-08-08, learner's request) — a lot of these
+   fences are plain-notation math/definitions, not just Swift, and skipping
+   them skipped real teaching content. ttsClean() maps the math glyphs. */
+function flowHtml(text, loopId, figure, fieldPrefix){
+  const prefix = fieldPrefix || "concept.explain";
   return String(text).split(/```[a-z]*\n?/).map((part, i) => {
-    if(i % 2) return zone(codeblock(part.replace(/\n$/, "")), loopId, "concept.explain." + i);
+    if(i % 2) return zone(codeblock(part.replace(/\n$/, "")), loopId, prefix + "." + i, true);
     /* a line containing only [design] drops the figure in where it earns its
        place, rather than parking it above the text like a plate */
     return part.split(/^[ \t]*\[design\][ \t]*$/m).map((seg, k) => {
       const t = seg.trim();
-      const html = t ? zone(fmt(t), loopId, "concept.explain." + i + "." + k, true) : "";
+      const html = t ? zone(fmt(t), loopId, prefix + "." + i + "." + k, true) : "";
       return k === 0 ? html : (figure || "") + html;
     }).join("");
   }).join("");

@@ -769,16 +769,33 @@ ship. WidgetKit is SwiftUI-only and this is a UIKit track.
   bites, the fix is a bigger type ceiling, not a narrower column.
 - Read aloud (added 2026-08-01): a speaker button on every PROSE card — definition,
   under the hood, why it matters, transfer, go deeper, exercise prompt, solution
-  explanation, explain prompt, model answer (loop + interview). Code blocks
-  deliberately get none. Uses `window.speechSynthesis` (a browser API driving the
-  phone's own TTS engine — no network, no dependency); `zone(html,id,field,true)`
-  marks the readable zone and `toggleSpeak()` reads `.hl-zone.say` inside the card.
-  Text is cleaned (arrows/backticks) and split into ≤180-char sentence chunks
-  because Chrome truncates long utterances. `u.lang="en-US"` + an en voice, so a
-  non-English default voice doesn't read English text. Second tap stops; `screen()`
-  and tab-hide stop it. Speed lives in its own key `learnloop.tts.v1` (0.75×–1.3×,
+  explanation, explain prompt, model answer (loop + interview). Uses
+  `window.speechSynthesis` (a browser API driving the phone's own TTS engine — no
+  network, no dependency); `zone(html,id,field,true)` marks the readable zone and
+  `toggleSpeak()` reads `.hl-zone.say` inside the card. Text is cleaned
+  (arrows/backticks) and split into ≤180-char sentence chunks because Chrome
+  truncates long utterances. `u.lang="en-US"` + an en voice, so a non-English
+  default voice doesn't read English text. Second tap stops; `screen()` and
+  tab-hide stop it. Speed lives in its own key `learnloop.tts.v1` (0.75×–1.3×,
   Data screen), outside S — no migration. If the API is missing, every button
   simply isn't rendered.
+  REVISED 2026-08-08 (learner's request, after reviewing `p0a-01`): code fences
+  in `paths.js` `read`/`exercise.brief`/`exercise.expected` and `question.code`
+  ARE now read aloud — `flowHtml()`'s code zones carry `say` too, because a lot
+  of those fences are plain-notation math and definitions, not just Swift, and
+  skipping every fence skipped real teaching content. `ttsClean()` gained a
+  glyph map for what shows up in them (`→`/`↓` → "then", `×` → "times", `≈` →
+  "approximately", `≠` → "is not", superscripts → "to the power N", `─` runs →
+  a pause). Also fixed while touching this: `exercise.brief`/`.expected` were
+  rendered with `fmt()`, which does not understand triple-backtick fences —
+  any exercise with a fenced code block (every one in `p0a-01`) rendered with
+  literal stray backticks and no `<pre>` formatting. They render through
+  `flowHtml()` now, same as `read`, with their own field-prefix so highlight
+  keys don't collide between questions/exercises/read on one lesson screen.
+  The OLD stepwise format's code zones (`concept.code`, `exercise.code`,
+  `exercise.solution`, `verify` — CUR/SUR archive and old-format loops) are
+  UNCHANGED: those are dense real Swift, the "noise" the original design note
+  was written about, and the archive is frozen. Revisit only on request.
 - Storage: localStorage key `learnloop.v1` (key name unchanged on purpose), shape
   `{ v:2, streak, lastDay:"YYYY-MM-DD", loops, log }`. `migrate()` upgrades v:1
   blobs on load AND on import: each log entry gains hist=[current], ivl (2 if
