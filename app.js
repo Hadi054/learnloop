@@ -71,6 +71,41 @@ function loopPos(loop){ const b = blockOf(loop); return {b, i:b.loops.indexOf(lo
    lets a block be inserted anywhere in CUR.blocks later and still read right. */
 function blockMark(b){ return "B" + CUR.blocks.indexOf(b); }
 
+/* ---------- PATHS (the ten-path rebuild, 2026-08-07) ----------
+   Own storage key, own schema, so S/SU/KEY/migrate() are never touched — the
+   archive can't be corrupted by anything the new track does. paths.js ships
+   lessons as STUBS (id/title/tier only) until they're authored one at a time;
+   lessonWritten() is the single place that decides whether a lesson can be
+   opened, so nothing else needs to guess from a missing field. */
+const PKEY = "learnloop.paths.v1";
+let PS = loadPaths();
+function blankPaths(){ return {v:1, lessons:{}, projects:{}}; }
+function loadPaths(){
+  try{ const raw = localStorage.getItem(PKEY); if(raw){ const s = JSON.parse(raw); if(s && s.v===1) return s; } }
+  catch(e){}
+  return blankPaths();
+}
+function savePaths(){
+  try{ localStorage.setItem(PKEY, JSON.stringify(PS)); }
+  catch(e){ if(!storageWarned){ storageWarned = true;
+    alert("Saving is unavailable here (this can happen in a preview). Download the file and open it in Chrome, then progress will persist. You can also back up anytime from Data."); } }
+}
+function lessonWritten(l){ return !!(l && l.read); }
+function pathLessons(p){ return p.chapters.reduce((a,c)=>a.concat(c.lessons), []); }
+function pathWrittenCount(p){ return pathLessons(p).filter(lessonWritten).length; }
+function pathDoneCount(p){ return pathLessons(p).filter(l=>PS.lessons[l.id]).length; }
+/* first path with work left (written but not passed, or not yet written) —
+   same "first unfinished" idea as activeBlock(), so the dropdown opens
+   somewhere useful instead of always at Path 0 once real progress exists. */
+function defaultPathId(){
+  const p = PATHS.paths.find(p => pathDoneCount(p) < pathLessons(p).length);
+  return (p || PATHS.paths[PATHS.paths.length-1]).id;
+}
+function defaultChapterId(path){
+  const c = path.chapters.find(c => c.lessons.some(l => !PS.lessons[l.id]));
+  return (c || path.chapters[path.chapters.length-1] || {id:null}).id;
+}
+
 /* ---------- rendering helpers ---------- */
 const app = document.getElementById("app");
 function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -108,7 +143,45 @@ function applyTheme(){
 }
 function setTheme(t){
   try{ localStorage.setItem(THEME_KEY, t); }catch(e){}
-  applyTheme(); home();
+  applyTheme();
+  redrawCurrent();     /* whatever screen is on screen, not always home — see below */
+}
+/* re-renders the current screen in place. navStack holds the render callback
+   for every level below the top; the top-of-stack one IS the current screen
+   (see "back navigation" below), so redrawing it is just calling it again.
+   Used by setTheme() so toggling appearance mid-lesson or mid-archive doesn't
+   also snap you back to Paths home as a side effect. */
+function redrawCurrent(){
+  if(navStack.length) navStack[navStack.length-1]();
+  else home();
+}
+function currentTheme(){ return document.documentElement.dataset.theme === "light" ? "light" : "dark"; }
+function toggleTheme(){ setTheme(currentTheme() === "light" ? "dark" : "light"); }
+const SUN_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.2"/>'
+  + '<g stroke="currentColor" stroke-width="1.3" stroke-linecap="round">'
+  + '<path d="M8 1.4v1.7M8 12.9v1.7M1.4 8h1.7M12.9 8h1.7M3.3 3.3l1.2 1.2M11.5 11.5l1.2 1.2M3.3 12.7l1.2-1.2M11.5 4.5l1.2-1.2"/></g></svg>';
+/* dark mode is "space mode" (learner's call, 2026-08-07) — see style.css's
+   starfield. The toggle icon shows a moon among a few stars while it's active,
+   the same cue the background texture uses. */
+const MOON_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.6 9.8A5.6 5.6 0 1 1 6.2 2.4a4.6 4.6 0 0 0 7.4 7.4z"/>'
+  + '<circle cx="12.4" cy="3.5" r=".6"/><circle cx="10.1" cy="6.5" r=".4"/><circle cx="13.7" cy="7" r=".35"/></svg>';
+/* the appearance toggle, pinned to the right of a .headrow. Icon shows the
+   CURRENT theme; tapping switches to the other one — a plain two-state toggle,
+   not the old three-way Auto/Light/Dark row (learner's call: "a simple toggle
+   to change light and dark mode"). First load still resolves from the system
+   preference (applyTheme()'s "auto" fallback, unchanged); the toggle just
+   never offers "auto" as a state you can land back on. */
+function themeToggleBtn(){
+  const light = currentTheme() === "light";
+  return `<button class="thmtoggle" onclick="toggleTheme()"
+    aria-label="Switch to ${light?"dark":"light"} mode" title="${light?"Dark":"Light"} mode">
+    ${light?SUN_ICON:MOON_ICON}</button>`;
+}
+function headRowHtml(label){
+  return `<div class="headrow">
+    <div class="eyebrow">learnloop <span class="dim">// ${label}</span></div>
+    ${themeToggleBtn()}
+  </div>`;
 }
 /* follow the system while the preference is "auto" */
 try{
@@ -168,12 +241,6 @@ try{
   });
 }catch(e){}
 function goPractice(){ navGo(practice); }
-function themeRow(){
-  const p = themePref();
-  const b = (id,label)=>`<button class="thm${p===id?" sel":""}" onclick="setTheme('${id}')">${label}</button>`;
-  return `<div class="cellcap mt24"><span>appearance</span><span>${p}</span></div>
-    <div class="themerow">${b("auto","Auto")}${b("light","Light")}${b("dark","Dark")}</div>`;
-}
 function screen(html){ stopSpeak(); app.innerHTML = html; applyHighlights(app); window.scrollTo(0,0); }
 
 /* ---------- read aloud (Web Speech API) ----------
@@ -467,37 +534,222 @@ function saveNoteFor(loopId){
   saveNotes(notes);
 }
 
-/* ---------- HOME (the curriculum list) ----------
-   The block/loop list IS the home screen: no "next loop" driver, the learner
-   picks. A passed loop gets a tick and a green row; a block whose every loop is
-   passed gets a tick and a green container. One block expands at a time — by
-   default the active one (first with unfinished loops).
+/* ---------- HOME = THE TEN PATHS (rebuilt 2026-08-07) ----------
+   Home used to be the Machine/Surface tab pair; it is now a single path
+   picker. A native <select> replaces the tabs (ten items doesn't fit a tab
+   bar), and the chapter list below it is the same "one container expands at a
+   time" pattern the old block list used — chapterCardHtml() below is
+   structurally identical to machineHome()'s block cards on purpose, same CSS
+   classes, so the two feel like one visual language rather than a redesign
+   mid-app. `selectedPid`/`openCi` are deliberately in memory only: coming back
+   to the app starts wherever defaultPathId()/defaultChapterId() land, which is
+   the first path/chapter with work left — same "first unfinished" idea
+   activeBlock() always used.
 
-   Home has two TABS under the heading: the machine (this curriculum) and the
-   surface track. They are two lists of the same shape, not two screens, so the
-   tab only swaps the body — heading, nav and scroll position are shared. `tab`
-   is deliberately in memory only: coming back to the app starts on the machine,
-   but finishing a surface lesson returns to the surface tab, because
-   surface() sets it. */
-let openBi = null;              // expanded block index; null = follow activeBlock(), -1 = none
-let tab = "machine";            // "machine" | "surface"
-function toggleBlock(i){ openBi = (openBi===i ? -1 : i); home(); }
-function goTab(t){ tab = t; home(); }
-function tabsHtml(){
-  const t = (id,label)=>`<button class="tab${tab===id?" sel":""}" role="tab"
-      aria-selected="${tab===id}" onclick="goTab('${id}')">${label}</button>`;
-  return `<div class="tabs" role="tablist">${t("machine","Machine")}${t("surface","Surface")}</div>`;
+   The old Machine + Surface tracks did not go away — see "ARCHIVE" further
+   down. They are one tap away via the button at the foot of this list, not a
+   tab, because they are no longer where new lessons land (see CLAUDE.md "THE
+   REBUILD"): fresh authoring over regrouping, on the learner's call. */
+let selectedPid = null;         // dropdown selection; null = resolve via defaultPathId() on first render
+let openCi = null;               // expanded chapter id; null = follow defaultChapterId(path)
+function selectPath(id){ selectedPid = id; openCi = null; home(); }
+function toggleChapter(cid){ openCi = (openCi===cid ? null : cid); home(); }
+function chapterCardHtml(c, open){
+  const total = c.lessons.length;
+  const written = c.lessons.filter(lessonWritten).length;
+  const done = c.lessons.filter(l=>PS.lessons[l.id]).length;
+  const complete = total>0 && done===total;
+  const mark = c.id.slice(1).toUpperCase();   // "p4g" -> "4G", matches PATHS.md's own labels
+  const cells = c.lessons.map(l=>{
+    const rec = PS.lessons[l.id];
+    return `<div class="cell${rec?" done"+(rec.score<6.5?" weak":""):""}"></div>`;
+  }).join("");
+  const rows = !open ? "" : c.lessons.map((l,i)=>{
+    const rec = PS.lessons[l.id];
+    if(!lessonWritten(l)){
+      return `<div class="looprow pending">
+        <span class="tick">${hexOf(i)}</span>
+        <span class="lt">${esc(l.title)}</span>
+        <span class="badge">${l.tier}</span>
+      </div>`;
+    }
+    return `<button class="looprow${rec?" done":""}" onclick="openLesson('${l.id}')">
+      <span class="tick">${rec?"✓":hexOf(i)}</span>
+      <span class="lt">${esc(l.title)}</span>
+      ${rec?`<span class="badge ${rec.score>=6.5?"s":"w"}">${rec.score.toFixed(1)}</span>`
+           :'<span class="badge">—</span>'}
+    </button>`;
+  }).join("");
+  return `<div class="blockcard${complete?" done":""}">
+    <button class="blockhead" onclick="toggleChapter('${c.id}')" aria-expanded="${open}">
+      <span class="bmark">${complete?"✓":mark}</span>
+      <span class="bt"><span class="bn">${esc(c.name)}</span>
+        <span class="bs">${written}/${total} written${done?` · ${done} passed`:""}</span></span>
+      <span class="bcount">${done}/${total}</span>
+      <span class="chev">${open?"▴":"▾"}</span>
+    </button>
+    <div class="cells mini">${cells}</div>
+    ${open?`<div class="looplist">${rows}</div>`:""}
+  </div>`;
+}
+function pathSelectHtml(selected){
+  const opts = PATHS.paths.map(p=>{
+    const w = pathWrittenCount(p), t = pathLessons(p).length;
+    return `<option value="${p.id}"${p.id===selected.id?" selected":""}>${esc(p.name)} — ${w}/${t} written</option>`;
+  }).join("");
+  return `<select class="pathsel" onchange="selectPath(this.value)" aria-label="Choose a path">${opts}</select>`;
 }
 function home(){
-  const h = tab === "surface" ? surfaceHome() : machineHome();
+  if(selectedPid === null) selectedPid = defaultPathId();
+  const path = PATHS.paths.find(p=>p.id===selectedPid) || PATHS.paths[0];
+  const shownCid = openCi===null ? defaultChapterId(path) : openCi;
+  const totalW = pathWrittenCount(path), total = pathLessons(path).length, done = pathDoneCount(path);
   screen(`
-    <div class="eyebrow">learnloop <span class="dim">// ${h.label}</span></div>
-    <h1>${h.title}</h1>
-    ${tabsHtml()}
-    ${h.body}
-    ${themeRow()}
+    ${headRowHtml("the ten paths")}
+    <h1>${esc(path.name)}</h1>
+    <div class="sub">${done}/${total} lessons passed · ${totalW}/${total} written. Tap a chapter to open it.</div>
+    ${pathSelectHtml(path)}
+    ${path.chapters.map(c=>chapterCardHtml(c, c.id===shownCid)).join("")}
   `);
 }
+/* ---------- lesson flow (paths.js) ----------
+   Read-only viewer, deliberately: the learner's call (2026-08-07) was read,
+   questions and exercises, with model answers visible on request, and NO
+   self-rating / scoring / spaced-repetition system yet — that is a separate
+   decision for later, not bundled in here. So PS/PKEY are read (for the
+   done-cell tint chapterCardHtml() already draws) but never written by this
+   flow. Model answers and expected results are behind a plain <details>
+   element rather than a JS toggle — no state to lose, nothing to wire up.
+   Nav levels: home() is 0, lessonRead() is 1 (via openLesson's navGo),
+   lessonPractice() is 2 (via goLessonPractice's navGo) — same one-level-per-
+   screen rule the rest of the app follows (see "back navigation" above). */
+let openLessonCtx = null;   // {lesson, chapter, i} for whichever lesson is open
+function findLesson(id){
+  let found = null;
+  PATHS.paths.some(p => p.chapters.some(c => {
+    const i = c.lessons.findIndex(l => l.id === id);
+    if(i === -1) return false;
+    found = {lesson: c.lessons[i], chapter: c, i};
+    return true;
+  }));
+  return found;
+}
+function openLesson(id){
+  const found = findLesson(id);
+  if(!found || !lessonWritten(found.lesson)){
+    alert("“" + (found ? found.lesson.title : id) + "” isn't written yet.");
+    return;
+  }
+  openLessonCtx = found;
+  navGo(lessonRead);
+}
+function lessonEyebrow(extra){
+  const c = openLessonCtx.chapter, i = openLessonCtx.i;
+  const mark = c.id.slice(1).toUpperCase();   // "p0a" -> "0A", matches chapterCardHtml()
+  return `<div class="eyebrow">${hexOf(i)} <span class="dim">// ${mark} · lesson ${i+1}/${c.lessons.length}${extra||""}</span></div>`;
+}
+function lessonRead(){
+  const l = openLessonCtx.lesson;
+  screen(`
+    ${headRowHtml("lesson")}
+    ${lessonEyebrow()}
+    <h1>${esc(l.title)}</h1>
+    <div class="card">
+      ${labelRow('<div class="layer-label">Read</div>')}
+      ${flowHtml(l.read, l.id, l.figure ? figureHtml(l.figure) : "")}
+      ${l.figure && !/^\s*\[design\]\s*$/m.test(l.read) ? figureHtml(l.figure) : ""}
+    </div>
+    ${l.points && l.points.length ? `<div class="card">
+      <div class="layer-label amb">What we just learned</div>
+      ${pointsHtml(l.points)}
+    </div>` : ""}
+    ${l.connection ? `<div class="card">
+      <div class="layer-label">Connection</div>
+      ${l.connection.up ? `<p><b>Up, toward iOS —</b> ${fmtInline(l.connection.up)}</p>` : ""}
+      ${l.connection.down ? `<p><b>Down, toward the machine —</b> ${fmtInline(l.connection.down)}</p>` : ""}
+    </div>` : ""}
+    ${l.goDeeper ? `<div class="card">
+      ${labelRow('<div class="layer-label">Go deeper</div>')}
+      ${zone(fmt(l.goDeeper), l.id, "goDeeper", true)}
+    </div>` : ""}
+    <button class="primary" onclick="goLessonPractice()">Practice →</button>
+    <button class="ghost" onclick="navHome()">Back to the list</button>
+  `);
+}
+function goLessonPractice(){ navGo(lessonPractice); }
+function lessonPractice(){
+  const l = openLessonCtx.lesson;
+  const qs = l.questions || [], exs = l.exercises || [];
+  const qHtml = qs.map((q, qi) => `
+    <div class="card">
+      <div class="layer-label">${esc(q.type)} <span class="layer-note">question ${qi+1}/${qs.length}</span></div>
+      ${zone(fmt(q.prompt), l.id, "questions."+qi+".prompt", true)}
+      ${q.code ? zone(codeblock(q.code), l.id, "questions."+qi+".code") : ""}
+      <details class="answer">
+        <summary>Show model answer</summary>
+        ${zone(fmt(q.answer), l.id, "questions."+qi+".answer", true)}
+        ${q.explanation ? zone(fmt(q.explanation), l.id, "questions."+qi+".explanation", true) : ""}
+      </details>
+    </div>`).join("");
+  const exHtml = exs.map((ex, ei) => `
+    <div class="card">
+      <div class="layer-label amb">Exercise ${ei+1}/${exs.length}</div>
+      ${zone(fmt(ex.brief), l.id, "exercises."+ei+".brief", true)}
+      ${ex.done && ex.done.length ? '<ul class="points">' + ex.done.map(d=>`<li>${fmtInline(d)}</li>`).join("") + '</ul>' : ""}
+      <details class="answer">
+        <summary>Show expected result</summary>
+        ${zone(fmt(ex.expected), l.id, "exercises."+ei+".expected", true)}
+      </details>
+    </div>`).join("");
+  screen(`
+    ${headRowHtml("practice")}
+    ${lessonEyebrow(" · practice")}
+    <h1>${esc(l.title)}</h1>
+    <div class="sub">Questions</div>
+    ${qHtml}
+    <div class="sub">Exercises</div>
+    ${exHtml}
+    <button class="ghost" onclick="navBack()">Back to the lesson</button>
+    <button class="ghost" onclick="navHome()">Back to the list</button>
+  `);
+}
+
+/* ---------- ARCHIVE — the old Machine + Surface tracks, read-only-ish ----------
+   NOT LINKED FROM THE UI (learner's call, 2026-08-07: "archive button is not
+   necessary" — but keep the code as reference material for authoring the new
+   paths). goArchive()/archive() are fully working and were verified end to end
+   before the button was removed; call goArchive() from the console to browse
+   it. Everything under it — the loop flow, the unit flow, review — is
+   unchanged from before the rebuild, still reachable, still saves to S/SU
+   exactly as it always did. Reached one level deep from Paths home when it
+   IS entered (navGo, so hardware/browser back from its own top list returns
+   to Paths home for free); every exit inside it was repointed from
+   navHome() to archiveHome(), which snaps back to THIS list instead of
+   jumping past it to Paths home — see "NAVIGATION" in CLAUDE.md before
+   touching any of this. */
+function goArchive(){ navGo(archive); }
+function archive(){
+  const m = machineHome(), s = surfaceHome();
+  screen(`
+    ${headRowHtml("archive")}
+    <h1>Machine &amp; Surface</h1>
+    <div class="sub">The original two tracks. Real, stored progress — just no longer where new lessons land.</div>
+    <div class="archsplit"><div class="eyebrow">${m.label}</div><h2>${m.title}</h2></div>
+    ${m.body}
+    <div class="archsplit"><div class="eyebrow">${s.label}</div><h2>${s.title}</h2></div>
+    ${s.body}
+  `);
+}
+/* snaps back to the archive list from anywhere nested under it (a loop, a
+   unit, a review), the same "jump past the intermediate screens" behaviour
+   navHome() gives from Paths home — just one level shallower, so it doesn't
+   also jump PAST Archive to Paths home. */
+function archiveHome(){
+  if(navStack.length > 1){ try{ history.go(-(navStack.length-1)); return; }catch(e){} }
+  archive();
+}
+let openBi = null;              // expanded block index; null = follow activeBlock(), -1 = none
+function toggleBlock(i){ openBi = (openBi===i ? -1 : i); archive(); }
 function machineHome(){
   const total = CUR.blocks.reduce((n,b)=>n+b.loops.length, 0);
   const totalDone = CUR.blocks.reduce((n,b)=>n+b.loops.filter(l=>S.log[l.id]).length, 0);
@@ -546,7 +798,7 @@ let peekReturn = null;
 /* A re-run of an already-passed loop serves the OTHER question set, so the same
    three MCQs never come back twice in a row. */
 function startLoop(loop){
-  loop = loop || nextLoop(); if(!loop) return home();
+  loop = loop || nextLoop(); if(!loop) return archive();
   const rec = S.log[loop.id];
   const set = rec ? 1 - (rec.set || 0) : 0;
   sess = {loop, set, qi:0, correct:0, rating:null, draftAnswer:"", comparedShown:false,
@@ -639,7 +891,7 @@ function concept(loop, mode){
   const footer = (loop.concept.explain
       ? '<button class="primary" onclick="goPractice()">Practice \u2192</button>'
       : '<button class="primary" onclick="problem()">Try the problem</button>')
-    + '<button class="ghost" onclick="navHome()">Back to the list</button>';
+    + '<button class="ghost" onclick="archiveHome()">Back to the list</button>';
   screen(`
     <div class="eyebrow">${hexOf(p.i)} <span class="dim">// ${blockMark(p.b)} · concept ${p.i+1}/${p.n}${note}</span></div>
     <h1>${esc(loop.title)}</h1>
@@ -897,18 +1149,18 @@ function finishLoop(){
     </div>
     ${passed ? extrasHtml(sess.loop) : ""}
     ${passed ? "" : '<button onclick="retry()">Re-read this concept</button>'}
-    <button class="primary" onclick="navHome()">Back to the list</button>
+    <button class="primary" onclick="archiveHome()">Back to the list</button>
   `);
 }
 function retry(){ const l = sess.loop, set = sess.set || 0;
   sess = {loop:l, set, qi:0, correct:0, rating:null, draftAnswer:"", comparedShown:false}; concept(l); }
-function confirmExit(){ navHome(); }   /* the popstate guard does the asking */
+function confirmExit(){ archiveHome(); }   /* the popstate guard does the asking */
 
 /* ---------- REVIEW LOOP ---------- */
 let rev = null;
 function startReview(manual){
   const pool = manual ? weakestPool() : reviewPool();
-  if(pool.length < 1){ alert("Nothing to review yet — pass a loop first."); return home(); }
+  if(pool.length < 1){ alert("Nothing to review yet — pass a loop first."); return archive(); }
   rev = {manual, items: pool.map(l=>({loop:l, set: 1-(S.log[l.id].set||0), correct:0})), i:0, qi:0};
   navGo(reviewIntro);
 }
@@ -922,7 +1174,7 @@ function reviewIntro(){
       ${rev.items.map(it=>`<div class="histitem"><span>${esc(it.loop.title)}</span><span class="badge w">${S.log[it.loop.id].score.toFixed(1)}</span></div>`).join("")}
     </div>
     <button class="primary" onclick="revQ()">Begin — ${rev.items.length*3} questions</button>
-    <button class="ghost" onclick="navHome()">Back</button>
+    <button class="ghost" onclick="archiveHome()">Back</button>
   `);
 }
 function revQ(){
@@ -974,7 +1226,7 @@ function revNext(){
         <span class="badge ${it.correct>=2?"s":"w"}">${it.correct}/3 → ${(Math.round(it.correct/3*5*10)/10).toFixed(1)}</span></div>`).join("")}
       <p class="sub mt8">Missed concepts come back tomorrow; solid ones climb the 1/3/7/21-day ladder. That's spaced repetition doing its job.</p>
     </div>
-    <button class="primary" onclick="navHome()">Home</button>
+    <button class="primary" onclick="archiveHome()">Home</button>
   `);
 }
 
@@ -1033,9 +1285,7 @@ function surActiveBlock(){
       || SUR.blocks[SUR.blocks.length-1];
 }
 let openSi = null;   // expanded surface block; null = follow surActiveBlock(), -1 = none
-function toggleSBlock(i){ openSi = (openSi === i ? -1 : i); home(); }
-
-function surface(){ goTab("surface"); }
+function toggleSBlock(i){ openSi = (openSi === i ? -1 : i); archive(); }
 function surfaceHome(){
   const planned = SUR.blocks.reduce((n,b)=>n + b.planned, 0);
   const written = surUnits().length;
@@ -1142,7 +1392,7 @@ function surExtras(u){
 
 let usess = null;
 function openUnit(id){
-  const u = surUnits().find(x=>x.id === id); if(!u) return surface();
+  const u = surUnits().find(x=>x.id === id); if(!u) return archive();
   const rec = SU.lessons[u.id];
   usess = {u, set: rec ? 1 - (rec.set || 0) : 0, qi:0, correct:0, rating:null,
            draftAnswer:"", comparedShown:false, picks:[], checked:false, shown:false};
@@ -1170,7 +1420,7 @@ function unitScreen(u){
       ${passed ? surExtras(u) : ""}
       ${notesCardHtml(u.id)}
       <button class="primary" onclick="goSurPractice()">Practice &rarr;</button>
-      <button class="ghost" onclick="navHome()">Back to the list</button>
+      <button class="ghost" onclick="archiveHome()">Back to the list</button>
     `);
   }
   screen(`
@@ -1197,7 +1447,7 @@ function unitScreen(u){
     ${passed ? surExtras(u) : ""}
     ${notesCardHtml(u.id)}
     <button class="primary" onclick="surProblem()">Try the problem</button>
-    <button class="ghost" onclick="navHome()">Back to the list</button>
+    <button class="ghost" onclick="archiveHome()">Back to the list</button>
   `);
 }
 function surProblem(){
@@ -1208,7 +1458,7 @@ function surProblem(){
     <div class="card">${saybar()}${zone(fmt(u.exercise.prompt), u.id, "exercise.prompt", true)}${zone(codeblock(u.exercise.code), u.id, "exercise.code")}</div>
     <div id="sol"></div>
     <button class="primary" id="revealBtn" onclick="surReveal()">Reveal solution</button>
-    <button class="ghost" onclick="navHome()">Exit lesson</button>
+    <button class="ghost" onclick="archiveHome()">Exit lesson</button>
   `);
 }
 function surReveal(){
@@ -1317,7 +1567,7 @@ function surFinishScreen(u, score, passed){
       <div>${passed ? "Due for review tomorrow." : "Below 3.0. Re-read the design and the spec, then take another pass."}</div>
     </div>
     ${passed ? surExtras(u) : ""}
-    <button class="primary" onclick="navHome()">Back to the surface list</button>
+    <button class="primary" onclick="archiveHome()">Back to the surface list</button>
   `);
 }
 

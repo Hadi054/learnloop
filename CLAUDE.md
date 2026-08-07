@@ -16,6 +16,114 @@ This repo is tooling, not the curriculum. The learner's Swift checkpoint project
 built with ZERO AI assistance (that rule is part of the pedagogy). This app, however,
 may be freely developed with Claude Code.
 
+## THE REBUILD (2026-08-07) — READ THIS FIRST
+
+The learner brought their own roadmap PDF (*iOS Fundamentals & Deep Understanding
+Roadmap*) and asked for three changes. All three are decided; none are open.
+
+1. **The 20-minute loop is retired.** They want an hour minimum every day, more
+   on some days. The unit of work grows to fill it — see the lesson contract
+   below, revised again on 2026-08-07 to drop MCQ.
+2. **The two tracks become ten paths.** `PATHS.md` is the new map: 10 paths, 52
+   chapters, 352 lessons, 52 chapter projects, 10 path capstones, 1 final
+   integrated project.
+3. **Plain English from the first draft**, everywhere. They will write new
+   content one lesson at a time rather than bulk-rewriting anything.
+
+**THE LESSON FORMAT (revised 2026-08-07) — MCQ IS GONE.** A lesson now has
+exactly two practice parts, both open-response, both self-rated against a model
+answer, neither guessable: **Questions** (5–8, mixed types — `recall`,
+`reasoning`, `trace`, `debug`, `explain`, `apply` — no multiple choice, ever)
+and **Exercises** (1–3 experiments/builds, done/not-done, unscored but gate the
+pass). Full contract, question-type table and scoring model are in `PATHS.md`
+under "The lesson contract" and "Scoring". `gate.py`'s length-tell and
+index-bias checks were MCQ-specific and no longer apply — it needs rewriting
+for the new schema before the first `paths.js` lesson is gated.
+
+**They chose FRESH AUTHORING over regrouping**, told plainly that it costs them
+the live review ladder on 145 already-passed loops. So:
+
+- `curriculum.js` (CUR, 145 loops) and `surface.js` (SUR, 2 units) are now the
+  **ARCHIVE**. Do not add to them. Do not renumber them. Their `S.log` /
+  `SU.lessons` progress stays on disk and stays readable — it just stops being
+  live progress. Everything below about CUR and SUR describes the archive and is
+  kept for reference, not as instructions for new work.
+- New content goes in `paths.js` (`const PATHS = {...}`), new storage key
+  `learnloop.paths.v1`. `S`, `SU`, `KEY` and `migrate()` are NOT touched, so the
+  archive cannot be corrupted by anything the new track does.
+- The archive is still worth mining: 145 loops' worth of EXECUTED verification
+  (byte counts, error codes, captured transcripts) is banked in it and in the
+  block table below. Reuse the measured numbers; rewrite the prose to the new
+  contract.
+
+The four topics that fell outside the PDF are now **all included** (learner,
+2026-08-07) as five new chapters: **4G** design fundamentals + **4H** composition
+(the "I can't picture a layout" gap), **4I** Interface Builder + localization,
+**6E** gRPC on the wire, **9E** the device's senses. No open questions remain.
+
+**THE LANGUAGE RULE (learner, 2026-08-07) — this governs every word written.**
+They read English as a second language and found the archive too hard. The fix
+is NOT simplifying the subject:
+- Keep every technical term exactly as it is. `mmap`, `retain cycle`, `witness
+  table`. Renaming a term teaches the wrong word.
+- Simplify the ORDINARY words around the terms, and the sentence length. Max 25
+  words averaged, 35 hard cap, one idea per sentence.
+- **NO FOLKSY ANALOGIES.** Their words: explaining a concept by buying a car
+  "feels dumb". No boxes in garages, no restaurants, no post offices. A metaphor
+  teaches the metaphor and then has to be unlearned.
+- **Examples are BUILDING examples** — code you would write, a screen you would
+  ship, a measurement you would take. If a picture is needed, draw the real
+  machine: ASCII memory diagram, byte table, frame dump.
+- The roadmap PDF's own vocabulary is the target register.
+
+**Time budget:** 15–20 h/week for a full year, spilling into year two. ~740 h of
+work planned against 780–1,040 h in year one, so nothing needs cutting. Full
+breakdown at the foot of `PATHS.md`.
+
+Build order: `PATHS.md` schema (DONE) → **app shell (DONE 2026-08-07)** → gate.py
+for the new schema → then lessons one at a time from `p0a-01`, in the PDF's
+phase order.
+
+**THE APP SHELL (DONE 2026-08-07).** `paths.js` is generated from `PATHS.md`
+(10 paths, 52 chapters, 352 lessons, all STUBS — id/title/tier only, no
+read/questions/exercises yet; `lessonWritten(l)` = `!!l.read` is the one place
+that decides if a lesson can be opened). Home is now the path picker: a native
+`<select>` (`pathSelectHtml()`) replaces the old Machine/Surface tabs, chapter
+cards below it reuse the exact `.blockcard`/`.looprow` markup the old block
+list used (`chapterCardHtml()`), and tapping a chapter reveals its lesson rows
+— pending (unauthored) ones render as plain dimmed `div`s, not buttons, since
+there's nothing to open yet. Appearance is a single icon toggle top-right of
+the header (`themeToggleBtn()`/`toggleTheme()`), not the old three-way Auto/
+Light/Dark row — dark mode is now "space mode": a CSS-only starfield
+(`:root[data-theme="dark"] body`, no images) plus a moon icon, one star
+amber-tinted to tie it to the app's existing signature colour. Old progress
+(CUR's 145 loops, SUR's 2 units) is NOT LINKED FROM THE UI (learner's call,
+2026-08-07: "archive button is not necessary") — `goArchive()`/`archive()`
+are fully built and verified, kept as reference for authoring the new paths,
+callable from the console but not reachable by tapping anything. `archive()`
+renders both `machineHome()`/`surfaceHome()` bodies unchanged, stacked.
+`PS`/`PKEY` (`learnloop.paths.v1`) mirror `S`/`SU`'s shape for when lessons
+start scoring.
+
+  NAVIGATION, READ BEFORE TOUCHING nav*() OR ANY "back"/"exit" BUTTON: home()
+  is Paths (level 0). Archive is one level deep, entered via `navGo(archive)`
+  so hardware/browser back from its own top list lands on Paths home for
+  free. Everything nested under Archive — the CUR loop flow, the SUR unit
+  flow, review — is UNCHANGED except every exit button ("Back to the list",
+  "Home", "Exit lesson", `confirmExit()`) was repointed from `navHome()`
+  (jumps to level 0 = Paths home) to **`archiveHome()`** (jumps to level 1 =
+  Archive's own list, via `history.go(-(navStack.length-1))`). Getting this
+  wrong silently strands the learner back at Paths home mid-loop instead of
+  back at the block list. `toggleBlock`/`toggleSBlock` (expand/collapse a
+  block inside Archive) redraw via `archive()`, not `home()`, for the same
+  reason. Verified 2026-08-07 by driving the stack directly in headless
+  Chrome: open a loop from Archive → `archiveHome()` → lands back on Archive
+  (not Paths home); one more `history.back()` from Archive's top level →
+  lands on Paths home. `redrawCurrent()` (re-renders whatever's on top of
+  `navStack`, or `home()` if the stack is empty) is what lets `setTheme()`
+  toggle appearance in place from ANY screen without that also acting as a
+  navigation action.
+
 ## Files
 
 - `index.html` — shell only
@@ -30,12 +138,30 @@ may be freely developed with Claude Code.
   indicator. Code blocks and Surface design panels stay dark in BOTH
   themes — the amber/cyan/green in them is semantic, not decoration.
 - `app.js` — all logic; screens are plain functions rendering into `#app`
-- `curriculum.js` — `const CUR = {...}` content data (generated; see schema below)
-- `surface.js` — `const SUR = {...}` the SURFACE track's content (UI/UX + UIKit).
-  Separate file and separate schema; see "The Surface track" below.
-- `SURFACE.md` — the Surface curriculum map: 12 blocks, 100 loops, 100 builds,
-  12 capstones, each with its title, verification tier and build. THE PLAN, not
-  the content — only one loop is actually written so far.
+- `roadmap-v2.pdf` — the learner's roadmap, SECOND EDITION (2026-08-07), 39pp.
+  The readable/printable version of the same plan: adds the 5 new chapters, the
+  language rule, verification tiers, the 8-part lesson contract, the time budget
+  and the two-year shape. Regenerate from `roadmap-v2.html` with headless Chrome
+  (`--headless --no-pdf-header-footer --print-to-pdf`) — Chrome is the only PDF
+  path on this Mac; there is no pandoc or wkhtmltopdf.
+- `roadmap-v2.html` — the PDF's source. Edit this, never the PDF.
+- `PATHS.md` — **THE CURRENT PLAN.** The ten-path map: every chapter, every
+  lesson title, its verification tier, every chapter project and path capstone,
+  the eight-part lesson contract, the new schema and the new scoring. Nothing in
+  it is written yet.
+- `paths.js` — `const PATHS = {...}`, the new curriculum. Generated from
+  `PATHS.md` (10 paths, 52 chapters, 352 lessons); every lesson is currently a
+  STUB (id/title/tier only). Loaded in `index.html` between `surface.js` and
+  `app.js`; inlined by `build.js`. Regenerate by re-running the parser used to
+  create it if `PATHS.md`'s titles/chapters change — do not hand-edit lesson
+  titles here without also updating `PATHS.md`.
+- `curriculum.js` — ARCHIVE. `const CUR = {...}`, the 145-loop machine track
+  (schema below). Read-only from 2026-08-07; see "THE REBUILD".
+- `surface.js` — ARCHIVE. `const SUR = {...}`, the Surface track (2 units).
+  Superseded by the ten paths; see "THE REBUILD".
+- `SURFACE.md` — ARCHIVE. The Surface map (12 blocks, 100 loops). Superseded by
+  `PATHS.md`, but keep it: the design-gap reasoning in it is why `PATHS.md`
+  flags "4G — Composition and design systems" as an open question.
 - `build.js` — `node build.js` inlines everything into `dist/learnloop.html`, the
   single file deployed to the phone (Chrome → Add to Home screen). Inlines
   curriculum.js AND surface.js.
@@ -571,26 +697,21 @@ ship. WidgetKit is SwiftUI-only and this is a UIKit track.
   block in CUR.blocks with unfinished loops; auto-advances when a block completes.
   It picks which block the home list opens by default, and feeds `nextLoop()`;
   History shows all blocks grouped.
-- HOME = THE CURRICULUM LIST (learner's decision 2026-07-30, replaced the
-  next-loop/Browse split): home renders every block as a `.blockcard` container
-  with the block's mini memory bar; one block is expanded at a time (`openBi`,
-  default = active block, -1 = all collapsed; `toggleBlock(i)`). A passed loop row
-  gets `✓` + `.looprow.done` (green tint); a block with every loop passed gets `✓`
-  in place of its marker + `.blockcard.done` (green border and tint). That marker
-  is `blockMark()` = "B" + array position (Surface: `surBlockMark()` = "S" + …),
-  NOT `b.id` — changed 2026-08-02 so a block can be inserted mid-list and still
-  read right; see "Ids and order". Tapping any loop
-  opens it in concept "browse" mode — read-only if passed, "Start this loop" if
-  not — and returning keeps that block expanded. The old Browse screen is gone
-  (home absorbed it); nav is Interview / History / Data plus the review button.
-- Home tabs (2026-08-02): home is TWO tracks under one heading — Machine (the CUR
-  curriculum) and Surface (the SUR track). `home()` renders the shared shell
-  (eyebrow, h1, `.tabs`, nav) and asks `machineHome()` / `surfaceHome()` for
-  `{label, title, body}`; neither calls `screen()` itself. `tab` is module state,
-  in memory only (a fresh load starts on Machine); `surface()` is now just
-  `goTab("surface")`, so every existing "back to the surface list" call site keeps
-  working. Adding a third track = a third body function plus one entry in
-  `tabsHtml()`.
+- HOME = THE CURRICULUM LIST (learner's decision 2026-07-30) / Home tabs
+  (2026-08-02) — SUPERSEDED 2026-08-07 by the app shell in "THE REBUILD" at the
+  top of this file: `home()` is now the Paths picker, not the CUR/SUR block
+  list, and the Machine/Surface tab bar is gone. `machineHome()`/`surfaceHome()`
+  still exist and still return `{label, title, body}` exactly as described
+  below — `archive()` now composes them instead of `home()`. The block-card
+  mechanics they describe (`.blockcard`, `openBi`/`toggleBlock`, `blockMark()`
+  = "B" + position not id, done/weak cell tinting, one block expanded at a
+  time) are UNCHANGED and still exactly how Archive renders CUR; read the rest
+  of this bullet as documentation of Archive's internals, not of home(). `tab`/
+  `goTab`/`tabsHtml`/`surface()` no longer exist — replaced by `selectedPid`/
+  `selectPath()`/`pathSelectHtml()` (Paths home) and `goArchive()`/`archive()`
+  (one level into the old tracks). "Interview / History / Data" nav mentioned
+  here does not exist in the current app.js — this line was stale before the
+  rebuild too; verify against the code, not this note, before relying on it.
 - Spaced repetition (v:2, added 2026-07-17): passing a loop schedules it due
   tomorrow (`log[id].due`, ladder stage `ivl` into INTERVALS = [1,3,7,21] days).
   Home offers "Start review — N due" above the list whenever ≥1 concept is due,

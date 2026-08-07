@@ -33,6 +33,32 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
+  /* dark mode is SPACE MODE (learner's call, 2026-08-07): a faint starfield
+     behind the column, pure CSS radial-gradients so it stays offline and costs
+     nothing to render. Cards sit solidly on top of it — panel/code backgrounds
+     are opaque — so the stars only show in the gutters and top/bottom margins,
+     never behind text. One star is amber-tinted to tie the effect back to the
+     app's existing signature colour rather than reading as decoration bolted
+     onto a genuinely differently-themed dark mode. */
+  :root[data-theme="dark"] body{
+    background-image:
+      radial-gradient(1.2px 1.2px at 12% 8%, rgba(217,222,229,.55), transparent 60%),
+      radial-gradient(1px 1px at 78% 4%, rgba(217,222,229,.4), transparent 60%),
+      radial-gradient(1.4px 1.4px at 40% 15%, rgba(217,222,229,.5), transparent 60%),
+      radial-gradient(1px 1px at 92% 22%, rgba(217,222,229,.35), transparent 60%),
+      radial-gradient(1px 1px at 6% 35%, rgba(217,222,229,.4), transparent 60%),
+      radial-gradient(1.3px 1.3px at 60% 45%, rgba(233,180,76,.55), transparent 60%),
+      radial-gradient(1px 1px at 25% 60%, rgba(217,222,229,.4), transparent 60%),
+      radial-gradient(1.2px 1.2px at 85% 68%, rgba(217,222,229,.5), transparent 60%),
+      radial-gradient(1px 1px at 50% 80%, rgba(217,222,229,.35), transparent 60%),
+      radial-gradient(1.4px 1.4px at 10% 92%, rgba(217,222,229,.5), transparent 60%),
+      radial-gradient(1px 1px at 70% 95%, rgba(217,222,229,.4), transparent 60%);
+    background-repeat:repeat;background-size:340px 620px;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    :root[data-theme="dark"] body{animation:twinkle 7s ease-in-out infinite}
+  }
+  @keyframes twinkle{0%,100%{background-color:var(--bg)}50%{background-color:#15181f}}
   /* ONE type scale, one column width. Everything below sizes in em, so the whole
      app scales from body's font-size: ~17px on a phone, growing to 20px on a wide
      screen. The column itself is 90% of the viewport at every size (learner's
@@ -47,6 +73,16 @@
   .eyebrow{font-family:var(--serif);font-size:.68em;letter-spacing:.14em;color:var(--amber);
     text-transform:uppercase;margin-bottom:6px}
   .eyebrow .dim{color:var(--dim)}
+  /* header row: eyebrow on the left, the appearance toggle pinned right. Every
+     top-level screen (Paths home, Archive) uses this; nested screens keep the
+     plain .eyebrow line, since the toggle only needs to be reachable from where
+     you'd plausibly linger long enough to want it. */
+  .headrow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px}
+  .headrow .eyebrow{margin-bottom:0}
+  button.thmtoggle{width:auto;flex:0 0 auto;margin:0;padding:7px;line-height:0;
+    background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--text)}
+  button.thmtoggle svg{display:block;width:1.05em;height:1.05em;fill:currentColor}
+  button.thmtoggle:active{filter:brightness(1.25)}
   h1{font-family:var(--serif);font-size:1.44em;line-height:1.25;font-weight:600;letter-spacing:-.01em}
   h2{font-size:1.19em;line-height:1.3;margin-bottom:4px}
   .sub{color:var(--dim);font-size:.86em}
@@ -55,6 +91,13 @@
   .layer-label{font-family:var(--serif);font-size:.66em;letter-spacing:.14em;color:var(--cyan);
     text-transform:uppercase;margin-bottom:6px}
   .layer-label.amb{color:var(--amber)}
+  details.answer{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+  details.answer summary{cursor:pointer;font-family:var(--serif);font-size:.86em;
+    letter-spacing:.02em;color:var(--cyan);list-style:none}
+  details.answer summary::-webkit-details-marker{display:none}
+  details.answer summary::before{content:"\25B8  ";color:var(--dim)}
+  details.answer[open] summary::before{content:"\25BE  "}
+  details.answer[open] summary{margin-bottom:8px}
   .layer-note{color:var(--dim);font-size:1.14em;font-family:var(--serif);letter-spacing:.02em}
   p{margin-bottom:10px} p:last-child{margin-bottom:0}
   code{font-family:var(--mono);font-size:.88em;background:var(--panel2);
@@ -105,15 +148,23 @@
     color:var(--dim);font-size:.86em}
   .feedback.good{border-color:var(--green)} .feedback.bad{border-color:var(--red)}
   .row{display:flex;gap:10px} .row>button{flex:1}
-  /* home tabs — the two tracks (machine / surface). An underline bar, not pills:
-     it reads as the same eyebrow language as the heading above it, and the
-     selected tab is amber like every other "here" marker in the app. */
-  .tabs{display:flex;gap:4px;margin:12px 0 2px;border-bottom:1px solid var(--line)}
-  button.tab{flex:1;width:auto;margin:0;padding:9px 4px;background:none;border:none;
-    border-radius:0;border-bottom:2px solid transparent;color:var(--dim);
-    font-family:var(--serif);font-size:.78em;letter-spacing:.12em;text-transform:uppercase}
-  button.tab.sel{color:var(--amber);border-bottom-color:var(--amber)}
-  button.tab:active{filter:none;color:var(--text)}
+  /* path picker (home): a native <select> rather than a custom dropdown — it's
+     the one control on this screen that benefits from the OS's own picker UI
+     on a phone, and it needs no JS beyond onchange. Styled to match the app's
+     buttons; the chevron is an inline data-URI SVG so it stays offline. */
+  select.pathsel{display:block;width:100%;margin-top:10px;font-family:var(--serif);
+    font-size:.95em;color:var(--text);background-color:var(--panel2);
+    border:1px solid var(--line);border-radius:9px;padding:12px 34px 12px 14px;
+    -webkit-appearance:none;appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' stroke='%238A94A3' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat:no-repeat;background-position:right 14px center;background-size:11px 8px}
+  select.pathsel:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  /* a lesson stub — mapped in PATHS.md but not authored yet. Not a button:
+     nothing to open, so it renders as a plain dimmed row rather than something
+     that looks tappable and does nothing. Same 50% opacity as .blockcard.pending
+     for the same reason (visible road ahead, not yet real). */
+  .looprow.pending{opacity:.5}
+  .looprow.pending .badge{font-size:.66em;letter-spacing:.07em;text-transform:uppercase}
   /* curriculum list (home): one container per block, green + ticked when done */
   .blockcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;
     padding:12px 14px 13px;margin-top:12px}
@@ -204,11 +255,8 @@
   ul.points li{margin-bottom:8px;line-height:1.5}
   ul.points li:last-child{margin-bottom:0}
   ul.points b{font-family:var(--serif);font-size:.88em;color:var(--amber);font-weight:600}
-  /* theme switch — the app has no settings screen at all right now, so this
-     sits at the foot of the home list. Same shape as the 0–5 rating row. */
-  .themerow{display:flex;gap:7px;margin-top:10px}
-  button.thm{width:auto;flex:1;margin:0;padding:9px 0;font-family:var(--serif);
-    font-size:.74em;letter-spacing:.1em;text-transform:uppercase}
-  button.thm.sel{background:var(--amber);border-color:var(--amber);
-    color:var(--on-amber);font-weight:700}
-  @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+  /* a chapter or path section that exists in PATHS.md but has no lessons
+     written at all yet — same treatment as an unauthored Surface block. */
+  .archsplit{margin:22px 0 4px}
+  .archsplit .eyebrow{margin-bottom:2px}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}

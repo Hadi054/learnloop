@@ -1,0 +1,1305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>iOS Fundamentals &amp; Deep Understanding Roadmap — Second Edition</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  body { font-family: Georgia, 'Times New Roman', serif; font-size: 10.5pt; line-height: 1.45; color:#111; }
+  h1 { font-size: 26pt; text-align:center; margin: 0 0 4pt; letter-spacing:-0.5pt; }
+  h1.sub { font-size: 13pt; font-weight:normal; font-style:italic; text-align:center; color:#444; margin:0 0 22pt; }
+  h2 { color:#2E74B5; font-size:15pt; margin: 22pt 0 7pt; page-break-after:avoid; }
+  h3 { color:#5B9BD5; font-size:11.5pt; margin: 14pt 0 5pt; page-break-after:avoid; }
+  h2.path { color:#1F4E79; font-size:17pt; border-bottom:2px solid #1F4E79; padding-bottom:4pt; page-break-before:always; }
+  p { margin: 0 0 8pt; }
+  ul, ol { margin: 0 0 9pt; padding-left: 18pt; }
+  li { margin-bottom: 2.5pt; }
+  table { border-collapse: collapse; width:100%; margin: 6pt 0 12pt; font-size: 9.5pt; page-break-inside:avoid; }
+  th { background:#DEEAF6; text-align:left; }
+  th, td { border:0.6pt solid #8EAADB; padding: 3.5pt 5pt; vertical-align:top; }
+  td.n { width: 26pt; text-align:right; color:#666; }
+  td.t { width: 46pt; text-align:center; font-size:8pt; letter-spacing:0.4pt; }
+  .box { border:0.8pt solid #333; padding: 8pt 10pt; margin: 10pt 0 12pt; background:#F7F9FC; page-break-inside:avoid; }
+  .box b, .box strong { color:#1F4E79; }
+  .new { border-left:3pt solid #C00000; background:#FDF4F4; padding: 8pt 10pt; margin:10pt 0 12pt; page-break-inside:avoid; }
+  .new .tag { color:#C00000; font-weight:bold; font-size:9pt; letter-spacing:1pt; display:block; margin-bottom:3pt; }
+  pre { font-family: 'SF Mono', Menlo, monospace; font-size:8.5pt; line-height:1.35; background:#F4F4F4;
+        border:0.5pt solid #ccc; padding:7pt 9pt; white-space:pre-wrap; page-break-inside:avoid; }
+  code { font-family:'SF Mono', Menlo, monospace; font-size:9pt; }
+  blockquote { margin: 8pt 0 10pt; padding-left:11pt; border-left:2.5pt solid #8EAADB; color:#333; font-style:italic; }
+  .proj { background:#F0F6EC; border:0.6pt solid #A9C48E; padding:6pt 9pt; margin:0 0 12pt; font-size:9.5pt; page-break-inside:avoid; }
+  .proj b { color:#4A6E28; }
+  .cap { background:#FFF4E0; border:0.6pt solid #E0B060; padding:6pt 9pt; margin:8pt 0 12pt; font-size:9.5pt; page-break-inside:avoid; }
+  .cap b { color:#8A5A00; }
+  .meta { text-align:center; color:#666; font-size:9.5pt; margin-bottom:20pt; }
+  .tot { font-weight:bold; background:#F0F0F0; }
+</style>
+</head>
+<body>
+
+<h1>iOS Fundamentals &amp;<br>Deep Understanding Roadmap</h1>
+<h1 class="sub">A bottom-up plan for moving from “vibe coding” to first-principles iOS engineering</h1>
+<p class="meta"><b>Second edition, revised</b> · 7 August 2026<br>
+10 paths · 52 chapters · 352 lessons · 52 chapter projects · 10 path capstones · 1 final project</p>
+
+<table>
+<tr><th style="width:30%">Starting point</th><td>~1 year of professional iOS development experience</td></tr>
+<tr><th>Core problem</th><td>APIs are familiar, but terminology and underlying mechanisms are fragmented</td></tr>
+<tr><th>Goal</th><td>Connect machine → OS → compiler/runtime → Swift → UIKit → concurrency → networking/database → architecture</td></tr>
+<tr><th>Method</th><td>Read fundamentals thoroughly, then trace each familiar iOS API down the stack</td></tr>
+<tr><th>Commitment</th><td>15–20 hours per week for a full year, continuing into year two</td></tr>
+</table>
+
+<div class="box">
+<b>North-star question:</b> “What is actually happening underneath this line of code?”
+</div>
+
+<h2>What changed in this edition</h2>
+
+<p>The first edition set the structure and it holds. This edition changes five things,
+all of them decided by the learner after reading the first.</p>
+
+<ol>
+<li><b>The daily unit grew from twenty minutes to an hour.</b> The commitment went up
+to 15–20 hours a week, so the lesson grew to match.</li>
+<li><b>Four subjects were added</b> that the first edition left out: the design and
+composition gap, Interface Builder with runtime localization, gRPC over HTTP/2, and
+the device's sensors. Five new chapters, 38 new lessons.</li>
+<li><b>A language rule was added.</b> The learner reads English as a second language.
+The rule below says exactly how the writing must sound, and it bans the thing that
+was making explanations worse rather than better.</li>
+<li><b>A verification tier was added to every lesson.</b> No lesson may be built only
+from citation. Each one carries at least one number that was actually measured.</li>
+<li><b>Multiple choice was removed from the lesson contract.</b> Every question is now
+written and self-graded against a model answer. The lesson contract below explains
+why.</li>
+</ol>
+
+<h2>How to use this roadmap</h2>
+
+<p>This is not a beginner checklist and not a collection of disconnected courses. Treat
+it as a dependency graph. Learn enough of each lower layer to explain the upper layer
+you already use at work.</p>
+
+<ol>
+<li>Start bottom-up with computer systems and operating systems.</li>
+<li>Revisit Swift concepts and connect them to memory, compiler, runtime and ABI behaviour.</li>
+<li>Revisit UIKit and concurrency with the run loop, scheduler, threads, rendering and isolation in mind.</li>
+<li>Add networking, persistence, databases, testing, architecture and performance.</li>
+<li>For every topic, write a one-paragraph “under the hood” explanation in your own words.</li>
+<li>Prefer small experiments over passive reading when a concept feels abstract.</li>
+</ol>
+
+<div class="box">
+<b>The rule.</b> Do not ask only “How do I use this API?” Also ask: Who owns the memory?
+Which thread executes it? What OS service is involved? What compiler or runtime rule
+makes it work? What happens when it fails?
+</div>
+
+<h2>The whole stack at a glance</h2>
+
+<table>
+<tr><th style="width:24%">Layer</th><th style="width:38%">What you should understand</th><th>iOS connection</th></tr>
+<tr><td>Hardware / machine</td><td>CPU, instructions, registers, memory, cache, storage</td><td>Why CPU work, memory pressure and locality affect app behaviour</td></tr>
+<tr><td>Operating system</td><td>processes, threads, scheduling, virtual memory, files, syscalls</td><td>Why apps have lifecycles, sandboxes, main threads, background limits</td></tr>
+<tr><td>Compiler / runtime</td><td>parsing, type checking, code generation, linking, runtime metadata</td><td>What Swift code becomes, and why ARC, generics and dispatch behave as they do</td></tr>
+<tr><td>Swift</td><td>types, ownership, protocols, generics, errors, ARC</td><td>The language layer you write every day</td></tr>
+<tr><td>UIKit / graphics</td><td>run loop, responder chain, layout, rendering, Core Animation</td><td>How taps become events and views become pixels</td></tr>
+<tr><td>Design / composition</td><td>units, scales, colour, components, states, decomposition</td><td>What to ask the layout system for in the first place</td></tr>
+<tr><td>Concurrency</td><td>tasks, threads, actors, queues, cancellation</td><td>How work is scheduled safely without freezing the UI</td></tr>
+<tr><td>Networking</td><td>DNS, TCP, TLS, HTTP, HTTP/2, URLSession, gRPC</td><td>What actually happens during an API call</td></tr>
+<tr><td>Persistence / DB</td><td>files, SQL, indexes, transactions, caches</td><td>Why different storage tools have different tradeoffs</td></tr>
+<tr><td>Software engineering</td><td>architecture, testing, modularity, observability</td><td>How to make large apps understandable and maintainable</td></tr>
+</table>
+
+<div class="new">
+<span class="tag">NEW IN THIS EDITION</span>
+<b>Design and composition is now a layer of the stack.</b> The first edition taught the
+constraint solver thoroughly and never taught what to ask it for. That is a real gap:
+you can know exactly how Auto Layout resolves a constraint and still be unable to look
+at a screen and see its structure. Path 4 now carries two chapters for it.
+</div>
+
+<h2>How the writing sounds</h2>
+
+<p>This roadmap and every lesson written from it follow one language rule. It exists
+because the learner reads English as a second language, and because the first attempt
+at “making it easier” made it worse.</p>
+
+<ul>
+<li><b>Keep every technical term.</b> <code>retain cycle</code>, <code>mmap</code>,
+<code>witness table</code>, <code>page fault</code> stay exactly as they are. Renaming a
+term teaches the wrong word and makes the real documentation unreadable later. The
+terminology is the syllabus, not an obstacle to it.</li>
+<li><b>Simplify the ordinary words around the terms.</b> “the thing that decides”, not
+“the arbiter”. “runs later”, not “is deferred until such time as”. The hard part was
+never <code>mmap</code>. It was the sentence <code>mmap</code> was buried in.</li>
+<li><b>Short sentences.</b> Twenty-five words on average, thirty-five at the absolute
+most, one idea per sentence. No semicolon chains.</li>
+<li><b>No folksy analogies.</b> Explaining memory by comparing it to a car dealership or
+a post office teaches the dealership. Then the comparison has to be unlearned, because
+it breaks at exactly the point where the real behaviour gets interesting.</li>
+<li><b>Examples are building examples.</b> Every example is something being
+constructed: code you would actually write, a screen you would actually ship, a
+measurement you would actually take.</li>
+<li><b>Draw the real machine, not a comparison to one.</b> When a picture is needed, it
+is a memory diagram, a byte table, or a captured frame dump.</li>
+</ul>
+
+<h2>Verification tiers — the gate against trivia</h2>
+
+<p>Every lesson is tagged with how its claims were checked.</p>
+
+<table>
+<tr><th style="width:15%">Tier</th><th>Meaning</th></tr>
+<tr><td><b>EXEC</b></td><td>Runnable and run. Plain <code>swift</code>, Mac Catalyst, <code>ibtool</code>, command-line tools. The numbers in the lesson were measured, not remembered.</td></tr>
+<tr><td><b>DEV</b></td><td>Needs a real device — permission prompts, the render server, biometrics.</td></tr>
+<tr><td><b>DOC</b></td><td>Cited convention or documented behaviour that cannot be measured directly.</td></tr>
+</table>
+
+<div class="box">
+<b>A lesson that is entirely DOC is a failed lesson.</b> Every lesson must carry at least
+one measured number. This is the defence against the whole thing decaying into
+recitable trivia — “minimum touch target? 44 points” is a fact you can hold without
+understanding anything. The measurement around it is not.
+</div>
+
+<h2>Curriculum architecture</h2>
+
+<p>Every path has chapters. Every chapter has lessons. Every lesson is learned actively.
+Every chapter ends with a build. Every path ends with a capstone. The whole program ends
+with one production-style project.</p>
+
+<pre>PATH
+ ├── Chapter
+ │    ├── Lesson
+ │    │    ├── Read, ending in a connection note
+ │    │    ├── Questions (mixed types, all written, no multiple choice)
+ │    │    └── Exercises (experiments and small builds)
+ │    └── Chapter Project
+ └── Path Capstone
+
+ALL PATHS → Final Integrated iOS Project</pre>
+
+<h3>The lesson contract — what fills the hour</h3>
+
+<div class="new">
+<span class="tag">REVISED</span>
+<b>Multiple choice is gone.</b> A four-option question can be passed by
+recognizing the right shape among the choices, without ever pulling the idea out
+of memory — exactly the “looks familiar” failure below warns against. Every
+lesson now has two practice parts. Both are written. Both are graded by rating
+your own answer against a model answer, the same honesty contract explain-back
+always used. There is nothing left to guess.
+</div>
+
+<table>
+<tr><th style="width:20%">Part</th><th>Minimum output</th><th style="width:14%">Time</th></tr>
+<tr><td>Read</td><td>Understand the terminology, the mechanism, the purpose, the tradeoffs and the common failure modes. Ends with a connection note tracing the lesson up to iOS and down to the machine.</td><td>~15 min</td></tr>
+<tr><td>Questions</td><td>5–8 open-response questions, mixed types: recall (define a term), reasoning (argue a tradeoff), trace (predict output or state before running anything), debug (find and fix a broken scenario), explain (the whole concept, no notes), apply (use it on a fresh scenario).</td><td>~25 min</td></tr>
+<tr><td>Exercises</td><td>1–3 focused experiments or small builds, each small enough to isolate one concept. Written without AI. Gate the pass — a lesson cannot be marked done with one left undone.</td><td>~20 min</td></tr>
+</table>
+
+<div class="box">
+<b>Do not grade yourself by recognition.</b> A lesson is not complete because the
+explanation looks familiar. It is complete when you can retrieve the terminology,
+predict behaviour, build a small example, debug a failure, and connect it to adjacent
+layers without relying on AI.
+</div>
+
+<h3>Chapter project contract</h3>
+<ul>
+<li>Combines several lessons from the chapter rather than testing one API in isolation.</li>
+<li>Contains at least one deliberate failure or debugging task.</li>
+<li>Requires a short design note explaining decisions and tradeoffs.</li>
+<li>Uses real tooling where relevant: debugger, Memory Graph, Instruments, network logs, database inspection, tests.</li>
+<li>Ends with a “trace it downward” explanation connecting the build to lower layers.</li>
+</ul>
+
+<h3>Path capstone contract</h3>
+<ul>
+<li>Combines all major chapters in that path.</li>
+<li>Buildable without following a step-by-step tutorial.</li>
+<li>Includes tests or verification where appropriate.</li>
+<li>Includes at least one performance, memory, concurrency or failure analysis.</li>
+<li>Produces a concise write-up: architecture, mechanisms, tradeoffs, bugs found, and what happens underneath.</li>
+</ul>
+
+<div class="box">
+<b>Projects and capstones are written with zero AI assistance.</b> That rule is part of
+the method, not a preference. Reading can be assisted; producing cannot, because the
+whole point is to find out what you can build without help.
+</div>
+
+<!-- ============ PATH 0 ============ -->
+<h2 class="path">Path 0 — Computer Systems <span style="font-weight:normal;font-size:11pt">(28 lessons)</span></h2>
+
+<p>Build the mental model every later topic rests on. Not electrical-engineering depth —
+enough to explain where instructions and data live, and how a program becomes running
+work.</p>
+
+<div class="box">
+<b>Every lesson here answers:</b> What data is represented in memory? Which operations
+happen in the CPU, registers and cache? What changes if the data layout or access
+pattern changes? Can I predict the program state before running it?
+</div>
+
+<h3>0A — Data representation</h3>
+<table>
+<tr><td class="n">01</td><td>Bits and bytes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Binary and hexadecimal</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Signed integers and two’s complement</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Floating point, and the precision surprise</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Text: ASCII, Unicode, UTF-8</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Endianness</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Binary inspector.</b> Encode and decode values by hand and in
+code, inspect the bytes, and demonstrate an overflow and a floating-point precision
+surprise.</div>
+
+<h3>0B — CPU and instructions</h3>
+<table>
+<tr><td class="n">01</td><td>What a CPU actually does</td><td class="t">DOC</td></tr>
+<tr><td class="n">02</td><td>Registers and the program counter</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>The instruction cycle: fetch, decode, execute</td><td class="t">DOC</td></tr>
+<tr><td class="n">04</td><td>Reading the assembly your Swift becomes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Cores, and why more of them means parallel work</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Cache and locality</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Context switching, and what it costs</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Execution microscope.</b> Compile tiny functions, inspect the
+stack and disassembly in the debugger, and time a cache-friendly loop against a
+cache-hostile one.</div>
+
+<h3>0C — Memory</h3>
+<table>
+<tr><td class="n">01</td><td>Addresses and pointers</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>RAM versus persistent storage</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>The stack</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>The heap</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Allocation and deallocation</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Copying a value versus sharing a reference</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Fragmentation</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>The memory hierarchy, in real numbers</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Memory laboratory.</b> Stack traces, heap allocations, a large
+buffer, object lifetime, and a memory-growth experiment you can explain line by line.</div>
+
+<h3>0D — Program execution</h3>
+<table>
+<tr><td class="n">01</td><td>What an executable file is</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Code, data, and the other sections</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>What happens when a program is loaded</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>The function call</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>The stack frame</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>The return address</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Crashes: bad access, stack overflow, out of memory</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Program trace.</b> Document one small program from source to
+executable to process to function call to memory to crash.</div>
+
+<div class="cap"><b>Path capstone — Systems Trace Lab.</b> Take a small program and produce a
+source-to-CPU/memory execution map with debugger observations.</div>
+
+<!-- ============ PATH 1 ============ -->
+<h2 class="path">Path 1 — Operating Systems <span style="font-weight:normal;font-size:11pt">(28 lessons)</span></h2>
+
+<p>The environment that owns processes, threads, virtual memory, files, sockets,
+permissions, scheduling and application lifecycle.</p>
+
+<div class="box">
+<b>Every lesson here answers:</b> Which process or thread is involved? Is the work
+running, blocked, sleeping or waiting on I/O? What resource or permission does the OS
+own? What happens under memory pressure or a lifecycle change?
+</div>
+
+<h3>1A — Processes and threads</h3>
+<table>
+<tr><td class="n">01</td><td>Program versus process</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>The process address space</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>What a thread is</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>The main thread</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>User mode versus kernel mode</td><td class="t">DOC</td></tr>
+<tr><td class="n">06</td><td>System calls</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>How a process starts, and how it ends</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Process explorer.</b> Inspect process and thread state, and
+trace one blocking operation all the way down.</div>
+
+<h3>1B — Scheduling</h3>
+<table>
+<tr><td class="n">01</td><td>The scheduler</td><td class="t">DOC</td></tr>
+<tr><td class="n">02</td><td>Runnable, running, waiting</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Priority and quality of service</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>CPU-bound versus I/O-bound work</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Why blocking the main thread freezes the screen</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>What a context switch costs</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Responsive-work demo.</b> Compare blocking UI work against
+scheduled background work, and explain the scheduler’s part in both.</div>
+
+<h3>1C — Virtual memory</h3>
+<table>
+<tr><td class="n">01</td><td>Virtual versus physical memory: the address is a lie</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Pages, and the fault that fills them</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Memory protection</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Copy-on-write, at the page level</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>mmap: why a 300 MB file is not 300 MB of RAM</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Clean versus dirty, and why iOS has no swap</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Memory pressure and jetsam</td><td class="t">DOC</td></tr>
+<tr><td class="n">08</td><td>Measuring it: footprint, resident, virtual</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Memory-pressure lab.</b> Allocations, copy behaviour, warning
+and termination concepts, and a measurement you trust.</div>
+
+<h3>1D — Files and the iOS process environment</h3>
+<table>
+<tr><td class="n">01</td><td>File descriptors</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Directories, paths, and the app container</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Buffered I/O and flushing</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>File permissions and metadata</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Atomic replacement</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>The app sandbox</td><td class="t">DOC</td></tr>
+<tr><td class="n">07</td><td>App lifecycle, suspension, background limits</td><td class="t">DEV</td></tr>
+</table>
+<div class="proj"><b>Project — Sandboxed storage app.</b> Read and write files in the correct
+containers, and document the lifecycle and background constraints you hit.</div>
+
+<div class="cap"><b>Path capstone — OS Behavior Explorer.</b> A small iOS diagnostic app
+demonstrating lifecycle, threads, files, memory pressure and background limits.</div>
+
+<!-- ============ PATH 2 ============ -->
+<h2 class="path">Path 2 — Compiler, Linker and Runtime <span style="font-weight:normal;font-size:11pt">(26 lessons)</span></h2>
+
+<p>What happens between Swift source and machine instructions, and where compile-time
+behaviour ends and runtime behaviour begins.</p>
+
+<div class="box">
+<b>Every lesson here answers:</b> What is decided at compile time? What is left for link,
+load or runtime? Which symbol, type or metadata is involved? What ownership or dispatch
+mechanism explains the behaviour?
+</div>
+
+<h3>2A — The compilation pipeline</h3>
+<table>
+<tr><td class="n">01</td><td>What a compiler actually is</td><td class="t">DOC</td></tr>
+<tr><td class="n">02</td><td>Lexing: source text into tokens</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Parsing, and the AST</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Type checking</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>SIL and IR: the middle languages</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Optimization</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Machine-code generation</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Compiler-errors notebook.</b> Create syntax, type and generic
+errors on purpose, and classify which phase rejected each one.</div>
+
+<h3>2B — Linking and loading</h3>
+<table>
+<tr><td class="n">01</td><td>Object files</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Symbols and name mangling</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Static libraries</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Dynamic libraries and frameworks</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>What the linker does</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Linker errors versus compiler errors</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>dyld, and what load time costs</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Binary dependency map.</b> Inspect a real dependency graph and
+trace one symbol to the code that defines it.</div>
+
+<h3>2C — Runtime mechanisms</h3>
+<table>
+<tr><td class="n">01</td><td>Runtime metadata</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Static versus dynamic dispatch</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Vtables</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Protocol witness tables</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>The Objective-C runtime</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>ABI and module stability</td><td class="t">DOC</td></tr>
+</table>
+<div class="proj"><b>Project — Dispatch lab.</b> Compare final, class, protocol and
+<code>@objc</code> calls, and prove which mechanism each one used.</div>
+
+<h3>2D — ARC and ownership machinery</h3>
+<table>
+<tr><td class="n">01</td><td>Reference counting</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Where retain and release are inserted</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>deinit, and deterministic destruction</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Closure capture, and the context box</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>weak and unowned</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Retain cycles, and how to prove one</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Ownership debugger.</b> Create a leak on purpose, prove it
+with <code>deinit</code> and the Memory Graph, then fix it.</div>
+
+<div class="cap"><b>Path capstone — Source-to-Runtime Report.</b> Pick one Swift feature and
+trace it from syntax through compile, link, load and runtime behaviour.</div>
+
+<!-- ============ PATH 3 ============ -->
+<h2 class="path">Path 3 — Swift <span style="font-weight:normal;font-size:11pt">(39 lessons)</span></h2>
+
+<p>You already write Swift. This path removes blind spots, installs precise terminology,
+and connects syntax to semantics.</p>
+
+<div class="box">
+<b>Every lesson here answers:</b> What is the exact type? Value or reference semantics?
+Who owns this? What does the compiler guarantee, and what can still fail at runtime?
+</div>
+
+<h3>3A — Language core</h3>
+<table>
+<tr><td class="n">01</td><td>let and var</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>The primitive types, and their sizes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Operators</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Control flow</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Optionals</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Optional is an enum</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Tuples and ranges</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Swift fundamentals kata pack.</b> Transformations, optional
+handling, collection reasoning and prediction exercises.</div>
+
+<h3>3B — Functions and closures</h3>
+<table>
+<tr><td class="n">01</td><td>Functions and argument labels</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Default, inout and variadic parameters</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Functions as values</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>What a closure physically is</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Captures</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>escaping</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Capture lists</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>map, filter, reduce</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Callback engine.</b> Design synchronous and escaping callback
+APIs, then diagnose the capture and lifetime bugs you built into them.</div>
+
+<h3>3C — Type modeling</h3>
+<table>
+<tr><td class="n">01</td><td>Structs</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Classes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Value versus reference semantics: the decision</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Enums</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Enums with payloads</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Stored, computed and observed properties</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Initializers and inheritance</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>final, and identity</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Domain model project.</b> Model one real feature with value and
+reference types, and justify every choice in writing.</div>
+
+<h3>3D — Protocols and generics</h3>
+<table>
+<tr><td class="n">01</td><td>Protocols</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Extensions and default implementations</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Protocol composition</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Associated types</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Generic functions</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Generic types and constraints</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>where clauses</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>any versus some: the existential box</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Generic component library.</b> Reusable repository, result and
+collection utilities behind protocol abstractions.</div>
+
+<h3>3E — Errors, ownership and standard protocols</h3>
+<table>
+<tr><td class="n">01</td><td>Error and throws</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>do, catch, and the second return path</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>try? and Result</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Equatable</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Hashable</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Comparable</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Type casting and metatypes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>Copy-on-write in the standard library</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Robust model layer.</b> Typed errors, hashable identity,
+ownership-safe callbacks, and tests.</div>
+
+<div class="cap"><b>Path capstone — Swift Core Library.</b> A tested Swift package or CLI
+using protocols, generics, errors, value semantics, reference ownership and
+documentation.</div>
+
+<!-- ============ PATH 4 ============ -->
+<h2 class="path">Path 4 — UIKit and Interface <span style="font-weight:normal;font-size:11pt">(61 lessons)</span></h2>
+
+<p>Master the public API surface, then the machinery that explains lifecycle, layout,
+events, rendering and performance. This edition adds the part the first edition
+missed: how to look at a screen and see its structure.</p>
+
+<div class="box">
+<b>Every lesson here answers:</b> Where is this object in the hierarchy? Which lifecycle,
+layout or event phase is active? Why must this happen on the main thread? What work
+reaches Core Animation and the GPU?
+</div>
+
+<h3>4A — Views and controllers</h3>
+<table>
+<tr><td class="n">01</td><td>UIView</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>The view hierarchy</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>The view controller lifecycle</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>View loading, and isViewLoaded</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>The controls you use every day</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Storyboard versus XIB versus programmatic</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Lifecycle laboratory.</b> A multi-screen app logging creation,
+appearance, disappearance, deinit and every hierarchy change.</div>
+
+<h3>4B — Layout</h3>
+<table>
+<tr><td class="n">01</td><td>frame, bounds, center</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Coordinate conversion</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Auto Layout: constraints are equations</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>The layout pass: mark now, solve later</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Safe areas</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Intrinsic content size</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Hugging and compression resistance</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>Self-sizing cells</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Adaptive layout project.</b> One complex screen supporting
+Dynamic Type and rotation with zero ambiguous constraints.</div>
+
+<h3>4C — Navigation and containers</h3>
+<table>
+<tr><td class="n">01</td><td>UINavigationController</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Tab bars</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Presentation</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Child view controllers</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Appearance transitions</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Navigation shell.</b> A coordinator-ready multi-flow app whose
+navigation stack you can inspect and explain.</div>
+
+<h3>4D — Lists and state-driven UI</h3>
+<table>
+<tr><td class="n">01</td><td>UITableView</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>UICollectionView</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Cell reuse</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Delegates and data sources</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Diffable data sources</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Compositional layout</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Large-list browser.</b> A pagination-ready list with diff
+updates, stable identity and preserved scroll position.</div>
+
+<h3>4E — Events and the run loop</h3>
+<table>
+<tr><td class="n">01</td><td>What an event loop is</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>The main run loop, and its modes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>UIResponder and the responder chain</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>First responder</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Touch delivery</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Hit-testing</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Gesture recognizers and target-action</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Event inspector.</b> Custom views that log and demonstrate
+hit-testing and responder-chain behaviour.</div>
+
+<h3>4F — Rendering, animation and accessibility</h3>
+<table>
+<tr><td class="n">01</td><td>UIView versus CALayer</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>The Core Animation layer tree</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Layout, display, compositing</td><td class="t">DOC</td></tr>
+<tr><td class="n">04</td><td>CPU versus GPU responsibilities</td><td class="t">DOC</td></tr>
+<tr><td class="n">05</td><td>Offscreen rendering</td><td class="t">DEV</td></tr>
+<tr><td class="n">06</td><td>draw(_:) and Core Graphics</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Animation: two layers, one lie</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>VoiceOver and Dynamic Type</td><td class="t">DEV</td></tr>
+</table>
+<div class="proj"><b>Project — Accessible animated interface.</b> Custom animation and drawing
+with correct VoiceOver semantics and a performance inspection.</div>
+
+<div class="new">
+<span class="tag">NEW IN THIS EDITION</span>
+<b>4G and 4H exist because of one sentence:</b> “if I see a UI, the layout should come
+into my mind, but it doesn’t.” Every other chapter in this path teaches the machinery
+that executes a layout. These two teach what to ask it for. 4G is the material a design
+is made from; 4H is how to take a screen apart.
+</div>
+
+<h3>4G — Design fundamentals</h3>
+<table>
+<tr><td class="n">01</td><td>The point is not the pixel</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>The spacing scale</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>The type scale, and Dynamic Type</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Colour, contrast, and the two themes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Material, elevation, and what a shadow costs</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Icons and SF Symbols</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Images, and the decode tax</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Design token sheet.</b> Build one screen twice: once with
+ad-hoc numbers, once from a spacing and type scale you defined. Measure both at the
+largest Dynamic Type setting and show which one survives.</div>
+
+<h3>4H — Composition and components</h3>
+<table>
+<tr><td class="n">01</td><td>Reading a screen as a tree</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Stacks are the decomposition tool</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>The component, and its states</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Lists, rhythm, and the repeated row</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>The five screen states: loading, loaded, empty, error, offline</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Touch targets and reachability</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>When a design system earns its keep</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Screen teardown and rebuild.</b> Take a screenshot of a screen
+you did not design. Draw its view tree, name every component and state, then rebuild it
+from your own tokens without looking at the original while you code.</div>
+
+<h3>4I — Interface Builder and localization</h3>
+<table>
+<tr><td class="n">01</td><td>What a storyboard actually is</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Segues versus manual instantiation</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>XIBs, reusable views, and File’s Owner</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Storyboards at scale, and the merge conflict</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Traits and size classes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Localization under the hood: tables, plurals, direction</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Switching language at runtime</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Two-language screen.</b> One storyboard screen, fully
+localized, including a plural rule and a right-to-left language, switching language
+without an app restart.</div>
+
+<div class="cap"><b>Path capstone — UIKit Application.</b> A polished multi-screen app with
+adaptive layout, lists, navigation, accessibility, custom interaction and Instruments
+checks.</div>
+
+<!-- ============ PATH 5 ============ -->
+<h2 class="path">Path 5 — Concurrency <span style="font-weight:normal;font-size:11pt">(34 lessons)</span></h2>
+
+<div class="box">
+<b>Every lesson here answers:</b> Task or thread? Blocking or suspension? What mutable
+state is shared? What ordering is guaranteed? How do cancellation, errors and isolation
+propagate?
+</div>
+
+<h3>5A — Execution fundamentals</h3>
+<table>
+<tr><td class="n">01</td><td>Concurrency versus parallelism</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Synchronous versus asynchronous</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Thread versus task</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Blocking versus suspension</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Race conditions and data races</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Deadlock, livelock, starvation</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Race and freeze lab.</b> Freeze the UI on purpose, create an
+ordering bug and a race, then explain each failure.</div>
+
+<h3>5B — GCD</h3>
+<table>
+<tr><td class="n">01</td><td>DispatchQueue</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Serial versus concurrent queues</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>The main and global queues</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>async versus sync</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Quality of service</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Groups, semaphores and barriers</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Why main.sync deadlocks</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Legacy concurrency project.</b> An image or data pipeline
+built on queues, with a safe handoff to the UI.</div>
+
+<h3>5C — async/await and Task</h3>
+<table>
+<tr><td class="n">01</td><td>async functions</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>await is a suspension point</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>async throws</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Task</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Task lifetime</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Cancellation is cooperative</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Priorities and sleep</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Cancellable API screen.</b> Loading, error, retry and cancel
+behaviour with navigation-safe task lifetime.</div>
+
+<h3>5D — Structured concurrency</h3>
+<table>
+<tr><td class="n">01</td><td>Parent and child tasks</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>async let</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Task groups</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>How errors and cancellation propagate</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Concurrent downloader.</b> Fetch a dynamic set of resources
+with bounded reasoning about completion and failure.</div>
+
+<h3>5E — Actors and isolation</h3>
+<table>
+<tr><td class="n">01</td><td>Actors</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Actor isolation</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Reentrancy</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>MainActor</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>nonisolated</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Sendable, and the Swift 6 checks</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Thread-safe cache.</b> Start with unsafe mutable state,
+demonstrate the bug, then fix it with actor isolation.</div>
+
+<h3>5F — Streams and bridging</h3>
+<table>
+<tr><td class="n">01</td><td>AsyncSequence</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>AsyncStream</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Continuations</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Migrating completion handlers</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Event-stream adapter.</b> Wrap a callback or notification
+stream as an AsyncSequence and consume it safely.</div>
+
+<div class="box">
+<b>Mental model.</b> A Swift <code>Task</code> is not an OS thread. Tasks are scheduled by
+the Swift concurrency runtime onto threads, which the OS then schedules onto CPU cores.
+</div>
+
+<div class="cap"><b>Path capstone — Concurrency Workbench.</b> A UIKit app with parallel
+network work, cancellation, an actor-protected cache, streaming updates, error
+propagation and a thread analysis.</div>
+
+<!-- ============ PATH 6 ============ -->
+<h2 class="path">Path 6 — Networking <span style="font-weight:normal;font-size:11pt">(42 lessons)</span></h2>
+
+<div class="box">
+<b>Every lesson here answers:</b> Which protocol layer is responsible? What bytes, headers
+and status actually crossed? What is retryable and what is not? Where should caching,
+auth and cancellation live?
+</div>
+
+<h3>6A — Network foundations</h3>
+<table>
+<tr><td class="n">01</td><td>Packets</td><td class="t">DOC</td></tr>
+<tr><td class="n">02</td><td>IP addresses</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Ports</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>DNS</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>TCP: the pipe under HTTP</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>UDP, and when it wins</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Latency versus bandwidth</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Network trace notebook.</b> Follow one hostname from DNS
+lookup to an open socket, with captured evidence at each step.</div>
+
+<h3>6B — TLS and HTTP</h3>
+<table>
+<tr><td class="n">01</td><td>What TLS is for</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Certificates and the chain</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>The handshake, and what it costs</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Request and response</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Methods</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Status codes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Headers and body</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>Caching headers</td><td class="t">EXEC</td></tr>
+<tr><td class="n">09</td><td>Cookies, tokens and idempotency</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — HTTP laboratory.</b> Issue requests, inspect headers, status,
+body and cache behaviour, and classify every failure you can produce.</div>
+
+<h3>6C — URLSession and decoding</h3>
+<table>
+<tr><td class="n">01</td><td>URL and URLRequest</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>URLSession and its configurations</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>The async URLSession APIs</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Codable</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Inside JSONDecoder</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Decoding resilience</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Timeouts and cancellation</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Typed API client.</b> An endpoint abstraction with decoding, a
+typed error model and working cancellation.</div>
+
+<h3>6D — Production networking</h3>
+<table>
+<tr><td class="n">01</td><td>Pagination</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Retries and backoff</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Rate limits</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Auth refresh, and the single flight</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Request deduplication</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Where caching belongs</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Offline behaviour</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>WebSockets and background transfer</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Resilient feed.</b> A paginated UI with a retry policy,
+deduplication, auth handling and cache integration.</div>
+
+<div class="new">
+<span class="tag">NEW IN THIS EDITION</span>
+<b>6E covers gRPC over HTTP/2</b>, which the first edition left out entirely. It is in
+because it is used daily at work, and because REST is not the only thing on the wire.
+This chapter is where “what actually crossed the network” stops being an abstraction:
+you encode a message by hand and check it byte for byte.
+</div>
+
+<h3>6E — Protocols on the wire</h3>
+<table>
+<tr><td class="n">01</td><td>Protocol Buffers: the wire format</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>.proto evolution: changing the contract safely</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>HTTP/2: frames, streams, multiplexing</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Anatomy of a gRPC call</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Deadlines and cancellation</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Streaming RPCs and flow control</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Interceptors</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>SwiftNIO and transports</td><td class="t">EXEC</td></tr>
+<tr><td class="n">09</td><td>TLS and certificate pinning</td><td class="t">EXEC</td></tr>
+<tr><td class="n">10</td><td>Connection lifecycle: keepalive, backoff, waiters</td><td class="t">EXEC</td></tr>
+<tr><td class="n">11</td><td>Auth over gRPC: tokens, refresh, single flight</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Wire inspector.</b> Encode one message by hand, verify it byte
+for byte against the library’s output, then capture the HTTP/2 frames that carry it.</div>
+
+<div class="cap"><b>Path capstone — Production API Layer.</b> A reusable network package plus
+a client app with auth, pagination, caching, backoff, cancellation, tests and logging.
+Where the app speaks both REST and gRPC, they share one token vault.</div>
+
+<!-- ============ PATH 7 ============ -->
+<h2 class="path">Path 7 — Persistence and Databases <span style="font-weight:normal;font-size:11pt">(26 lessons)</span></h2>
+
+<div class="box">
+<b>Every lesson here answers:</b> What survives process death? What consistency guarantee
+is needed? What does this index or cache optimize, and what does it cost? How is stale
+data invalidated?
+</div>
+
+<h3>7A — Files and serialization</h3>
+<table>
+<tr><td class="n">01</td><td>Volatile versus persistent</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Files and directories</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Serialization formats</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Atomic writes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Corruption, and recovering from it</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — File-backed store.</b> Serialize models with atomic
+replacement, and handle a corrupted file without losing the good data.</div>
+
+<h3>7B — Relational database fundamentals</h3>
+<table>
+<tr><td class="n">01</td><td>Why databases exist</td><td class="t">DOC</td></tr>
+<tr><td class="n">02</td><td>Tables, rows, relations</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Primary and foreign keys</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>SQL basics</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Indexes</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Query plans</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Transactions</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>ACID and normalization</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — SQLite notebook.</b> A schema, CRUD, an indexed search you can
+time against an unindexed one, and a transaction rolled back on purpose.</div>
+
+<h3>7C — Apple persistence</h3>
+<table>
+<tr><td class="n">01</td><td>SQLite under Core Data</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>The Core Data stack</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Managed objects and faulting</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Contexts and threads</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Fetching, and NSFetchedResultsController</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Migrations</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Persistent catalog app.</b> An Apple persistence stack with
+migration-aware modeling, and a migration you actually run.</div>
+
+<h3>7D — Caching and offline design</h3>
+<table>
+<tr><td class="n">01</td><td>Cache hit and miss</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Memory versus disk cache</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>NSCache, and the decode tax</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>TTL</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Invalidation</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Stale-while-revalidate</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>LRU, and offline-first</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Offline-first repository.</b> Memory plus disk plus API, with
+stale data, revalidation, mutation invalidation and a stated failure policy.</div>
+
+<div class="box">
+<b>Key question.</b> Before choosing storage, ask: how much data, how structured, how
+sensitive, how often read and written, how long must it survive, and how consistent
+must it be?
+</div>
+
+<div class="cap"><b>Path capstone — Offline-First Data App.</b> Database, two-level cache,
+repository abstraction, migrations, offline reads, invalidation and tests.</div>
+
+<!-- ============ PATH 8 ============ -->
+<h2 class="path">Path 8 — Software Engineering <span style="font-weight:normal;font-size:11pt">(41 lessons)</span></h2>
+
+<div class="box">
+<b>Every lesson here answers:</b> What responsibility belongs here? Which way do the
+dependencies point? How can this be tested or replaced? Which tradeoff makes the design
+simpler or safer?
+</div>
+
+<h3>8A — Clean design and SOLID</h3>
+<table>
+<tr><td class="n">01</td><td>Separation of concerns</td><td class="t">DOC</td></tr>
+<tr><td class="n">02</td><td>Cohesion and coupling</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Single responsibility</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Open/closed</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Liskov substitution</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Interface segregation</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Dependency inversion</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Refactor challenge.</b> Turn a massive view controller into
+focused, testable components without changing behaviour.</div>
+
+<h3>8B — Architecture and state</h3>
+<table>
+<tr><td class="n">01</td><td>MVC, and the massive view controller</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>MVVM</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Coordinator</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Repository</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Explicit screen state</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>State machines</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Derived state, and boolean explosion</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Feature architecture project.</b> One feature with explicit
+state, owned navigation and a repository boundary.</div>
+
+<h3>8C — Dependency injection and patterns</h3>
+<table>
+<tr><td class="n">01</td><td>Constructor injection</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Protocols as seams</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Factories</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Containers</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Delegate, observer, strategy, adapter</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>The singleton tradeoff</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Dependency composition root.</b> Wire production and fake
+implementations without a service locator.</div>
+
+<h3>8D — Testing</h3>
+<table>
+<tr><td class="n">01</td><td>What a unit test actually is</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Fakes, stubs and mocks</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>XCTest</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Testing async code</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>UI tests</td><td class="t">DEV</td></tr>
+<tr><td class="n">06</td><td>What not to test</td><td class="t">DOC</td></tr>
+</table>
+<div class="proj"><b>Project — Test harness.</b> Tests for a view model, a repository, and
+every state transition and error path.</div>
+
+<h3>8E — Modularization and teamwork</h3>
+<table>
+<tr><td class="n">01</td><td>Targets and modules</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Swift Package Manager</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Access control boundaries</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>Dependency direction</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Git fundamentals</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Merge versus rebase, and code review</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>CI/CD</td><td class="t">EXEC</td></tr>
+<tr><td class="n">08</td><td>Feature flags and environment config</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Modularize an app.</b> Extract core, network and feature
+packages, and write down the dependency rules they must obey.</div>
+
+<h3>8F — Debugging, performance and observability</h3>
+<table>
+<tr><td class="n">01</td><td>The debugger</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>The Memory Graph</td><td class="t">DEV</td></tr>
+<tr><td class="n">03</td><td>Time Profiler</td><td class="t">DEV</td></tr>
+<tr><td class="n">04</td><td>Allocations and Leaks</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Structured logging</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Crash reports and symbolication</td><td class="t">EXEC</td></tr>
+<tr><td class="n">07</td><td>Metrics, and the analytics boundary</td><td class="t">DOC</td></tr>
+</table>
+<div class="proj"><b>Project — Performance clinic.</b> Diagnose and fix an intentionally
+slow, leaky screen, with before-and-after evidence.</div>
+
+<div class="cap"><b>Path capstone — Production Refactor.</b> Take a medium app from tightly
+coupled code to a modular, testable architecture with tests and profiling notes.</div>
+
+<!-- ============ PATH 9 ============ -->
+<h2 class="path">Path 9 — Apple Platform Internals <span style="font-weight:normal;font-size:11pt">(27 lessons)</span></h2>
+
+<p>Useful once the earlier layers are comfortable. The goal is conceptual fluency, not
+kernel-development expertise.</p>
+
+<div class="box">
+<b>Every lesson here answers:</b> Which Apple subsystem is involved? What observable
+behaviour proves the model? Where is the line between documented API and implementation
+detail? Which tool validates the hypothesis?
+</div>
+
+<h3>9A — Darwin/XNU and the process model</h3>
+<table>
+<tr><td class="n">01</td><td>Darwin and XNU</td><td class="t">DOC</td></tr>
+<tr><td class="n">02</td><td>Mach and BSD</td><td class="t">DOC</td></tr>
+<tr><td class="n">03</td><td>How an installed app becomes a process</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>The sandbox and containers</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Entitlements</td><td class="t">EXEC</td></tr>
+<tr><td class="n">06</td><td>Code signing</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Platform map.</b> Document how a signed app on disk becomes a
+sandboxed running process.</div>
+
+<h3>9B — Loading and runtimes</h3>
+<table>
+<tr><td class="n">01</td><td>The app bundle</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>The binary and its frameworks</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>dyld and the shared cache</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>The Objective-C runtime in production</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>The Swift runtime and its metadata</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Launch trace.</b> Binary to dyld to frameworks to runtime to
+the first scene, documented.</div>
+
+<h3>9C — Run loop, GCD and lifecycle internals</h3>
+<table>
+<tr><td class="n">01</td><td>CFRunLoop</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Dispatch internals</td><td class="t">DOC</td></tr>
+<tr><td class="n">03</td><td>The launch sequence</td><td class="t">DEV</td></tr>
+<tr><td class="n">04</td><td>Suspension and background execution</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Memory pressure and jetsam in production</td><td class="t">DOC</td></tr>
+</table>
+<div class="proj"><b>Project — Runtime behavior monitor.</b> Timers, events, background
+transitions, lifecycle and memory observations in one app.</div>
+
+<h3>9D — Rendering and diagnostics</h3>
+<table>
+<tr><td class="n">01</td><td>The Core Animation render server</td><td class="t">DOC</td></tr>
+<tr><td class="n">02</td><td>Compositing</td><td class="t">DEV</td></tr>
+<tr><td class="n">03</td><td>Instruments</td><td class="t">DEV</td></tr>
+<tr><td class="n">04</td><td>os_signpost</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Reading a crash report</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Frame-to-pixel report.</b> Profile an animated screen and
+explain the CPU, GPU and framework boundaries you measured.</div>
+
+<div class="new">
+<span class="tag">NEW IN THIS EDITION</span>
+<b>9E covers the device's sensors</b>, left out of the first edition. Permission is a
+state machine, not a boolean, and getting that wrong is one of the most common sources
+of shipped bugs in apps that use location or notifications.
+</div>
+
+<h3>9E — The device’s senses</h3>
+<table>
+<tr><td class="n">01</td><td>CoreLocation: permission as a state machine</td><td class="t">EXEC</td></tr>
+<tr><td class="n">02</td><td>Accuracy, privacy, and the reduced-accuracy path</td><td class="t">EXEC</td></tr>
+<tr><td class="n">03</td><td>Maps and geocoding: degrees, cameras, names</td><td class="t">EXEC</td></tr>
+<tr><td class="n">04</td><td>APNs from the socket up</td><td class="t">EXEC</td></tr>
+<tr><td class="n">05</td><td>Notification routing and service extensions</td><td class="t">DEV</td></tr>
+<tr><td class="n">06</td><td>LocalAuthentication and the Keychain gate</td><td class="t">EXEC</td></tr>
+</table>
+<div class="proj"><b>Project — Sensor diagnostic screen.</b> One screen that reports every
+permission state honestly, including the states you cannot reach without a device, and
+explains what the app should do in each.</div>
+
+<div class="box">
+<b>Avoid rabbit holes.</b> Learn enough internals to explain observable app behaviour. Do
+not spend weeks on Mach messages or compiler SIL before the OS, Swift, UIKit,
+concurrency, networking and database fundamentals are solid.
+</div>
+
+<div class="cap"><b>Path capstone — iOS Internals Field Guide.</b> Instrument a real app and
+produce a technical report tracing launch, events, concurrency, memory, rendering,
+signing and lifecycle.</div>
+
+<!-- ============ CONNECTION MAPS ============ -->
+<h2 class="path">Connection maps</h2>
+
+<p>How familiar iOS concepts trace downward through the stack.</p>
+
+<table>
+<tr><th style="width:30%">iOS concept</th><th>Trace it downward</th></tr>
+<tr><td>weak self</td><td>closure capture → class reference → ARC → retain cycle → weak reference → object lifetime</td></tr>
+<tr><td>UITableView cell reuse</td><td>object allocation → memory pressure → reuse pool → scrolling performance → main-thread layout and rendering</td></tr>
+<tr><td>DispatchQueue.main.async</td><td>OS thread → main thread → event loop / run loop → queued closure → UIKit-safe state mutation</td></tr>
+<tr><td>@MainActor</td><td>language and runtime isolation rule → executor scheduling → serialized access to UI-bound state</td></tr>
+<tr><td>Codable decoding</td><td>network bytes → Data → parser/decoder → type-checking assumptions → allocations → model values</td></tr>
+<tr><td>Core Data context</td><td>persistence model → context / unit of work → object graph → thread confinement → save transaction</td></tr>
+<tr><td>Diffable data source</td><td>Hashable identity → snapshot / state → diff algorithm → batched UI update → animation</td></tr>
+<tr><td>Auto Layout</td><td>constraint equations → layout pass → frame calculation → layer geometry → rendering</td></tr>
+<tr><td>A stack view</td><td>design decomposition → arranged subviews → implicit constraints → the same layout pass → geometry</td></tr>
+<tr><td>A gRPC call</td><td>generated stub → protobuf encoding → HTTP/2 stream → frames → TLS record → TCP segment</td></tr>
+<tr><td>EXC_BAD_ACCESS</td><td>invalid memory access → process protection → kernel exception → debugger / crash report</td></tr>
+<tr><td>App backgrounding</td><td>OS lifecycle decision → scene / app delegate callbacks → suspension limits → task cancellation and persistence decisions</td></tr>
+</table>
+
+<h3>One complete trace: API response to pixels</h3>
+<pre>User taps refresh
+ → UIKit event handling
+ → Task begins
+ → URLSession request
+ → DNS / TCP / TLS / HTTP
+ → server response bytes
+ → Data
+ → JSONDecoder
+ → Swift model values
+ → repository / cache decision
+ → ViewModel state
+ → @MainActor / UI update
+ → diffable snapshot / layout
+ → CALayer / Core Animation
+ → GPU compositing
+ → pixels</pre>
+
+<!-- ============ METHOD ============ -->
+<h2 class="path">Study method</h2>
+
+<p>Because you already build iOS features, the fastest route is not to redo beginner
+tutorials. Use your existing experience as retrieval cues.</p>
+
+<table>
+<tr><th style="width:22%">Step</th><th style="width:40%">What to do</th><th>Example</th></tr>
+<tr><td>1. Learn terminology</td><td>Read and define the terms precisely</td><td>process vs thread vs task</td></tr>
+<tr><td>2. Build a mental model</td><td>Draw the components and arrows</td><td>Task → executor → thread → CPU</td></tr>
+<tr><td>3. Connect to iOS</td><td>Find where you have already used it</td><td>Task { } in a view controller</td></tr>
+<tr><td>4. Run an experiment</td><td>Change one variable and observe</td><td>block the main thread, watch the UI freeze</td></tr>
+<tr><td>5. Explain it</td><td>Write 5–10 sentences without notes</td><td>why UI must not be blocked</td></tr>
+<tr><td>6. Debug it</td><td>Study a realistic failure mode</td><td>race, retain cycle, stale cache</td></tr>
+<tr><td>7. Revisit</td><td>Review on a spaced schedule</td><td>1, 3, 7, 21 days</td></tr>
+</table>
+
+<h3>Weekly rhythm at 15–20 hours</h3>
+<ul>
+<li><b>6–8 hours</b> — new lessons, at roughly one hour each</li>
+<li><b>3–4 hours</b> — the chapter project in progress</li>
+<li><b>2–3 hours</b> — experiments and debugging on your own code</li>
+<li><b>1–2 hours</b> — scheduled review of earlier lessons</li>
+<li><b>1–2 hours</b> — writing: explain-backs, connection notes, the design note for the current project</li>
+</ul>
+
+<div class="box">
+<b>Output over consumption.</b> Every week should produce something: a diagram, a small
+program, a debugging experiment, a one-page explanation, or a refactor. Passive reading
+hours alone will not build the connections you want.
+</div>
+
+<h3>Spaced review</h3>
+<p>A lesson passed today comes back tomorrow, then after 3 days, then 7, then 21. A
+review that goes well moves the lesson up the ladder. A review that goes badly resets it
+to tomorrow. This is why one concept gets one lesson: a concept folded into another
+lesson never gets its own place in the schedule, and so never gets reviewed on its own.</p>
+
+<!-- ============ FINAL PROJECT ============ -->
+<h2 class="path">Final integrated project</h2>
+
+<p>After the ten capstones, build one serious UIKit application without following a
+tutorial. The app matters less than the requirement that every subsystem forces you to
+use and explain the layers beneath it.</p>
+
+<h3>Required product capabilities</h3>
+<ul>
+<li>Multi-screen navigation with adaptive Auto Layout, reusable list or grid UI, Dynamic Type and VoiceOver.</li>
+<li>A screen structure built from your own spacing and type scale, with all five screen states handled.</li>
+<li>An authenticated HTTP API with typed requests and responses, pagination, cancellation, a retry and backoff policy, and meaningful error states.</li>
+<li>Local persistence plus a two-level cache with explicit invalidation and stale-while-revalidate behaviour.</li>
+<li>Offline-first first paint: cached data stays usable while revalidation runs.</li>
+<li>Swift Concurrency: Task, async/await, structured concurrency, <code>@MainActor</code> for UI state, actors and Sendable for shared state.</li>
+<li>Explicit state with MVVM or a similar presentation pattern, Repository, dependency injection, and Coordinator where useful.</li>
+<li>Unit tests for business, state and repository behaviour, plus a few meaningful integration tests.</li>
+<li>Structured logging with enough diagnostics to understand network, persistence, state transitions and failures.</li>
+<li>At least one performance profiling pass and one memory-leak verification pass.</li>
+</ul>
+
+<h3>Required scenarios</h3>
+<table>
+<tr><th style="width:26%">Scenario</th><th>What you must demonstrate</th></tr>
+<tr><td>Cold launch</td><td>Explain process and app launch, loading, the initial storage read, the network decision, and first render.</td></tr>
+<tr><td>Refresh</td><td>Trace tap → responder / run loop → Task → URLSession → decode → repository / cache → MainActor → diff, layout, render.</td></tr>
+<tr><td>Slow network</td><td>UI stays responsive, cached state remains, the request can be cancelled, loading semantics are explicit.</td></tr>
+<tr><td>Concurrent requests</td><td>Duplicate work is prevented or deliberately coordinated; shared mutable state is race-safe.</td></tr>
+<tr><td>Offline mode</td><td>Useful cached data remains; the error state explains the failure to revalidate without destroying state.</td></tr>
+<tr><td>Mutation</td><td>Create, edit and delete cause correct cache, database and network invalidation and UI reconciliation.</td></tr>
+<tr><td>Memory lifecycle</td><td>Controllers, tasks, closures and cache objects deallocate when expected; no unexplained retain cycle.</td></tr>
+<tr><td>Large data set</td><td>Pagination, list reuse, image work, database indexing and rendering all stay performant.</td></tr>
+<tr><td>Accessibility</td><td>Core workflows work with VoiceOver and at the largest Dynamic Type setting.</td></tr>
+<tr><td>Failure injection</td><td>Decoding, server, auth, storage and cancellation failures, each explained by the layer that owns it.</td></tr>
+</table>
+
+<h3>Deliverables</h3>
+<ul>
+<li>Running app and source code.</li>
+<li>Architecture diagram and module dependency map.</li>
+<li>A “request to pixels” trace for one core feature.</li>
+<li>A “tap to machine” trace covering UIKit, concurrency, threads, memory, network, database and rendering boundaries.</li>
+<li>The test suite, plus a short statement of what is deliberately not tested.</li>
+<li>A performance and memory report with real measurements.</li>
+<li>A failure-mode table: symptom → responsible layer → diagnosis → fix.</li>
+<li>A retrospective: what you used to do by habit, what you can now explain from first principles, and what gaps remain.</li>
+</ul>
+
+<div class="box">
+<b>Graduation criterion.</b> You do not need to remember every implementation detail. You
+should be able to locate a problem in the correct layer, explain the major mechanisms
+accurately, design an experiment to validate your hypothesis, and read deeper
+documentation without the terminology feeling disconnected.
+</div>
+
+<!-- ============ SEQUENCE ============ -->
+<h2 class="path">Sequence and budget</h2>
+
+<h3>Recommended order</h3>
+<table>
+<tr><th style="width:32%">Phase</th><th>Focus</th></tr>
+<tr><td>Phase A — Machine &amp; OS</td><td>Path 0 → Path 1</td></tr>
+<tr><td>Phase B — Language machinery</td><td>Path 2 → Path 3</td></tr>
+<tr><td>Phase C — iOS execution model</td><td>Path 4</td></tr>
+<tr><td>Phase D — Concurrent &amp; distributed work</td><td>Path 5 → Path 6</td></tr>
+<tr><td>Phase E — Data</td><td>Path 7</td></tr>
+<tr><td>Phase F — Engineering at scale</td><td>Path 8</td></tr>
+<tr><td>Phase G — Apple internals</td><td>Path 9</td></tr>
+</table>
+
+<p>Paths 0, 1, 2 and 3 are load-bearing. Nothing above them works without them, and they
+are the ones most likely to be skipped because they feel furthest from the work. Do not
+skip them.</p>
+
+<h3>What the whole plan costs</h3>
+<table>
+<tr><th style="width:38%">Work</th><th style="width:14%">Count</th><th style="width:20%">Each</th><th>Hours</th></tr>
+<tr><td>Lessons</td><td>352</td><td>~1 h</td><td>352</td></tr>
+<tr><td>Chapter projects</td><td>48</td><td>3–4 h</td><td>~170</td></tr>
+<tr><td>Path capstones</td><td>10</td><td>8–12 h</td><td>~100</td></tr>
+<tr><td>Final integrated project</td><td>1</td><td>50–70 h</td><td>~60</td></tr>
+<tr><td>Scheduled review</td><td>—</td><td>~15% of lesson time</td><td>~55</td></tr>
+<tr class="tot"><td>Total</td><td></td><td></td><td>~740 h</td></tr>
+</table>
+
+<p>At 15–20 hours a week, year one is 780 to 1,040 hours. The whole plan fits inside year
+one at the top of that range, and runs a few months into year two at the bottom. Nothing
+needs to be cut.</p>
+
+<h3>A rough two-year shape</h3>
+<table>
+<tr><th style="width:24%">Period</th><th style="width:24%">Paths</th><th style="width:20%">Lessons</th><th>Hours</th></tr>
+<tr><td>Year 1, first half</td><td>0, 1, 2</td><td>82</td><td>~180</td></tr>
+<tr><td>Year 1, second half</td><td>3, 4</td><td>100</td><td>~230</td></tr>
+<tr><td>Year 2, first half</td><td>5, 6, 7</td><td>102</td><td>~230</td></tr>
+<tr><td>Year 2, second half</td><td>8, 9, final project</td><td>68</td><td>~200</td></tr>
+</table>
+
+<p>Year one ends with the machine, the OS, the compiler, Swift and UIKit installed —
+already past the point where the terminology stops feeling disconnected.</p>
+
+<div class="box">
+<b>If it runs long, cut whole chapters, not lesson depth.</b> Merging lessons makes each
+one shallower and costs it its own place in the review schedule. Paths 8 and 9 are the
+safest to defer. The projects are not: they are a third of the hours and they are the
+part that actually installs the skill. Under time pressure the temptation is to keep
+reading and skip building, because reading feels like progress. Lessons without their
+projects produce exactly the recognition-level knowledge this plan exists to fix.
+</div>
+
+<!-- ============ CHECKLIST ============ -->
+<h2 class="path">Master checklist</h2>
+
+<table>
+<tr><th style="width:26%">Area</th><th>Coverage</th><th style="width:24%">Status</th></tr>
+<tr><td>Computer systems</td><td>binary, CPU, instructions, registers, stack and heap, memory hierarchy, program execution</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Operating systems</td><td>processes, threads, scheduling, virtual memory, syscalls, files, sandbox, lifecycle</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Compiler / runtime</td><td>compiler phases, linking, loading, ARC, runtime metadata, dispatch</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Swift</td><td>basics through protocols, generics, ownership, ARC, type system</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>UIKit</td><td>views and controllers, Auto Layout, navigation, lists, responder chain, run loop, rendering</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Design and composition</td><td>units, scales, colour, components, states, screen decomposition, design systems</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Interface Builder / localization</td><td>storyboards, XIBs, traits, strings tables, plurals, runtime switching</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Concurrency</td><td>threads and tasks, GCD, async/await, structured concurrency, actors, Sendable, cancellation</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Networking</td><td>DNS, TCP, TLS, HTTP, URLSession, retries, caching, auth</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Wire protocols</td><td>protobuf, HTTP/2, gRPC calls, streaming, interceptors, pinning</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Persistence</td><td>files, SQL, indexes, transactions, Core Data, cache design</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Engineering</td><td>SOLID, MVVM, DI, repository, state, testing, modularization, Git, CI/CD</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Performance / debugging</td><td>debugger, Memory Graph, Instruments, logging, crash reports</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Apple internals</td><td>Darwin/XNU, dyld, runtime, code signing, entitlements, memory pressure</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+<tr><td>Device sensors</td><td>location, maps, APNs, notifications, biometrics</td><td>☐ Not started ☐ Learning ☐ Can explain</td></tr>
+</table>
+
+<h2>Final principle</h2>
+<div class="box">
+The goal is not to know every API. The goal is to build a connected model of how
+software works, so that unfamiliar APIs become easier to understand, debug and
+evaluate.
+</div>
+
+</body>
+</html>
